@@ -32,6 +32,10 @@ export class NoopSettlement implements Settlement {
 const PASS_ALPHA = 0.005; // slow-moving on a verified pass
 const FAIL_ALPHA = 0.05; // 10× faster on an anomaly/failure
 
+// Economic penalty: slash this fraction (basis points) of a node's stake when it
+// returns a verified-bad result. Small per-incident; staking is the real deterrent.
+const SLASH_BPS = 100n; // 1%
+
 /** EMA update in basis points: next = current·(1-α) + outcome·10000·α, clamped. */
 export function emaReputationBps(currentBps: number, outcome01: number, alpha: number): number {
   const next = currentBps * (1 - alpha) + outcome01 * 10000 * alpha;
@@ -61,11 +65,20 @@ export class ChainSettlement implements Settlement {
     const job = await this.chain.getJob(jobId);
     await this.chain.failJob(jobId, reason);
 
-    // Penalize the provider's reputation faster on a failure.
+    // Penalize the provider on a failure: reputation EMA down + a small stake slash.
     if (job.provider !== zeroAddress) {
       const node = await this.chain.getNode(job.provider);
       const newScore = emaReputationBps(Number(node.reputationScore), 0, FAIL_ALPHA);
       await this.chain.updateReputation(job.provider, newScore);
+
+      const slashAmount = (node.stakeAmount * SLASH_BPS) / 10000n;
+      if (slashAmount > 0n) {
+        await this.chain.slash(job.provider, slashAmount, reason);
+        this.logger.warn(
+          { provider: job.provider, slashAmount: slashAmount.toString() },
+          'provider slashed',
+        );
+      }
     }
     this.logger.warn({ jobId, reason }, 'job failed + refunded');
   }

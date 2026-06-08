@@ -3,6 +3,7 @@ import type { Address, Hex } from 'viem';
 import {
   jobEscrowAbi,
   makePublicClient,
+  nodeRegistryAbi,
   quaisTokenAbi,
   splitPayment,
   type Deployment,
@@ -124,10 +125,21 @@ export async function runFailureCase(): Promise<void> {
     const { node: provider, requester } = h.deployment.accounts;
     const treasury = h.deployment.treasury;
 
-    const [p0, t0, r0] = await Promise.all([
+    const stakeOf = (wallet: Address): Promise<bigint> =>
+      pub
+        .readContract({
+          address: h.deployment.contracts.nodeRegistry,
+          abi: nodeRegistryAbi,
+          functionName: 'getNode',
+          args: [wallet],
+        })
+        .then((n) => n.stakeAmount);
+
+    const [p0, t0, r0, s0] = await Promise.all([
       balanceOf(pub, h.deployment, provider),
       balanceOf(pub, h.deployment, treasury),
       balanceOf(pub, h.deployment, requester),
+      stakeOf(provider),
     ]);
 
     const res = await chat(h.baseUrl, {
@@ -137,15 +149,17 @@ export async function runFailureCase(): Promise<void> {
     });
     assert.equal(res.status, 502, 'expected HTTP 502 (verification failure)');
 
-    const [p1, t1, r1] = await Promise.all([
+    const [p1, t1, r1, s1] = await Promise.all([
       balanceOf(pub, h.deployment, provider),
       balanceOf(pub, h.deployment, treasury),
       balanceOf(pub, h.deployment, requester),
+      stakeOf(provider),
     ]);
 
     assert.equal(p1, p0, 'provider must be paid nothing on failure');
     assert.equal(t1, t0, 'treasury must be paid nothing on failure');
     assert.equal(r1, r0, 'requester must be fully refunded on failure');
+    assert.ok(s1 < s0, 'provider stake must be slashed on a verified-bad result');
   } finally {
     await h.stop();
   }

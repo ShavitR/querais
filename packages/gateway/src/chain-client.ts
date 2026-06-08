@@ -111,6 +111,17 @@ export class ChainClient {
     return hash;
   }
 
+  async slash(wallet: Address, amount: bigint, reason: string): Promise<Hex> {
+    const hash = await this.walletClient.writeContract({
+      address: this.deployment.contracts.nodeRegistry,
+      abi: nodeRegistryAbi,
+      functionName: 'slash',
+      args: [wallet, amount, reason],
+    });
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
   async updateReputation(wallet: Address, newScore: number): Promise<Hex> {
     const hash = await this.walletClient.writeContract({
       address: this.deployment.contracts.nodeRegistry,

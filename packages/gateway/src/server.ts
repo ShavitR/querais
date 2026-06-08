@@ -44,7 +44,8 @@ export async function buildGateway(
   const deps: GatewayDeps = { config: opts.config, chain, pool, dispatcher, logger };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
-  await app.register(websocket);
+  // Cap WS frame size so a misbehaving node can't send oversized messages.
+  await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
   // Node daemons connect here and complete the signed-nonce handshake.
   app.get('/node', { websocket: true }, (socket: WebSocket) => {
