@@ -25,6 +25,7 @@
     "export-abis": "tsx scripts/export-abis.ts",
     "build": "hardhat compile && tsx scripts/export-abis.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint:sol": "solhint \"contracts/**/*.sol\"",
     "test": "hardhat test",
     "chain": "hardhat node",
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
@@ -39,6 +40,7 @@
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
     "dotenv": "^16.4.7",
     "hardhat": "^3.8.0",
+    "solhint": "^6.2.1",
     "viem": "^2.52.2"
   }
 }

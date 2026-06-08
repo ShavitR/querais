@@ -1,0 +1,139 @@
+name: CI
+
+# Locks in the project's "green bar" (build · typecheck · lint · test · e2e) on every
+# change, plus Solidity static analysis and a non-gating coverage report. Mirrors the
+# commands a developer runs locally, so a green PR == a green local checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20' # enforces the declared engines.node floor (>=20)
+  PNPM_VERSION: '11.5.2' # matches the local toolchain
+
+jobs:
+  green-bar:
+    name: Build · typecheck · lint · test · e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      # The gateway/daemon read repo-root .env; localhost/hardhat use only the
+      # well-known Hardhat dev accounts shipped in .env.example (no real secrets).
+      - name: Seed .env from example
+        run: cp .env.example .env
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint (eslint + prettier)
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      # Self-contained: spawns its own Hardhat node + deploys + runs the 6 acceptance
+      # scenarios with the MockBackend. No Ollama / DB / Redis required.
+      - name: E2E acceptance gate
+        run: pnpm test:e2e
+
+  solidity:
+    name: Solidity static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      # Blocking: solhint is pure-JS and parses .sol directly, so it is independent of
+      # the Hardhat version. 0 errors today (warnings are non-fatal style/gas hints).
+      - name: solhint
+        run: pnpm --filter @querais/contracts lint:sol
+      # Slither needs Python + a solc binary; we drive solc directly (bypassing
+      # Hardhat 3, whose build-info format Slither's framework auto-detect doesn't
+      # yet support). OpenZeppelin imports resolve from the installed node_modules.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Slither + solc
+        run: |
+          pip install slither-analyzer solc-select
+          solc-select install 0.8.28
+          solc-select use 0.8.28
+      # Non-blocking for now: Slither's Hardhat 3 support is unproven, so we surface
+      # findings without gating. Flip to blocking once findings are triaged (Slice 0
+      # acceptance) — see docs/EXECUTION_PLAN.md.
+      - name: Slither (non-blocking)
+        continue-on-error: true
+        working-directory: packages/contracts
+        run: |
+          slither contracts/ \
+            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/" \
+            --exclude-dependencies \
+            --fail-on none
+
+  coverage:
+    name: Coverage (reported, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Best-effort signal only. TS line coverage via node:test; contract-line coverage
+    # is deferred until an HH3-compatible tool exists (Hardhat 3 has no built-in
+    # coverage and solidity-coverage predates it).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Seed .env from example
+        run: cp .env.example .env
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      - name: Build (coverage reads built sibling packages)
+        run: pnpm build
+      - name: TS unit coverage
+        run: pnpm test:coverage
+
+  audit:
+    name: Dependency audit (reported, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      - name: pnpm audit (high+)
+        run: pnpm audit --audit-level=high
