@@ -15,7 +15,11 @@
     "@querais/gateway": "workspace:*",
     "@querais/matching": "workspace:*",
     "@querais/node-daemon": "workspace:*",
+    "@querais/sdk": "workspace:*",
     "@querais/shared": "workspace:*",
     "viem": "^2.52.2"
+  },
+  "devDependencies": {
+    "openai": "^4.77.0"
   }
 }

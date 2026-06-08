@@ -9,6 +9,7 @@
  */
 import { startChainAndDeploy } from './chain.js';
 import { runSuccessCase, runFailureCase } from './e2e.js';
+import { runOpenAiParityCase } from './parity.js';
 
 async function main(): Promise<void> {
   console.log('⛓  starting local chain + deploying contracts…');
@@ -22,6 +23,10 @@ async function main(): Promise<void> {
     console.log('▶  failure case: garbage result → Layer-B reject → refund…');
     await runFailureCase();
     console.log('✅ failure case passed');
+
+    console.log('▶  parity case: official OpenAI SDK against the gateway…');
+    await runOpenAiParityCase();
+    console.log('✅ OpenAI parity case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

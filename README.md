@@ -63,6 +63,39 @@ Open the printed dashboard URL to watch live nodes, the treasury balance, and tr
 your own prompts. `pnpm test:e2e` runs the self-contained acceptance gate (success +
 failure settlement paths) without needing a browser.
 
+## Use it from your code (OpenAI drop-in)
+
+Point the **official OpenAI client** at the gateway — change one line (the base URL):
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="sk-querais-dev")
+r = client.chat.completions.create(model="gemma3:4b",
+    messages=[{"role": "user", "content": "Hello"}])
+print(r.choices[0].message.content)
+```
+
+```ts
+import OpenAI from 'openai';
+const client = new OpenAI({ baseURL: 'http://127.0.0.1:8787/v1', apiKey: 'sk-querais-dev' });
+const r = await client.chat.completions.create({
+  model: 'gemma3:4b',
+  messages: [{ role: 'user', content: 'Hello' }],
+});
+console.log(r.choices[0].message.content);
+```
+
+Or the bundled `querais` CLI (`@querais/sdk`):
+
+```bash
+querais chat "Hello"   # streams a completion
+querais models         # models available on the network
+querais nodes          # active nodes + reputation
+```
+
+Drop-in compatibility is enforced by the e2e suite, which runs the real `openai` SDK
+against the gateway (buffered + streaming + `models.list()`).
+
 ## How the slice works
 
 1. A requester POSTs to `/v1/chat/completions` (OpenAI-compatible) with a Bearer API key.
