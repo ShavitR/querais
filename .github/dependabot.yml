@@ -1,30 +1,33 @@
 version: 2
 updates:
-  # npm/pnpm dependencies across the monorepo (root + every workspace package).
+  # npm/pnpm: one batched PR of minor+patch updates a month. Majors are excluded — they
+  # land as deliberate, reviewed bumps (e.g. zod 4, eslint 10, openai 6), not auto-PRs —
+  # so a breaking change can't masquerade as a routine "dev-tooling" update.
   - package-ecosystem: npm
     directory: '/'
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: monthly
+    open-pull-requests-limit: 5
     groups:
-      # Batch low-risk dev tooling so we get one PR instead of a swarm.
-      dev-tooling:
-        patterns:
-          - 'eslint*'
-          - '@eslint/*'
-          - 'typescript-eslint'
-          - 'prettier'
-          - 'tsx'
-          - 'rimraf'
-          - 'solhint'
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     labels:
       - dependencies
 
-  # Keep the GitHub Actions in this workflow pinned and current.
+  # GitHub Actions: one batched PR a month. Majors are kept here — action major bumps are
+  # low-risk and carry the runtime-deprecation fixes (e.g. the Node-20 → Node-24 move).
   - package-ecosystem: github-actions
     directory: '/'
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ['*']
     labels:
       - dependencies
       - ci
