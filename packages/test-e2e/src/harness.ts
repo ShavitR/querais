@@ -39,6 +39,8 @@ export interface HarnessOptions {
   backend?: InferenceBackend;
   /** Model the daemon advertises (mock backend default 'mock-model'). */
   model?: string;
+  /** Rate-limit max requests/key/min (default 120). */
+  rateLimitMax?: number;
 }
 
 /**
@@ -72,6 +74,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     defaultMaxPricePerTokenWei: parseEther('0.001'),
     defaultMinReputation: 0,
     jobDeadlineSeconds: 120,
+    rateLimitMax: opts.rateLimitMax ?? 120,
   };
   // No settlement override → buildGateway uses the real ChainSettlement.
   const { app } = await buildGateway({

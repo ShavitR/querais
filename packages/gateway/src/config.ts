@@ -13,6 +13,8 @@ export interface GatewayConfig {
   defaultMaxPricePerTokenWei: bigint;
   defaultMinReputation: number;
   jobDeadlineSeconds: number;
+  /** Max requests per API key per minute (rate limiting). */
+  rateLimitMax: number;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -52,5 +54,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       : parseEther('0.001'),
     defaultMinReputation: Number(env.GATEWAY_DEFAULT_MIN_REPUTATION ?? '0'),
     jobDeadlineSeconds: Number(env.GATEWAY_JOB_DEADLINE_SECONDS ?? '120'),
+    rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
   };
 }

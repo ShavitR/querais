@@ -18,6 +18,7 @@ import type { ChainClient } from './chain-client.js';
 import type { NodePool } from './node-pool.js';
 import type { Settlement } from './settlement.js';
 import { layerBVerify } from './verify.js';
+import { metrics } from './metrics.js';
 
 export interface DispatchResult {
   jobId: Hex;
@@ -99,6 +100,7 @@ export class Dispatcher {
       BigInt(spec.deadline),
     );
     await this.chain.assignJob(spec.jobId, provider, agreedPrice);
+    metrics.jobsCreated += 1;
     this.logger.info({ jobId: spec.jobId, provider, model: spec.model }, 'job created & assigned');
 
     // ── Stream from the node ──
@@ -112,6 +114,7 @@ export class Dispatcher {
       maxTokens,
     });
     if (!verdict.ok) {
+      metrics.jobsFailed += 1;
       await this.settlement.fail(spec.jobId, verdict.reason ?? 'verification failed');
       throw new VerificationError(verdict.reason ?? 'verification failed');
     }
@@ -124,6 +127,8 @@ export class Dispatcher {
       authoritativeTokens: verdict.authoritativeTokens,
       resultHash: streamed.report.resultHash,
     });
+    metrics.jobsSettled += 1;
+    metrics.tokensServed += verdict.authoritativeTokens;
 
     return {
       jobId: spec.jobId,

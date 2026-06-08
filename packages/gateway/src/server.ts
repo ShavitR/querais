@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
+import rateLimit from '@fastify/rate-limit';
 import type { WebSocket } from 'ws';
 import pino, { type Logger } from 'pino';
+import { renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient } from '@querais/shared';
 import type { GatewayConfig } from './config.js';
 import { ChainClient } from './chain-client.js';
@@ -47,12 +49,27 @@ export async function buildGateway(
   // Cap WS frame size so a misbehaving node can't send oversized messages.
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
-  // Node daemons connect here and complete the signed-nonce handshake.
-  app.get('/node', { websocket: true }, (socket: WebSocket) => {
-    pool.handleConnection(socket);
+  // Per-API-key rate limiting on the /v1 API (infra routes opt out below).
+  await app.register(rateLimit, {
+    max: opts.config.rateLimitMax,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const auth = req.headers.authorization;
+      return auth ? auth.replace(/^Bearer\s+/i, '').trim() : (req.ip ?? 'anon');
+    },
   });
 
-  app.get('/health', async () => ({ status: 'ok', nodes: pool.size() }));
+  // Infra endpoints — excluded from rate limiting.
+  const noLimit = { config: { rateLimit: false } };
+  app.get('/node', { websocket: true, ...noLimit }, (socket: WebSocket) => {
+    pool.handleConnection(socket);
+  });
+  app.get('/health', noLimit, async () => ({ status: 'ok', nodes: pool.size() }));
+  app.get('/ready', noLimit, async () => ({ ready: true, nodes: pool.size() }));
+  app.get('/metrics', noLimit, async (_req, reply) => {
+    reply.header('content-type', 'text/plain; version=0.0.4');
+    return reply.send(renderMetrics(pool.size()));
+  });
 
   registerChatCompletions(app, deps);
   registerModels(app, deps);

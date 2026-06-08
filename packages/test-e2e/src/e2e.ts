@@ -90,6 +90,43 @@ export async function runSuccessCase(): Promise<void> {
   }
 }
 
+/**
+ * Ops hardening: /metrics reflects activity, /ready responds, and per-key rate
+ * limiting returns 429 past the threshold.
+ */
+export async function runOpsCase(): Promise<void> {
+  const h = await startHarness({ rateLimitMax: 5 });
+  try {
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'metrics please' }],
+      max_tokens: 20,
+    });
+    assert.equal(res.status, 200, 'warm-up job should succeed');
+
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(metricsText, /querais_jobs_settled_total \d+/, '/metrics exposes counters');
+    assert.match(metricsText, /querais_nodes 1/, '/metrics shows the connected node');
+
+    const ready = (await (await fetch(`${h.baseUrl}/ready`)).json()) as { ready: boolean };
+    assert.equal(ready.ready, true, '/ready responds');
+
+    let got429 = false;
+    for (let i = 0; i < 12; i++) {
+      const r = await fetch(`${h.baseUrl}/v1/models`, {
+        headers: { authorization: `Bearer ${API_KEY}` },
+      });
+      if (r.status === 429) {
+        got429 = true;
+        break;
+      }
+    }
+    assert.ok(got429, 'rate limit should return 429 past the threshold');
+  } finally {
+    await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';

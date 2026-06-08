@@ -19,6 +19,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.2.0",
     "@fastify/websocket": "^11.0.1",
     "@querais/matching": "workspace:*",
     "@querais/shared": "workspace:*",
