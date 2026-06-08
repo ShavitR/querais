@@ -34,9 +34,16 @@ const [balance, chainId] = await Promise.all([
 ]);
 
 console.log('Deployer address :', account.address);
-console.log('RPC chainId      :', chainId, chainId === 421614 ? '(Arbitrum Sepolia ✓)' : '(unexpected!)');
+console.log(
+  'RPC chainId      :',
+  chainId,
+  chainId === 421614 ? '(Arbitrum Sepolia ✓)' : '(unexpected!)',
+);
 console.log('Balance          :', formatEther(balance), 'ETH');
-console.log('Etherscan key    :', env.ETHERSCAN_API_KEY ? 'set ✓' : 'MISSING (verification will be skipped)');
+console.log(
+  'Etherscan key    :',
+  env.ETHERSCAN_API_KEY ? 'set ✓' : 'MISSING (verification will be skipped)',
+);
 
 if (balance === 0n) {
   console.error('\n❌ Deployer has 0 ETH on Arbitrum Sepolia — fund it before deploying.');
