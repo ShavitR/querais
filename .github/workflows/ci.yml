@@ -1,0 +1,122 @@
+name: CI
+
+# Locks in the project's "green bar" (build · typecheck · lint · test · e2e) on every
+# change, plus Solidity static analysis and a non-gating coverage report. Mirrors the
+# commands a developer runs locally, so a green PR == a green local checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22' # pnpm 11.5.2 needs Node >=22.13 (uses node:sqlite); matches engines.node
+  PNPM_VERSION: '11.5.2' # matches the local toolchain
+
+jobs:
+  green-bar:
+    name: Build · typecheck · lint · test · e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      # The gateway/daemon read repo-root .env; localhost/hardhat use only the
+      # well-known Hardhat dev accounts shipped in .env.example (no real secrets).
+      - name: Seed .env from example
+        run: cp .env.example .env
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint (eslint + prettier)
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      # Self-contained: spawns its own Hardhat node + deploys + runs the 6 acceptance
+      # scenarios with the MockBackend. No Ollama / DB / Redis required.
+      - name: E2E acceptance gate
+        run: pnpm test:e2e
+
+  solidity:
+    name: Solidity lint (solhint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      # Blocking Solidity gate. solhint is pure-JS and parses .sol directly, so it is
+      # independent of the Hardhat version. 0 errors today (warnings are non-fatal
+      # style/gas hints). Slither is deferred: driving solc directly under pnpm trips
+      # solc --allow-paths on the symlinked .pnpm store, and its framework auto-detect
+      # doesn't yet support Hardhat 3. Revisit in Slice 2 (see docs/EXECUTION_PLAN.md).
+      - name: solhint
+        run: pnpm --filter @querais/contracts lint:sol
+
+  coverage:
+    name: Coverage (reported, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Best-effort signal only. TS line coverage via node:test; contract-line coverage
+    # is deferred until an HH3-compatible tool exists (Hardhat 3 has no built-in
+    # coverage and solidity-coverage predates it).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Seed .env from example
+        run: cp .env.example .env
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      - name: Build (coverage reads built sibling packages)
+        run: pnpm build
+      - name: TS unit coverage
+        run: pnpm test:coverage
+
+  audit:
+    name: Dependency audit (reported, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      # Reports high+ advisories without gating (one known dev-only transitive: undici
+      # via Hardhat test tooling). `|| true` keeps the job green; findings stay in the log.
+      - name: pnpm audit (high+)
+        run: pnpm audit --audit-level=high || true
