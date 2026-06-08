@@ -1,5 +1,8 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { keccak256, toBytes, parseEther, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { loadOrCreateKey } from './keystore.js';
 
 export interface DaemonConfig {
   /** Deployment to load (addresses.<network>.json). */
@@ -32,8 +35,16 @@ export function deriveNodeId(privateKey: Hex): Hex {
   return keccak256(toBytes(account.address.toLowerCase()));
 }
 
+/** Use NODE_PRIVATE_KEY if set; otherwise load (or generate) an encrypted keystore. */
+function resolvePrivateKey(env: NodeJS.ProcessEnv): Hex {
+  if (env.NODE_PRIVATE_KEY) return env.NODE_PRIVATE_KEY as Hex;
+  const path = env.DAEMON_KEYSTORE ?? join(homedir(), '.querais', 'keystore.json');
+  const password = env.DAEMON_KEYSTORE_PASSWORD ?? 'querais-dev';
+  return loadOrCreateKey(path, password).privateKey;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
-  const privateKey = required(env, 'NODE_PRIVATE_KEY') as Hex;
+  const privateKey = resolvePrivateKey(env);
   const servedModels = (env.DAEMON_MODELS ?? '')
     .split(',')
     .map((s) => s.trim())

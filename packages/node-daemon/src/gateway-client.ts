@@ -23,6 +23,11 @@ export interface GatewayClientOptions {
   logger: Logger;
 }
 
+/** Exponential backoff (ms) for reconnection: 1s, 2s, 4s … capped at 30s. */
+export function backoffDelayMs(attempt: number, baseMs = 1000, maxMs = 30_000): number {
+  return Math.min(maxMs, baseMs * 2 ** attempt);
+}
+
 /**
  * Maintains the node's WebSocket link to the gateway: completes the signed-nonce
  * handshake (proving wallet control), then services job assignments by streaming
@@ -30,23 +35,47 @@ export interface GatewayClientOptions {
  */
 export class GatewayClient {
   private ws: WebSocket | undefined;
+  private attempts = 0;
+  private stopped = false;
+  private reconnectTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly opts: GatewayClientOptions) {}
 
   start(): void {
+    this.stopped = false;
+    this.connect();
+  }
+
+  private connect(): void {
     const ws = new WebSocket(this.opts.wsUrl);
     this.ws = ws;
-    ws.on('open', () => this.opts.logger.info({ url: this.opts.wsUrl }, 'connected to gateway'));
+    ws.on('open', () => {
+      this.attempts = 0;
+      this.opts.logger.info({ url: this.opts.wsUrl }, 'connected to gateway');
+    });
     ws.on('message', (data: WebSocket.RawData) => {
       void this.onMessage(data.toString());
     });
-    ws.on('close', () => this.opts.logger.warn('gateway connection closed'));
+    ws.on('close', () => this.scheduleReconnect('closed'));
     ws.on('error', (err: Error) =>
       this.opts.logger.error({ err: err.message }, 'gateway ws error'),
     );
   }
 
+  private scheduleReconnect(reason: string): void {
+    if (this.stopped) return;
+    const delay = backoffDelayMs(this.attempts);
+    this.attempts += 1;
+    this.opts.logger.warn(
+      { reason, delayMs: delay, attempt: this.attempts },
+      'reconnecting to gateway',
+    );
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+  }
+
   stop(): void {
+    this.stopped = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
   }
 

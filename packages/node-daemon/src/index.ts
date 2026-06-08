@@ -12,5 +12,6 @@ export { computeAutoPrice, type AutoPriceInputs } from './pricing.js';
 export { buildCompletionReport } from './report.js';
 export { loadConfig, deriveNodeId, type DaemonConfig } from './config.js';
 export { ensureRegistered } from './registry.js';
-export { GatewayClient, type GatewayClientOptions } from './gateway-client.js';
+export { encryptKey, decryptKey, loadOrCreateKey, type Keystore } from './keystore.js';
+export { GatewayClient, backoffDelayMs, type GatewayClientOptions } from './gateway-client.js';
 export { startDaemon } from './daemon.js';
