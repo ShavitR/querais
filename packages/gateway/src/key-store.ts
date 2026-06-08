@@ -1,46 +1,45 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import type { Address } from '@querais/shared';
+import type { GatewayDb } from './db/index.js';
 
 /**
- * API-key → requester-wallet store. Seeded from env (static dev keys) and, if a path is
- * given, persisted to a JSON file so self-serve-issued keys survive restarts. Replaces
- * the static env-only map; `issue()` mints a new key for a wallet.
+ * API-key → requester-wallet store, backed by the shared {@link GatewayDb}. Seeded from env
+ * (static dev keys, inserted if absent) and durable across restarts. `issue()` mints a new
+ * self-serve key bound to a wallet. The public surface (`get`/`issue`/`count`) is unchanged
+ * from the previous JSON-file implementation, so route handlers are untouched.
  */
 export class ApiKeyStore {
-  private readonly keys = new Map<string, Address>();
-
   constructor(
-    private readonly path: string | undefined,
+    private readonly db: GatewayDb,
     seed?: Map<string, Address>,
   ) {
-    if (seed) for (const [k, v] of seed) this.keys.set(k, v.toLowerCase() as Address);
-    if (path && existsSync(path)) {
-      const obj = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
-      for (const [k, v] of Object.entries(obj)) this.keys.set(k, v.toLowerCase() as Address);
+    if (seed) {
+      const insert = db.conn.prepare(
+        'INSERT OR IGNORE INTO api_keys(key, wallet, created_at) VALUES(?, ?, ?)',
+      );
+      const now = Date.now();
+      for (const [k, v] of seed) insert.run(k, v.toLowerCase(), now);
     }
   }
 
   get(key: string): Address | undefined {
-    return this.keys.get(key);
+    const row = this.db.conn.prepare('SELECT wallet FROM api_keys WHERE key = ?').get(key) as
+      | { wallet: string }
+      | undefined;
+    return row?.wallet as Address | undefined;
   }
 
-  /** Mint a new API key bound to a wallet, persist, and return it. */
+  /** Mint a new API key bound to a (lowercased) wallet, persist, and return it. */
   issue(wallet: Address): string {
     const key = `sk-querais-${randomBytes(18).toString('hex')}`;
-    this.keys.set(key, wallet.toLowerCase() as Address);
-    this.persist();
+    this.db.conn
+      .prepare('INSERT INTO api_keys(key, wallet, created_at) VALUES(?, ?, ?)')
+      .run(key, wallet.toLowerCase(), Date.now());
     return key;
   }
 
   count(): number {
-    return this.keys.size;
-  }
-
-  private persist(): void {
-    if (!this.path) return;
-    mkdirSync(dirname(this.path), { recursive: true });
-    writeFileSync(this.path, JSON.stringify(Object.fromEntries(this.keys), null, 2), 'utf8');
+    const row = this.db.conn.prepare('SELECT COUNT(*) AS n FROM api_keys').get() as { n: number };
+    return row.n;
   }
 }

@@ -21,6 +21,7 @@ import { registerKeys } from './routes/keys.js';
 import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
+import { GatewayDb } from './db/index.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -47,7 +48,8 @@ export async function buildGateway(
   const pool = new NodePool(chain, logger);
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, logger);
-  const keyStore = new ApiKeyStore(opts.config.apiKeyStorePath, opts.config.apiKeys);
+  const db = new GatewayDb(opts.config.dbPath);
+  const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
   let faucet: Faucet | undefined;
@@ -70,7 +72,7 @@ export async function buildGateway(
         return hash;
       },
     };
-    faucet = new Faucet(distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
+    faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
   }
 
   const deps: GatewayDeps = {
@@ -78,6 +80,7 @@ export async function buildGateway(
     chain,
     pool,
     dispatcher,
+    db,
     keyStore,
     faucet,
     logger,

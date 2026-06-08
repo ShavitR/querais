@@ -15,8 +15,8 @@ export interface GatewayConfig {
   jobDeadlineSeconds: number;
   /** Max requests per API key per minute (rate limiting). */
   rateLimitMax: number;
-  /** Optional file path to persist issued API keys (undefined = in-memory only). */
-  apiKeyStorePath?: string;
+  /** Optional SQLite file path for durable gateway state (undefined = in-memory only). */
+  dbPath?: string;
   /** Token required to call the admin key-issuance endpoint (undefined = disabled). */
   adminToken?: string;
   /** QAIS dispensed per faucet claim (wei). */
@@ -65,7 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     defaultMinReputation: Number(env.GATEWAY_DEFAULT_MIN_REPUTATION ?? '0'),
     jobDeadlineSeconds: Number(env.GATEWAY_JOB_DEADLINE_SECONDS ?? '120'),
     rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
-    ...(env.GATEWAY_API_KEY_STORE ? { apiKeyStorePath: env.GATEWAY_API_KEY_STORE } : {}),
+    ...(env.GATEWAY_DB_PATH ? { dbPath: env.GATEWAY_DB_PATH } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI
       ? BigInt(env.GATEWAY_FAUCET_AMOUNT_WEI)
