@@ -18,6 +18,28 @@ const MIGRATIONS: readonly string[] = [
      eth_tx     TEXT,
      claimed_at INTEGER NOT NULL
    );`,
+
+  // 2 — job records: a queryable mirror of the on-chain escrow lifecycle (chain stays
+  // authoritative). Usage/credits are DERIVED by aggregating this table — no second table
+  // to keep in sync. wei amounts are TEXT (they overflow SQLite's 64-bit INTEGER).
+  `CREATE TABLE jobs (
+     job_id           TEXT PRIMARY KEY,
+     requester        TEXT NOT NULL,
+     provider         TEXT NOT NULL,
+     model            TEXT NOT NULL,
+     status           TEXT NOT NULL,
+     max_tokens       INTEGER NOT NULL,
+     actual_tokens    INTEGER,
+     agreed_price_wei TEXT NOT NULL,
+     locked_wei       TEXT NOT NULL,
+     payment_wei      TEXT,
+     provider_pay_wei TEXT,
+     fee_wei          TEXT,
+     reason           TEXT,
+     created_at       INTEGER NOT NULL,
+     updated_at       INTEGER NOT NULL
+   );
+   CREATE INDEX idx_jobs_requester ON jobs(requester, status);`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */

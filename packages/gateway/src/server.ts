@@ -22,6 +22,8 @@ import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
 import { GatewayDb } from './db/index.js';
+import { JobStore } from './db/jobs.js';
+import { registerUsage } from './routes/usage.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -47,8 +49,9 @@ export async function buildGateway(
   const chain = new ChainClient(publicClient, walletClient, deployment);
   const pool = new NodePool(chain, logger);
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
-  const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, logger);
   const db = new GatewayDb(opts.config.dbPath);
+  const jobs = new JobStore(db);
+  const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, jobs, logger);
   const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
@@ -81,6 +84,7 @@ export async function buildGateway(
     pool,
     dispatcher,
     db,
+    jobs,
     keyStore,
     faucet,
     logger,
@@ -116,6 +120,7 @@ export async function buildGateway(
   registerModels(app, deps);
   registerNodes(app, deps);
   registerJobs(app, deps);
+  registerUsage(app, deps);
   registerStats(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);
