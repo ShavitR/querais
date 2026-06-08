@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@querais/shared": "workspace:*",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "pino": "^9.6.0",
     "viem": "^2.52.2",
     "ws": "^8.18.0",
