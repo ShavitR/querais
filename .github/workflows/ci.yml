@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20' # enforces the declared engines.node floor (>=20)
+  NODE_VERSION: '22' # pnpm 11.5.2 needs Node >=22.13 (uses node:sqlite); matches engines.node
   PNPM_VERSION: '11.5.2' # matches the local toolchain
 
 jobs:
