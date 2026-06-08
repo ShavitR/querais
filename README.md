@@ -96,6 +96,39 @@ querais nodes          # active nodes + reputation
 Drop-in compatibility is enforced by the e2e suite, which runs the real `openai` SDK
 against the gateway (buffered + streaming + `models.list()`).
 
+## Join the public testnet
+
+> Hub-and-spoke testnet (everything routes through a hosted gateway). Testnet only —
+> **no real value**. Replace `GATEWAY_URL` below with the deployed gateway's address.
+
+### Run a node (earn testnet QAIS)
+Requires Docker. The node connects out to the gateway (no inbound ports) and generates
+an encrypted wallet on first run.
+
+```bash
+# Linux/macOS
+./scripts/install-node.sh
+# Windows (PowerShell)
+./scripts/install-node.ps1
+```
+
+Then fund the printed node address and let it auto-register:
+```bash
+docker compose logs node | grep "node ready on-chain"   # shows your node wallet
+# 1) get a little Arbitrum Sepolia ETH (gas) from a public faucet
+# 2) get QAIS to stake from the QueraIS faucet:
+curl -X POST GATEWAY_URL/v1/faucet -H 'content-type: application/json' \
+  -d '{"address":"0xYOURNODEADDRESS"}'
+```
+
+### Use the API (as a developer)
+Get an API key + starter QAIS from onboarding, then point the OpenAI client at the
+gateway (`GATEWAY_URL/v1`) exactly as in the drop-in example above. Jobs are served by
+whichever node wins the match and settle on Arbitrum Sepolia.
+
+> Deploying the gateway itself (Dockerfiles in `packages/*/Dockerfile`, TLS, secrets) is
+> an operator step — see the Dockerfiles and `docker-compose.yml`.
+
 ## How the slice works
 
 1. A requester POSTs to `/v1/chat/completions` (OpenAI-compatible) with a Bearer API key.

@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+**/.tsbuildinfo
+packages/contracts/artifacts
+packages/contracts/cache
+packages/contracts/deployments/addresses.localhost.json
+.git
+.env
+.env.*
+!.env.example
+*.log

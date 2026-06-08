@@ -1,0 +1,37 @@
+# Run a QueraIS node: Ollama + the node daemon. The daemon connects OUT to the public
+# gateway (set GATEWAY_WS_URL), so no inbound ports are required. The node wallet is
+# generated on first run into the `keystore` volume — fund + stake the printed address.
+#
+#   docker compose --env-file node.env up -d --build
+#   docker compose logs -f node      # find your node wallet address
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  node:
+    build:
+      context: .
+      dockerfile: packages/node-daemon/Dockerfile
+    environment:
+      NETWORK: ${NETWORK:-arbitrumSepolia}
+      RPC_URL: ${RPC_URL:-https://sepolia-rollup.arbitrum.io/rpc}
+      GATEWAY_WS_URL: ${GATEWAY_WS_URL:?set the public gateway WS URL, e.g. wss://gateway.example/node}
+      OLLAMA_URL: http://ollama:11434
+      DAEMON_MODELS: ${DAEMON_MODELS:-gemma3:4b}
+      DAEMON_KEYSTORE: /keystore/keystore.json
+      DAEMON_KEYSTORE_PASSWORD: ${DAEMON_KEYSTORE_PASSWORD:?set a keystore password}
+    volumes:
+      - keystore:/keystore
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+volumes:
+  ollama: {}
+  keystore: {}
