@@ -153,6 +153,14 @@ export class NodePool {
     this.jobToWallet.delete(jobId);
   }
 
+  /** Refresh a pooled node's cached reputation from on-chain (after settlement). */
+  async refreshReputation(wallet: Address): Promise<void> {
+    const node = this.nodes.get(wallet);
+    if (!node) return;
+    const onchain = await this.chain.getNode(wallet);
+    node.reputation = Number(onchain.reputationScore);
+  }
+
   listNodes(): Array<{
     wallet: Address;
     nodeId: string;

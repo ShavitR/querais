@@ -116,10 +116,24 @@ export async function runOpsCase(): Promise<void> {
     assert.ok(stats.jobs.settled >= 1, 'stats.jobs reflects activity');
     const nodesData = (
       (await (await fetch(`${h.baseUrl}/v1/nodes`)).json()) as {
-        data: Array<{ jobsServed: number }>;
+        data: Array<{ jobsServed: number; reputation: number }>;
       }
     ).data;
     assert.ok((nodesData[0]?.jobsServed ?? 0) >= 1, 'node jobsServed increments (leaderboard)');
+
+    // Reputation shown by /v1/nodes must match the live on-chain value (cache refresh).
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const onchain = await pub.readContract({
+      address: h.deployment.contracts.nodeRegistry,
+      abi: nodeRegistryAbi,
+      functionName: 'getNode',
+      args: [h.deployment.accounts.node],
+    });
+    assert.equal(
+      nodesData[0]?.reputation,
+      Number(onchain.reputationScore) / 10000,
+      '/v1/nodes reputation reflects on-chain (refreshed after settlement)',
+    );
 
     const ready = (await (await fetch(`${h.baseUrl}/ready`)).json()) as { ready: boolean };
     assert.equal(ready.ready, true, '/ready responds');

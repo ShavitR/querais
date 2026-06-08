@@ -133,6 +133,8 @@ export class Dispatcher {
     });
     metrics.jobsSettled += 1;
     metrics.tokensServed += verdict.authoritativeTokens;
+    // Reflect the on-chain reputation bump in the pool cache (for /v1/nodes + matching).
+    await this.pool.refreshReputation(provider).catch(() => {});
 
     return {
       jobId: spec.jobId,
