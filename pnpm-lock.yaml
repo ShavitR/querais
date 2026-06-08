@@ -47,6 +47,9 @@ importers:
       '@nomicfoundation/hardhat-toolbox-viem':
         specifier: ^5.0.7
         version: 5.0.7(3143f4c50383e319d8503b9cbacec840)
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       hardhat:
         specifier: ^3.8.0
         version: 3.8.0

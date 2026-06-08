@@ -16,6 +16,7 @@
     "clean": "pnpm -r exec rimraf dist tsconfig.tsbuildinfo",
     "chain": "pnpm --filter @querais/contracts chain",
     "deploy:local": "pnpm --filter @querais/contracts deploy:local",
+    "deploy:sepolia": "pnpm --filter @querais/contracts deploy:sepolia",
     "dev:gateway": "pnpm --filter @querais/gateway dev",
     "dev:daemon": "pnpm --filter @querais/node-daemon dev",
     "test:contracts": "pnpm --filter @querais/contracts test",

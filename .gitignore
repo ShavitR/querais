@@ -12,7 +12,8 @@ packages/contracts/cache/
 packages/contracts/typechain-types/
 packages/contracts/coverage/
 packages/contracts/coverage.json
-packages/contracts/deployments/
+# Ephemeral local deployment only; real-network manifests (e.g. Sepolia) are committed.
+packages/contracts/deployments/addresses.localhost.json
 packages/contracts/src/abis.ts
 
 # env & secrets

@@ -45,9 +45,10 @@ export async function startDaemon(
     tokensPerSecond: 0,
   }));
 
-  const publicClient = makePublicClient(config.rpcUrl);
-  const walletClient = makeWalletClient(config.rpcUrl, config.privateKey);
-  const deployment = loadAddresses('localhost');
+  const deployment = loadAddresses(config.network);
+  const rpcUrl = deployment.rpcUrl || config.rpcUrl;
+  const publicClient = makePublicClient(rpcUrl, deployment.chainId);
+  const walletClient = makeWalletClient(rpcUrl, config.privateKey, deployment.chainId);
 
   const { alreadyRegistered } = await ensureRegistered(
     publicClient,

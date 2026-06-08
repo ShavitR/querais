@@ -1,85 +1,95 @@
 /**
- * Deploys the QueraIS contract suite to the `localhost` Hardhat node and wires roles.
+ * Deploys the QueraIS contract suite to the selected Hardhat network and wires roles.
  *
- *   pnpm chain          # terminal 1: starts the node
- *   pnpm deploy:local   # terminal 2: runs this script
+ *   pnpm chain          # terminal 1 (local only): starts the node
+ *   pnpm deploy:local   # -> --network localhost
+ *   pnpm deploy:sepolia # -> --network arbitrumSepolia (needs env, see .env.example)
  *
- * Deploy order (matches the design doc): QUAISToken -> NodeRegistry -> JobEscrow,
- * then grant the gateway the ORACLE + MATCHING_ENGINE + SLASHER roles, then fund the
- * local node/requester dev accounts so the e2e slice can run immediately.
+ * Deploy order: QUAISToken -> NodeRegistry -> JobEscrow, then grant the gateway the
+ * ORACLE + MATCHING_ENGINE + SLASHER roles. On `localhost` the role/treasury/test
+ * addresses come from the node's funded dev accounts and the node/requester are funded
+ * with QAIS; on a real network they come from env (GATEWAY_ADDRESS, TREASURY_ADDRESS,
+ * NODE_ADDRESS, REQUESTER_ADDRESS) and only set test accounts are funded.
  *
- * Writes deployments/addresses.localhost.json — consumed at runtime by the gateway,
- * node-daemon, and e2e harness via `@querais/contracts` loadAddresses().
+ * Writes deployments/addresses.<network>.json — consumed at runtime via loadAddresses().
  */
 import { network } from 'hardhat';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parseEther, formatEther } from 'viem';
+import { parseEther, type Address } from 'viem';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const deploymentsDir = join(here, '..', 'deployments');
 
+const RPC_BY_NETWORK: Record<string, string | undefined> = {
+  localhost: 'http://127.0.0.1:8545',
+  arbitrumSepolia: process.env.ARBITRUM_SEPOLIA_RPC_URL,
+};
+
+function envAddress(key: string): Address | undefined {
+  const v = process.env[key];
+  return v && /^0x[0-9a-fA-F]{40}$/.test(v) ? (v as Address) : undefined;
+}
+
 async function main(): Promise<void> {
-  const { viem } = await network.connect({ network: 'localhost', chainType: 'l1' });
+  const connection = await network.connect();
+  const { viem, networkName } = connection;
+  const isLocal = networkName === 'localhost' || networkName === 'hardhat';
+
   const publicClient = await viem.getPublicClient();
   const wallets = await viem.getWalletClients();
-  const [deployer, gateway, node, requester, treasuryWallet] = wallets;
-  if (!deployer || !gateway || !node || !requester || !treasuryWallet) {
-    throw new Error('Expected at least 5 funded accounts on the localhost node');
-  }
-
+  const deployer = wallets[0];
+  if (!deployer) throw new Error('No deployer account configured for this network');
   const admin = deployer.account.address;
-  const treasury = treasuryWallet.account.address;
 
-  console.log('Deploying QueraIS contracts to localhost…');
+  // Resolve role/treasury/test addresses: env first, then local dev accounts, then admin.
+  const gatewayAddr = envAddress('GATEWAY_ADDRESS') ?? wallets[1]?.account.address ?? admin;
+  const treasury = envAddress('TREASURY_ADDRESS') ?? wallets[4]?.account.address ?? admin;
+  const nodeAddr = envAddress('NODE_ADDRESS') ?? wallets[2]?.account.address;
+  const requesterAddr = envAddress('REQUESTER_ADDRESS') ?? wallets[3]?.account.address;
+
+  console.log(`Deploying QueraIS contracts to ${networkName}…`);
   console.log('  deployer/admin:', admin);
-  console.log('  gateway:       ', gateway.account.address);
-  console.log('  node:          ', node.account.address);
-  console.log('  requester:     ', requester.account.address);
+  console.log('  gateway:       ', gatewayAddr);
   console.log('  treasury:      ', treasury);
 
-  // 1. Token — entire supply minted to the deployer.
   const token = await viem.deployContract('QUAISToken', [admin]);
   console.log('QUAISToken      ->', token.address);
-
-  // 2. NodeRegistry.
   const registry = await viem.deployContract('NodeRegistry', [token.address, admin]);
   console.log('NodeRegistry    ->', registry.address);
-
-  // 3. JobEscrow.
   const escrow = await viem.deployContract('JobEscrow', [token.address, treasury, admin]);
   console.log('JobEscrow       ->', escrow.address);
 
-  // 4. Grant roles to the gateway (oracle + matching engine + slasher in the MVP).
+  // Grant the gateway its operational roles.
   const ORACLE_ROLE = await registry.read.ORACLE_ROLE();
   const SLASHER_ROLE = await registry.read.SLASHER_ROLE();
   const MATCHING_ENGINE_ROLE = await escrow.read.MATCHING_ENGINE_ROLE();
   const ESCROW_ORACLE_ROLE = await escrow.read.ORACLE_ROLE();
-
-  const gw = gateway.account.address;
-  await registry.write.grantRole([ORACLE_ROLE, gw]);
-  await registry.write.grantRole([SLASHER_ROLE, gw]);
-  await escrow.write.grantRole([ESCROW_ORACLE_ROLE, gw]);
-  await escrow.write.grantRole([MATCHING_ENGINE_ROLE, gw]);
+  await registry.write.grantRole([ORACLE_ROLE, gatewayAddr]);
+  await registry.write.grantRole([SLASHER_ROLE, gatewayAddr]);
+  await escrow.write.grantRole([ESCROW_ORACLE_ROLE, gatewayAddr]);
+  await escrow.write.grantRole([MATCHING_ENGINE_ROLE, gatewayAddr]);
   console.log(
     'Granted ORACLE + SLASHER (registry) and ORACLE + MATCHING_ENGINE (escrow) to gateway',
   );
 
-  // 5. Fund local dev accounts so the slice runs out of the box.
-  const nodeFunding = parseEther('5000'); // enough for a Gold-tier stake
-  const requesterFunding = parseEther('10000'); // spending money for jobs
-  await token.write.transfer([node.account.address, nodeFunding]);
-  await token.write.transfer([requester.account.address, requesterFunding]);
-  console.log(
-    `Funded node with ${formatEther(nodeFunding)} QAIS, requester with ${formatEther(requesterFunding)} QAIS`,
-  );
+  // Fund test node/requester with QAIS where we know their addresses.
+  if (nodeAddr && nodeAddr !== admin) {
+    await token.write.transfer([nodeAddr, parseEther('5000')]);
+    console.log(`Funded node ${nodeAddr} with 5000 QAIS`);
+  }
+  if (requesterAddr && requesterAddr !== admin) {
+    await token.write.transfer([requesterAddr, parseEther('10000')]);
+    console.log(`Funded requester ${requesterAddr} with 10000 QAIS`);
+  }
 
   const chainId = await publicClient.getChainId();
+  const rpcUrl = RPC_BY_NETWORK[networkName] ?? process.env.DEPLOY_RPC_URL ?? '';
 
   const out = {
     chainId,
-    rpcUrl: 'http://127.0.0.1:8545',
+    rpcUrl,
     contracts: {
       token: token.address,
       nodeRegistry: registry.address,
@@ -88,16 +98,27 @@ async function main(): Promise<void> {
     treasury,
     accounts: {
       deployer: admin,
-      gateway: gw,
-      node: node.account.address,
-      requester: requester.account.address,
+      gateway: gatewayAddr,
+      node: nodeAddr ?? admin,
+      requester: requesterAddr ?? admin,
     },
   };
 
   mkdirSync(deploymentsDir, { recursive: true });
-  const file = join(deploymentsDir, 'addresses.localhost.json');
+  const file = join(deploymentsDir, `addresses.${networkName}.json`);
   writeFileSync(file, JSON.stringify(out, null, 2) + '\n', 'utf8');
   console.log('Wrote', file);
+
+  if (!isLocal) {
+    console.log('\nVerify on the block explorer (Etherscan v2 / Arbiscan):');
+    console.log(`  hardhat verify --network ${networkName} ${token.address} ${admin}`);
+    console.log(
+      `  hardhat verify --network ${networkName} ${registry.address} ${token.address} ${admin}`,
+    );
+    console.log(
+      `  hardhat verify --network ${networkName} ${escrow.address} ${token.address} ${treasury} ${admin}`,
+    );
+  }
 }
 
 main().catch((err: unknown) => {

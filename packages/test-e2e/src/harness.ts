@@ -52,7 +52,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
 
   // 1. Requester approves the escrow to pull job payments.
   const publicClient = makePublicClient(deployment.rpcUrl);
-  const requesterWallet = makeWalletClient(deployment.rpcUrl, KEYS.requester);
+  const requesterWallet = makeWalletClient(deployment.rpcUrl, KEYS.requester, deployment.chainId);
   const approveHash = await requesterWallet.writeContract({
     address: deployment.contracts.token,
     abi: quaisTokenAbi,
@@ -64,6 +64,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
   // 2. Gateway.
   const gatewayConfig: GatewayConfig = {
     port: 0,
+    network: 'localhost',
     rpcUrl: deployment.rpcUrl,
     privateKey: KEYS.gateway,
     apiKeys: new Map([[API_KEY, deployment.accounts.requester]]),
@@ -84,6 +85,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
 
   // 3. Node daemon.
   const daemonConfig: DaemonConfig = {
+    network: 'localhost',
     rpcUrl: deployment.rpcUrl,
     gatewayWsUrl: `ws://127.0.0.1:${address.port}/node`,
     ollamaUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',

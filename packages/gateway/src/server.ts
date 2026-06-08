@@ -32,9 +32,10 @@ export async function buildGateway(
   opts: BuildOptions,
 ): Promise<{ app: FastifyInstance; deps: GatewayDeps }> {
   const logger = opts.logger ?? pino({ name: 'querais-gateway' });
-  const publicClient = makePublicClient(opts.config.rpcUrl);
-  const walletClient = makeWalletClient(opts.config.rpcUrl, opts.config.privateKey);
-  const deployment = loadAddresses('localhost');
+  const deployment = loadAddresses(opts.config.network);
+  const rpcUrl = deployment.rpcUrl || opts.config.rpcUrl;
+  const publicClient = makePublicClient(rpcUrl, deployment.chainId);
+  const walletClient = makeWalletClient(rpcUrl, opts.config.privateKey, deployment.chainId);
 
   const chain = new ChainClient(publicClient, walletClient, deployment);
   const pool = new NodePool(chain, logger);

@@ -1,21 +1,34 @@
-import { createPublicClient, createWalletClient, http, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { hardhat } from 'viem/chains';
+import { hardhat, arbitrumSepolia } from 'viem/chains';
 
 /**
  * Thin viem helpers + a single re-export point for the contract ABIs and the
  * deployed-address loader, so gateway / node-daemon / e2e import everything chain
- * related from `@querais/shared`. The local dev chain is Hardhat (chainId 31337).
+ * related from `@querais/shared`.
+ *
+ * The viem chain is resolved from the deployment's chainId so the same code runs
+ * against the local Hardhat node (31337) and Arbitrum Sepolia (421614). Pass the
+ * chainId from `loadAddresses(network).chainId`; it defaults to Hardhat for back-compat.
  */
 
-export function makePublicClient(rpcUrl: string) {
-  return createPublicClient({ chain: hardhat, transport: http(rpcUrl) });
+const CHAINS: Record<number, Chain> = {
+  [hardhat.id]: hardhat, // 31337
+  [arbitrumSepolia.id]: arbitrumSepolia, // 421614
+};
+
+export function resolveChain(chainId?: number): Chain {
+  return (chainId !== undefined && CHAINS[chainId]) || hardhat;
 }
 
-export function makeWalletClient(rpcUrl: string, privateKey: Hex) {
+export function makePublicClient(rpcUrl: string, chainId?: number) {
+  return createPublicClient({ chain: resolveChain(chainId), transport: http(rpcUrl) });
+}
+
+export function makeWalletClient(rpcUrl: string, privateKey: Hex, chainId?: number) {
   return createWalletClient({
     account: privateKeyToAccount(privateKey),
-    chain: hardhat,
+    chain: resolveChain(chainId),
     transport: http(rpcUrl),
   });
 }

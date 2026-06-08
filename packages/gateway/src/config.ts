@@ -2,6 +2,8 @@ import { parseEther, type Address, type Hex } from 'viem';
 
 export interface GatewayConfig {
   port: number;
+  /** Deployment to load (addresses.<network>.json): 'localhost' | 'arbitrumSepolia' | … */
+  network: string;
   rpcUrl: string;
   /** Gateway wallet key — holds ORACLE + MATCHING_ENGINE roles. */
   privateKey: Hex;
@@ -40,6 +42,7 @@ function parseApiKeys(raw: string): Map<string, Address> {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   return {
     port: Number(env.GATEWAY_PORT ?? '8787'),
+    network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),
     privateKey: required(env, 'GATEWAY_PRIVATE_KEY') as Hex,
     apiKeys: parseApiKeys(env.GATEWAY_API_KEYS ?? ''),

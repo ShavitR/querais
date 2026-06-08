@@ -1,5 +1,12 @@
+import { config as loadEnv } from 'dotenv';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import hardhatToolboxViemPlugin from '@nomicfoundation/hardhat-toolbox-viem';
-import { defineConfig } from 'hardhat/config';
+import { configVariable, defineConfig } from 'hardhat/config';
+
+// Load the repo-root .env so `configVariable(...)` (which reads process.env) sees
+// ARBITRUM_SEPOLIA_RPC_URL / DEPLOYER_PRIVATE_KEY / ETHERSCAN_API_KEY for testnet.
+loadEnv({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env') });
 
 /**
  * QueraIS contracts — Hardhat 3 + viem + node:test.
@@ -39,6 +46,19 @@ export default defineConfig({
       type: 'http',
       chainType: 'l1',
       url: 'http://127.0.0.1:8545',
+    },
+    arbitrumSepolia: {
+      type: 'http',
+      chainType: 'l1',
+      chainId: 421614,
+      url: configVariable('ARBITRUM_SEPOLIA_RPC_URL'),
+      accounts: [configVariable('DEPLOYER_PRIVATE_KEY')],
+    },
+  },
+  // Arbiscan now uses the unified Etherscan v2 API — one key works across chains.
+  verify: {
+    etherscan: {
+      apiKey: configVariable('ETHERSCAN_API_KEY'),
     },
   },
 });

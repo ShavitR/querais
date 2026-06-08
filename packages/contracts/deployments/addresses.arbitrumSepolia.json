@@ -1,0 +1,16 @@
+{
+  "chainId": 421614,
+  "rpcUrl": "https://sepolia-rollup.arbitrum.io/rpc",
+  "contracts": {
+    "token": "0x1e89e050e68e81c32980205ec0db444ede3f4e2c",
+    "nodeRegistry": "0x6d13d0f94ef912c6817a74c632a378997eacf776",
+    "jobEscrow": "0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0"
+  },
+  "treasury": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
+  "accounts": {
+    "deployer": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
+    "gateway": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
+    "node": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
+    "requester": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6"
+  }
+}

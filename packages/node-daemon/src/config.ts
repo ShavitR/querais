@@ -2,6 +2,8 @@ import { keccak256, toBytes, parseEther, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 export interface DaemonConfig {
+  /** Deployment to load (addresses.<network>.json). */
+  network: string;
   rpcUrl: string;
   gatewayWsUrl: string;
   ollamaUrl: string;
@@ -36,6 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
     .filter(Boolean);
 
   return {
+    network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),
     gatewayWsUrl: required(env, 'GATEWAY_WS_URL', 'ws://127.0.0.1:8787/node'),
     ollamaUrl: required(env, 'OLLAMA_URL', 'http://127.0.0.1:11434'),
