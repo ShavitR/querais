@@ -25,6 +25,7 @@ export const KEYS = {
 } as const satisfies Record<string, Hex>;
 
 export const API_KEY = 'sk-test';
+export const ADMIN_TOKEN = 'admin-test';
 
 export interface Harness {
   baseUrl: string;
@@ -75,6 +76,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     defaultMinReputation: 0,
     jobDeadlineSeconds: 120,
     rateLimitMax: opts.rateLimitMax ?? 120,
+    adminToken: ADMIN_TOKEN,
   };
   // No settlement override → buildGateway uses the real ChainSettlement.
   const { app } = await buildGateway({

@@ -8,7 +8,7 @@
  * Ollama; the live-inference path is covered by the node-daemon smoke + `pnpm demo`.
  */
 import { startChainAndDeploy } from './chain.js';
-import { runSuccessCase, runFailureCase, runOpsCase } from './e2e.js';
+import { runSuccessCase, runFailureCase, runOpsCase, runOnboardingCase } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
 async function main(): Promise<void> {
@@ -31,6 +31,10 @@ async function main(): Promise<void> {
     console.log('▶  ops case: metrics + readiness + rate limiting…');
     await runOpsCase();
     console.log('✅ ops case passed');
+
+    console.log('▶  onboarding case: admin issues a key → key serves a job…');
+    await runOnboardingCase();
+    console.log('✅ onboarding case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

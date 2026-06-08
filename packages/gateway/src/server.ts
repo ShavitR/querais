@@ -17,6 +17,8 @@ import { registerNodes } from './routes/nodes.js';
 import { registerJobs } from './routes/jobs.js';
 import { registerStats } from './routes/stats.js';
 import { registerDashboard } from './routes/dashboard.js';
+import { registerKeys } from './routes/keys.js';
+import { ApiKeyStore } from './key-store.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -43,7 +45,8 @@ export async function buildGateway(
   const pool = new NodePool(chain, logger);
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, logger);
-  const deps: GatewayDeps = { config: opts.config, chain, pool, dispatcher, logger };
+  const keyStore = new ApiKeyStore(opts.config.apiKeyStorePath, opts.config.apiKeys);
+  const deps: GatewayDeps = { config: opts.config, chain, pool, dispatcher, keyStore, logger };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
@@ -77,6 +80,7 @@ export async function buildGateway(
   registerJobs(app, deps);
   registerStats(app, deps);
   registerDashboard(app, deps);
+  registerKeys(app, deps);
 
   return { app, deps };
 }

@@ -15,7 +15,7 @@ import type {
   InferenceRequest,
   InferenceResult,
 } from '@querais/node-daemon';
-import { startHarness, API_KEY } from './harness.js';
+import { startHarness, API_KEY, ADMIN_TOKEN } from './harness.js';
 
 function balanceOf(pub: QueraisPublicClient, dep: Deployment, addr: Address): Promise<bigint> {
   return pub.readContract({
@@ -134,6 +134,49 @@ export async function runOpsCase(): Promise<void> {
       }
     }
     assert.ok(got429, 'rate limit should return 429 past the threshold');
+  } finally {
+    await h.stop();
+  }
+}
+
+/**
+ * Onboarding: an admin issues a fresh API key for a wallet, that key works for a job,
+ * and issuance is gated by the admin token.
+ */
+export async function runOnboardingCase(): Promise<void> {
+  const h = await startHarness();
+  try {
+    // Admin issues a key for the requester wallet (funded + escrow-approved by the harness).
+    const issue = await fetch(`${h.baseUrl}/v1/keys`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
+      body: JSON.stringify({ wallet: h.requester }),
+    });
+    assert.equal(issue.status, 200, 'admin can issue a key');
+    const issued = (await issue.json()) as { api_key: string };
+    assert.match(issued.api_key, /^sk-querais-/, 'issued key has the expected prefix');
+
+    // The freshly issued key works for a real job.
+    const res = await fetch(`${h.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${issued.api_key}` },
+      body: JSON.stringify({
+        model: 'mock-model',
+        messages: [{ role: 'user', content: 'issued key works' }],
+        max_tokens: 30,
+      }),
+    });
+    assert.equal(res.status, 200, 'issued key authenticates a job');
+    const body = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+    assert.match(body.choices[0]!.message.content, /You said: issued key works/);
+
+    // Issuance is gated: wrong admin token is rejected.
+    const bad = await fetch(`${h.baseUrl}/v1/keys`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-token': 'wrong' },
+      body: JSON.stringify({ wallet: h.requester }),
+    });
+    assert.equal(bad.status, 401, 'bad admin token rejected');
   } finally {
     await h.stop();
   }

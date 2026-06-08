@@ -15,6 +15,10 @@ export interface GatewayConfig {
   jobDeadlineSeconds: number;
   /** Max requests per API key per minute (rate limiting). */
   rateLimitMax: number;
+  /** Optional file path to persist issued API keys (undefined = in-memory only). */
+  apiKeyStorePath?: string;
+  /** Token required to call the admin key-issuance endpoint (undefined = disabled). */
+  adminToken?: string;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -55,5 +59,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     defaultMinReputation: Number(env.GATEWAY_DEFAULT_MIN_REPUTATION ?? '0'),
     jobDeadlineSeconds: Number(env.GATEWAY_JOB_DEADLINE_SECONDS ?? '120'),
     rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
+    ...(env.GATEWAY_API_KEY_STORE ? { apiKeyStorePath: env.GATEWAY_API_KEY_STORE } : {}),
+    ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
   };
 }

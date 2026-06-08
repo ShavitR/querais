@@ -12,7 +12,7 @@ export function registerChatCompletions(app: FastifyInstance, deps: GatewayDeps)
   app.post('/v1/chat/completions', async (request, reply) => {
     let requester;
     try {
-      requester = resolveRequester(deps.config.apiKeys, request.headers.authorization);
+      requester = resolveRequester(deps.keyStore, request.headers.authorization);
     } catch (err) {
       return sendError(reply, err);
     }

@@ -39,6 +39,12 @@ export class ChainClient {
     });
   }
 
+  /** Latest block timestamp (seconds) — basis for job deadlines (robust to clock skew). */
+  async latestBlockTimestamp(): Promise<bigint> {
+    const block = await this.publicClient.getBlock();
+    return block.timestamp;
+  }
+
   tokenBalance(account: Address): Promise<bigint> {
     return this.publicClient.readContract({
       address: this.deployment.contracts.token,

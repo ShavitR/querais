@@ -56,7 +56,11 @@ export class Dispatcher {
     requester: Address,
     onToken?: (delta: string) => void,
   ): Promise<DispatchResult> {
+    // Base the deadline on CHAIN time, not wall-clock — block.timestamp can drift
+    // (e.g. Hardhat bumps it +1s per block under bursty load), and on-chain createJob
+    // checks `deadline > block.timestamp`.
     const now = Math.floor(Date.now() / 1000);
+    const chainNow = Number(await this.chain.latestBlockTimestamp());
     const maxTokens = req.max_tokens ?? this.config.defaultMaxTokens;
     const maxPricePerTokenWei =
       req.max_price_per_1k_tokens != null
@@ -78,7 +82,7 @@ export class Dispatcher {
       maxPricePerTokenWei: maxPricePerTokenWei.toString(),
       minReputation,
       createdAt: now,
-      deadline: now + this.config.jobDeadlineSeconds,
+      deadline: chainNow + this.config.jobDeadlineSeconds,
     });
 
     // ── Match ──

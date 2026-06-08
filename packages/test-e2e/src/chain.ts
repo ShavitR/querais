@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +65,34 @@ function killTree(pid: number): Promise<void> {
   });
 }
 
+/** Best-effort: kill anything already listening on 8545 so we never reuse a stale,
+ * clock-drifted node (Hardhat block timestamps drift ahead under bursty load). */
+function freePort8545(): void {
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
+      const pids = new Set<string>();
+      for (const line of out.split(/\r?\n/)) {
+        if (line.includes(':8545') && /LISTENING/i.test(line)) {
+          const pid = line.trim().split(/\s+/).pop();
+          if (pid && pid !== '0') pids.add(pid);
+        }
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore' });
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      execSync('fuser -k 8545/tcp', { stdio: 'ignore' });
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
 export interface ChainHandle {
   stop: () => Promise<void>;
 }
@@ -72,6 +100,8 @@ export interface ChainHandle {
 /** Start a fresh local Hardhat node and deploy the contracts to it. */
 export async function startChainAndDeploy(): Promise<ChainHandle> {
   const root = repoRoot();
+  freePort8545();
+  await delay(500);
   const node = spawn('pnpm', ['--filter', '@querais/contracts', 'chain'], {
     cwd: root,
     shell: true,
