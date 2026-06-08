@@ -77,6 +77,8 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     jobDeadlineSeconds: 120,
     rateLimitMax: opts.rateLimitMax ?? 120,
     adminToken: ADMIN_TOKEN,
+    faucetAmountWei: parseEther('100'),
+    faucetPrivateKey: KEYS.deployer, // holds the bulk of QAIS on localhost
   };
   // No settlement override → buildGateway uses the real ChainSettlement.
   const { app } = await buildGateway({

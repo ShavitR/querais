@@ -4,7 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import type { WebSocket } from 'ws';
 import pino, { type Logger } from 'pino';
 import { renderMetrics } from './metrics.js';
-import { loadAddresses, makePublicClient, makeWalletClient } from '@querais/shared';
+import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
 import type { GatewayConfig } from './config.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';
@@ -18,7 +18,9 @@ import { registerJobs } from './routes/jobs.js';
 import { registerStats } from './routes/stats.js';
 import { registerDashboard } from './routes/dashboard.js';
 import { registerKeys } from './routes/keys.js';
+import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
+import { Faucet, type QaisDistributor } from './faucet.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -46,7 +48,35 @@ export async function buildGateway(
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, logger);
   const keyStore = new ApiKeyStore(opts.config.apiKeyStorePath, opts.config.apiKeys);
-  const deps: GatewayDeps = { config: opts.config, chain, pool, dispatcher, keyStore, logger };
+
+  // Optional faucet (only if a distributor key holding QAIS is configured).
+  let faucet: Faucet | undefined;
+  if (opts.config.faucetPrivateKey) {
+    const distWallet = makeWalletClient(rpcUrl, opts.config.faucetPrivateKey, deployment.chainId);
+    const distributor: QaisDistributor = {
+      transfer: async (to, amount) => {
+        const hash = await distWallet.writeContract({
+          address: deployment.contracts.token,
+          abi: quaisTokenAbi,
+          functionName: 'transfer',
+          args: [to, amount],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        return hash;
+      },
+    };
+    faucet = new Faucet(distributor, opts.config.faucetAmountWei);
+  }
+
+  const deps: GatewayDeps = {
+    config: opts.config,
+    chain,
+    pool,
+    dispatcher,
+    keyStore,
+    faucet,
+    logger,
+  };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
@@ -81,6 +111,7 @@ export async function buildGateway(
   registerStats(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);
+  if (faucet) registerFaucet(app, deps);
 
   return { app, deps };
 }

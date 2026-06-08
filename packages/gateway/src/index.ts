@@ -21,3 +21,4 @@ export {
 export { layerBVerify, isDegenerateLoop, type VerifyInput, type VerifyResult } from './verify.js';
 export { resolveRequester } from './auth.js';
 export { ApiKeyStore } from './key-store.js';
+export { Faucet, FaucetError, type QaisDistributor } from './faucet.js';

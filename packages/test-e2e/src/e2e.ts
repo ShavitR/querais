@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { Address, Hex } from 'viem';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
   jobEscrowAbi,
   makePublicClient,
@@ -177,6 +178,34 @@ export async function runOnboardingCase(): Promise<void> {
       body: JSON.stringify({ wallet: h.requester }),
     });
     assert.equal(bad.status, 401, 'bad admin token rejected');
+  } finally {
+    await h.stop();
+  }
+}
+
+/** Faucet: a fresh address claims testnet QAIS once; a second claim is refused. */
+export async function runFaucetCase(): Promise<void> {
+  const h = await startHarness();
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const fresh = privateKeyToAccount(generatePrivateKey()).address;
+
+    const before = await balanceOf(pub, h.deployment, fresh);
+    const res = await fetch(`${h.baseUrl}/v1/faucet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: fresh }),
+    });
+    assert.equal(res.status, 200, 'faucet dispenses QAIS');
+    const after = await balanceOf(pub, h.deployment, fresh);
+    assert.ok(after > before, 'fresh address received QAIS from the faucet');
+
+    const again = await fetch(`${h.baseUrl}/v1/faucet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address: fresh }),
+    });
+    assert.equal(again.status, 429, 'second claim from the same address is refused');
   } finally {
     await h.stop();
   }

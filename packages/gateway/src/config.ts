@@ -19,6 +19,10 @@ export interface GatewayConfig {
   apiKeyStorePath?: string;
   /** Token required to call the admin key-issuance endpoint (undefined = disabled). */
   adminToken?: string;
+  /** QAIS dispensed per faucet claim (wei). */
+  faucetAmountWei: bigint;
+  /** Distributor key for the faucet (must hold QAIS); unset => faucet disabled. */
+  faucetPrivateKey?: Hex;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -61,5 +65,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
     ...(env.GATEWAY_API_KEY_STORE ? { apiKeyStorePath: env.GATEWAY_API_KEY_STORE } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
+    faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI
+      ? BigInt(env.GATEWAY_FAUCET_AMOUNT_WEI)
+      : parseEther('5000'),
+    ...(env.GATEWAY_FAUCET_PRIVATE_KEY
+      ? { faucetPrivateKey: env.GATEWAY_FAUCET_PRIVATE_KEY as Hex }
+      : {}),
   };
 }

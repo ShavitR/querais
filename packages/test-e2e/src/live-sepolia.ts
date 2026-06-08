@@ -107,6 +107,7 @@ async function main(): Promise<void> {
     defaultMinReputation: 0,
     jobDeadlineSeconds: 180,
     rateLimitMax: 120,
+    faucetAmountWei: parseEther('5000'),
   };
   const { app } = await buildGateway({ config: gatewayConfig });
   await app.listen({ port: 0, host: '127.0.0.1' });
