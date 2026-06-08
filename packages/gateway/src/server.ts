@@ -91,6 +91,10 @@ export async function buildGateway(
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
+  // Release the SQLite connection (and its WAL handles) on graceful shutdown.
+  app.addHook('onClose', () => {
+    db.close();
+  });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
