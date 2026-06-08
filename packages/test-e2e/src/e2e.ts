@@ -138,6 +138,28 @@ export async function runOpsCase(): Promise<void> {
     const ready = (await (await fetch(`${h.baseUrl}/ready`)).json()) as { ready: boolean };
     assert.equal(ready.ready, true, '/ready responds');
 
+    // Persistence (Slice 1): the settled job is mirrored in the DB and surfaced by the routes.
+    const jobId = res.headers.get('x-querais-job-id');
+    assert.ok(jobId, 'settled job exposes its id');
+    const jobView = (await (await fetch(`${h.baseUrl}/v1/jobs/${jobId}`)).json()) as {
+      status: string;
+      model: string | null;
+      providerPay: string | null;
+    };
+    assert.equal(jobView.status, 'verified', '/v1/jobs reports on-chain status');
+    assert.equal(jobView.model, 'mock-model', '/v1/jobs includes the persisted model');
+    assert.ok(
+      jobView.providerPay != null && BigInt(jobView.providerPay) > 0n,
+      '/v1/jobs includes the persisted settlement split',
+    );
+
+    const usage = (await (
+      await fetch(`${h.baseUrl}/v1/usage`, { headers: { authorization: `Bearer ${API_KEY}` } })
+    ).json()) as { jobs: number; tokens: number; spentWei: string };
+    assert.ok(usage.jobs >= 1, '/v1/usage counts settled jobs');
+    assert.ok(usage.tokens >= 1, '/v1/usage sums tokens');
+    assert.ok(BigInt(usage.spentWei) > 0n, '/v1/usage sums spend (derived from settled jobs)');
+
     let got429 = false;
     for (let i = 0; i < 12; i++) {
       const r = await fetch(`${h.baseUrl}/v1/models`, {

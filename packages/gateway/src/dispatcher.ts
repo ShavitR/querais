@@ -2,7 +2,9 @@ import type { Logger } from 'pino';
 import type { Address, Hex } from 'viem';
 import {
   identify,
+  paymentFor,
   per1kQaisToWeiPerToken,
+  splitPayment,
   JobTimeoutError,
   NoEligibleNodesError,
   VerificationError,
@@ -17,6 +19,7 @@ import type { GatewayConfig } from './config.js';
 import type { ChainClient } from './chain-client.js';
 import type { NodePool } from './node-pool.js';
 import type { Settlement } from './settlement.js';
+import type { JobStore } from './db/jobs.js';
 import { layerBVerify } from './verify.js';
 import { metrics } from './metrics.js';
 
@@ -48,8 +51,21 @@ export class Dispatcher {
     private readonly chain: ChainClient,
     private readonly pool: NodePool,
     private readonly settlement: Settlement,
+    private readonly jobs: JobStore,
     private readonly logger: Logger,
   ) {}
+
+  /**
+   * Persist a job-record side effect without ever breaking the request. The DB is a thin
+   * mirror of the on-chain truth, so a storage hiccup must not fail (or unsettle) a paid job.
+   */
+  private persist(fn: () => void): void {
+    try {
+      fn();
+    } catch (err) {
+      this.logger.warn({ err }, 'job persistence failed (non-fatal)');
+    }
+  }
 
   async dispatch(
     req: ChatCompletionRequest,
@@ -106,6 +122,17 @@ export class Dispatcher {
     await this.chain.assignJob(spec.jobId, provider, agreedPrice);
     metrics.jobsCreated += 1;
     this.logger.info({ jobId: spec.jobId, provider, model: spec.model }, 'job created & assigned');
+    this.persist(() =>
+      this.jobs.recordAssigned({
+        jobId: spec.jobId,
+        requester,
+        provider,
+        model: spec.model,
+        maxTokens,
+        agreedPriceWei: agreedPrice,
+        lockedWei: maxPricePerTokenWei * BigInt(maxTokens),
+      }),
+    );
 
     // ── Stream from the node ──
     const streamed = await this.runJob(spec, agreedPrice, provider, onToken);
@@ -119,8 +146,10 @@ export class Dispatcher {
     });
     if (!verdict.ok) {
       metrics.jobsFailed += 1;
-      await this.settlement.fail(spec.jobId, verdict.reason ?? 'verification failed');
-      throw new VerificationError(verdict.reason ?? 'verification failed');
+      const reason = verdict.reason ?? 'verification failed';
+      await this.settlement.fail(spec.jobId, reason);
+      this.persist(() => this.jobs.markFailed(spec.jobId, reason));
+      throw new VerificationError(reason);
     }
 
     // ── Settle (no-op in M4, chain-backed in M5) ──
@@ -133,6 +162,17 @@ export class Dispatcher {
     });
     metrics.jobsSettled += 1;
     metrics.tokensServed += verdict.authoritativeTokens;
+    // Mirror the settlement split (same integer math the contract used) into the job record.
+    const payment = paymentFor(agreedPrice, verdict.authoritativeTokens);
+    const { providerPay, fee } = splitPayment(payment);
+    this.persist(() =>
+      this.jobs.markSettled(spec.jobId, {
+        actualTokens: verdict.authoritativeTokens,
+        paymentWei: payment,
+        providerPayWei: providerPay,
+        feeWei: fee,
+      }),
+    );
     // Reflect the on-chain reputation bump in the pool cache (for /v1/nodes + matching).
     await this.pool.refreshReputation(provider).catch(() => {});
 

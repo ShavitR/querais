@@ -21,6 +21,9 @@ import { registerKeys } from './routes/keys.js';
 import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
+import { GatewayDb } from './db/index.js';
+import { JobStore } from './db/jobs.js';
+import { registerUsage } from './routes/usage.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -46,8 +49,10 @@ export async function buildGateway(
   const chain = new ChainClient(publicClient, walletClient, deployment);
   const pool = new NodePool(chain, logger);
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
-  const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, logger);
-  const keyStore = new ApiKeyStore(opts.config.apiKeyStorePath, opts.config.apiKeys);
+  const db = new GatewayDb(opts.config.dbPath);
+  const jobs = new JobStore(db);
+  const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, jobs, logger);
+  const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
   let faucet: Faucet | undefined;
@@ -70,7 +75,7 @@ export async function buildGateway(
         return hash;
       },
     };
-    faucet = new Faucet(distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
+    faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
   }
 
   const deps: GatewayDeps = {
@@ -78,12 +83,18 @@ export async function buildGateway(
     chain,
     pool,
     dispatcher,
+    db,
+    jobs,
     keyStore,
     faucet,
     logger,
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
+  // Release the SQLite connection (and its WAL handles) on graceful shutdown.
+  app.addHook('onClose', () => {
+    db.close();
+  });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
@@ -113,6 +124,7 @@ export async function buildGateway(
   registerModels(app, deps);
   registerNodes(app, deps);
   registerJobs(app, deps);
+  registerUsage(app, deps);
   registerStats(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);

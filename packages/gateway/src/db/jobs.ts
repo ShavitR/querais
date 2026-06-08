@@ -1,0 +1,167 @@
+import type { Address, Hex } from 'viem';
+import type { GatewayDb } from './index.js';
+
+export type JobStatus = 'assigned' | 'verified' | 'failed';
+
+/** What the dispatcher knows when a job is locked + assigned on-chain. */
+export interface AssignedJob {
+  jobId: Hex;
+  requester: Address;
+  provider: Address;
+  model: string;
+  maxTokens: number;
+  agreedPriceWei: bigint;
+  lockedWei: bigint;
+}
+
+/** Settlement figures, computed off-chain with the same integer math as the contract. */
+export interface SettledJob {
+  actualTokens: number;
+  paymentWei: bigint;
+  providerPayWei: bigint;
+  feeWei: bigint;
+}
+
+/** A persisted job row, decoded back into typed fields. */
+export interface JobRecord {
+  jobId: Hex;
+  requester: Address;
+  provider: Address;
+  model: string;
+  status: JobStatus;
+  maxTokens: number;
+  actualTokens: number | null;
+  agreedPriceWei: string;
+  lockedWei: string;
+  paymentWei: string | null;
+  providerPayWei: string | null;
+  feeWei: string | null;
+  reason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Per-requester usage, aggregated from settled job rows. */
+export interface UsageSummary {
+  jobs: number;
+  tokens: number;
+  spentWei: string;
+}
+
+interface JobRow {
+  job_id: string;
+  requester: string;
+  provider: string;
+  model: string;
+  status: string;
+  max_tokens: number;
+  actual_tokens: number | null;
+  agreed_price_wei: string;
+  locked_wei: string;
+  payment_wei: string | null;
+  provider_pay_wei: string | null;
+  fee_wei: string | null;
+  reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+function decode(r: JobRow): JobRecord {
+  return {
+    jobId: r.job_id as Hex,
+    requester: r.requester as Address,
+    provider: r.provider as Address,
+    model: r.model,
+    status: r.status as JobStatus,
+    maxTokens: r.max_tokens,
+    actualTokens: r.actual_tokens,
+    agreedPriceWei: r.agreed_price_wei,
+    lockedWei: r.locked_wei,
+    paymentWei: r.payment_wei,
+    providerPayWei: r.provider_pay_wei,
+    feeWei: r.fee_wei,
+    reason: r.reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/**
+ * Persists the job lifecycle as a queryable mirror of the on-chain escrow. The chain stays
+ * authoritative — these rows are a cache/index for `/v1/jobs` and `/v1/usage`. Usage is
+ * derived by aggregating settled rows, so there's no second table to keep in sync.
+ */
+export class JobStore {
+  constructor(private readonly db: GatewayDb) {}
+
+  /** Record a job as locked + assigned (INSERT OR REPLACE — a retried jobId overwrites). */
+  recordAssigned(j: AssignedJob): void {
+    const now = Date.now();
+    this.db.conn
+      .prepare(
+        `INSERT OR REPLACE INTO jobs(
+           job_id, requester, provider, model, status, max_tokens,
+           agreed_price_wei, locked_wei, created_at, updated_at)
+         VALUES(?, ?, ?, ?, 'assigned', ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        j.jobId,
+        j.requester.toLowerCase(),
+        j.provider.toLowerCase(),
+        j.model,
+        j.maxTokens,
+        j.agreedPriceWei.toString(),
+        j.lockedWei.toString(),
+        now,
+        now,
+      );
+  }
+
+  markSettled(jobId: Hex, s: SettledJob): void {
+    this.db.conn
+      .prepare(
+        `UPDATE jobs SET status='verified', actual_tokens=?, payment_wei=?,
+           provider_pay_wei=?, fee_wei=?, updated_at=? WHERE job_id=?`,
+      )
+      .run(
+        s.actualTokens,
+        s.paymentWei.toString(),
+        s.providerPayWei.toString(),
+        s.feeWei.toString(),
+        Date.now(),
+        jobId,
+      );
+  }
+
+  markFailed(jobId: Hex, reason: string): void {
+    this.db.conn
+      .prepare(`UPDATE jobs SET status='failed', reason=?, updated_at=? WHERE job_id=?`)
+      .run(reason, Date.now(), jobId);
+  }
+
+  get(jobId: Hex): JobRecord | undefined {
+    const row = this.db.conn.prepare('SELECT * FROM jobs WHERE job_id=?').get(jobId) as
+      | JobRow
+      | undefined;
+    return row ? decode(row) : undefined;
+  }
+
+  /** Aggregate a requester's settled jobs. wei is summed in JS (it overflows SQLite INTEGER). */
+  usageFor(requester: Address): UsageSummary {
+    const rows = this.db.conn
+      .prepare(
+        `SELECT actual_tokens, payment_wei FROM jobs WHERE requester=? AND status='verified'`,
+      )
+      .all(requester.toLowerCase()) as {
+      actual_tokens: number | null;
+      payment_wei: string | null;
+    }[];
+    let tokens = 0;
+    let spent = 0n;
+    for (const r of rows) {
+      tokens += r.actual_tokens ?? 0;
+      spent += BigInt(r.payment_wei ?? '0');
+    }
+    return { jobs: rows.length, tokens, spentWei: spent.toString() };
+  }
+}

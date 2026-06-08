@@ -13,7 +13,11 @@ const STATUS_NAMES = [
   'cancelled',
 ] as const;
 
-/** GET /v1/jobs/:id — read a job's on-chain status (the escrow is the registry). */
+/**
+ * GET /v1/jobs/:id — a job's on-chain status (the escrow is the registry), enriched with the
+ * persisted record (model, settlement split, timestamps). The chain stays authoritative for
+ * status/existence; the DB only adds off-chain metadata it mirrors.
+ */
 export function registerJobs(app: FastifyInstance, deps: GatewayDeps): void {
   app.get('/v1/jobs/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -24,6 +28,7 @@ export function registerJobs(app: FastifyInstance, deps: GatewayDeps): void {
     if (job.status === 0) {
       return reply.code(404).send(openAiError('job not found', 'not_found'));
     }
+    const record = deps.jobs.get(id as Hex);
     return {
       jobId: id,
       status: STATUS_NAMES[job.status] ?? 'unknown',
@@ -35,6 +40,13 @@ export function registerJobs(app: FastifyInstance, deps: GatewayDeps): void {
       actualTokens: Number(job.actualTokens),
       deadline: Number(job.deadline),
       resultHash: job.resultHash,
+      // Off-chain metadata (null if the row predates persistence or the DB was reset).
+      model: record?.model ?? null,
+      providerPay: record?.providerPayWei ?? null,
+      protocolFee: record?.feeWei ?? null,
+      failureReason: record?.reason ?? null,
+      createdAt: record?.createdAt ?? null,
+      updatedAt: record?.updatedAt ?? null,
     };
   });
 }
