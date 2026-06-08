@@ -30,6 +30,14 @@ export async function startDaemon(
     );
   }
 
+  // Pull any explicitly-configured models that aren't present yet.
+  if (config.servedModels.length && infer.ensureModel) {
+    for (const m of config.servedModels) {
+      logger.info({ model: m }, 'ensuring model is available (pulling if needed)…');
+      await infer.ensureModel(m);
+    }
+  }
+
   const available = await infer.listModels();
   const served = config.servedModels.length
     ? config.servedModels.filter((m) => available.includes(m))

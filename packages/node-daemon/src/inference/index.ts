@@ -8,8 +8,13 @@ export { MockBackend } from './mock.js';
  * so requesters normally ask for those directly).
  */
 const MODEL_ALIASES: Record<string, string> = {
-  'meta-llama/Llama-3-8B-Instruct': 'gemma3:4b',
-  'mistralai/Mistral-7B-Instruct': 'gemma3:4b',
+  // OpenAI/HF-style names → local Ollama tags (operators can serve these).
+  'meta-llama/Llama-3-8B-Instruct': 'llama3:8b',
+  'mistralai/Mistral-7B-Instruct': 'mistral:7b',
+  'llama3-8b': 'llama3:8b',
+  'mistral-7b': 'mistral:7b',
+  'qwen3-1.7b': 'qwen3:1.7b',
+  'gemma3-4b': 'gemma3:4b',
 };
 
 export function resolveModel(requested: string): string {

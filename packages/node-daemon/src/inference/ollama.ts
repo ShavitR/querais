@@ -39,6 +39,38 @@ export class OllamaBackend implements InferenceBackend {
     return (body.models ?? []).map((m) => m.name ?? '').filter(Boolean);
   }
 
+  /** Pull the model if it isn't already present (streams + drains pull progress). */
+  async ensureModel(model: string): Promise<void> {
+    const present = await this.listModels();
+    if (present.includes(model)) return;
+
+    const res = await fetch(`${this.baseUrl}/api/pull`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, stream: true }),
+    });
+    if (!res.ok || !res.body) throw new Error(`Ollama /api/pull failed: ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl = buffer.indexOf('\n');
+      while (nl !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line) {
+          const obj = JSON.parse(line) as { error?: string };
+          if (obj.error) throw new Error(`Ollama pull failed for ${model}: ${obj.error}`);
+        }
+        nl = buffer.indexOf('\n');
+      }
+    }
+  }
+
   async generate(
     req: InferenceRequest,
     onChunk: (chunk: InferenceChunk) => void,

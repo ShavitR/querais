@@ -39,6 +39,8 @@ export interface InferenceBackend {
   isAvailable(): Promise<boolean>;
   /** Backend-native model ids currently ready to serve. */
   listModels(): Promise<string[]>;
+  /** Ensure a model is downloaded/ready before serving (e.g. `ollama pull`). Optional. */
+  ensureModel?(model: string): Promise<void>;
   /**
    * Stream a generation. `onChunk` is called for each token delta; the promise
    * resolves with the final result (full text + authoritative token counts).
