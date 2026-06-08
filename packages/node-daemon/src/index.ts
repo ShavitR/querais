@@ -8,6 +8,7 @@
 export const NODE_DAEMON_VERSION = '0.2.0';
 
 export * from './inference/index.js';
+export { computeAutoPrice, type AutoPriceInputs } from './pricing.js';
 export { buildCompletionReport } from './report.js';
 export { loadConfig, deriveNodeId, type DaemonConfig } from './config.js';
 export { ensureRegistered } from './registry.js';

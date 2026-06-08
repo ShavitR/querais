@@ -10,6 +10,7 @@ import { OllamaBackend } from './inference/ollama.js';
 import type { InferenceBackend } from './inference/backend.js';
 import { ensureRegistered } from './registry.js';
 import { GatewayClient } from './gateway-client.js';
+import { computeAutoPrice } from './pricing.js';
 
 /**
  * Wire the daemon together: verify the inference backend, decide which models to
@@ -39,9 +40,17 @@ export async function startDaemon(
     );
   }
 
+  // Auto-price: at startup we have no live load and start at the onboarding
+  // reputation (0.70); the price is the market estimate adjusted + electricity-floored.
+  const priceWei = computeAutoPrice({
+    marketMedianWei: config.basePricePerTokenWei,
+    loadFraction: 0,
+    reputationBps: 7000,
+    electricityCostPerTokenWei: config.electricityCostPerTokenWei,
+  });
   const models: NodeModelOffer[] = served.map((model) => ({
     model,
-    pricePerTokenWei: config.basePricePerTokenWei.toString(),
+    pricePerTokenWei: priceWei.toString(),
     tokensPerSecond: 0,
   }));
 

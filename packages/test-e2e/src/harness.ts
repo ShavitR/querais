@@ -97,6 +97,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     stakeWei: parseEther('2500'),
     servedModels: [model],
     basePricePerTokenWei: parseEther('0.0005'),
+    electricityCostPerTokenWei: 0n,
   };
   const backend = opts.backend ?? new MockBackend([model]);
   const daemon = await startDaemon(daemonConfig, backend);

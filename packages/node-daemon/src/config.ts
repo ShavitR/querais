@@ -14,8 +14,10 @@ export interface DaemonConfig {
   stakeWei: bigint;
   /** Ollama tags to advertise. Empty => advertise whatever Ollama reports. */
   servedModels: string[];
-  /** Base price per token (wei) the node offers. */
+  /** Base price per token (wei) the node offers (used as the market-median estimate). */
   basePricePerTokenWei: bigint;
+  /** Node electricity cost per token (wei); sets the auto-pricing floor. */
+  electricityCostPerTokenWei: bigint;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -49,5 +51,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
     basePricePerTokenWei: env.DAEMON_BASE_PRICE_WEI
       ? BigInt(env.DAEMON_BASE_PRICE_WEI)
       : parseEther('0.0005'),
+    electricityCostPerTokenWei: env.DAEMON_ELECTRICITY_WEI
+      ? BigInt(env.DAEMON_ELECTRICITY_WEI)
+      : 0n,
   };
 }

@@ -127,6 +127,7 @@ async function main(): Promise<void> {
     stakeWei: stake,
     servedModels: [MODEL],
     basePricePerTokenWei: parseEther('0.0005'),
+    electricityCostPerTokenWei: 0n,
   };
   console.log('Registering node on Sepolia + connecting (real tx)…');
   const daemon = await startDaemon(daemonConfig, backend);
