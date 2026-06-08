@@ -9,6 +9,8 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "e2e": "tsx src/run-e2e.ts",
     "live:sepolia": "tsx src/live-sepolia.ts",
+    "gateway:sepolia": "tsx src/gateway-sepolia.ts",
+    "prepare:vm-node": "tsx src/prepare-vm-node.ts",
     "demo": "tsx src/demo.ts"
   },
   "dependencies": {

@@ -21,11 +21,13 @@ services:
     environment:
       NETWORK: ${NETWORK:-arbitrumSepolia}
       RPC_URL: ${RPC_URL:-https://sepolia-rollup.arbitrum.io/rpc}
-      GATEWAY_WS_URL: ${GATEWAY_WS_URL:?set the public gateway WS URL, e.g. wss://gateway.example/node}
+      GATEWAY_WS_URL: ${GATEWAY_WS_URL:?set the gateway WS URL, e.g. ws://HOST_IP:8787/node}
       OLLAMA_URL: http://ollama:11434
       DAEMON_MODELS: ${DAEMON_MODELS:-gemma3:4b}
+      # Provide a pre-funded key (auto-fund flow) OR leave empty to use the keystore.
+      NODE_PRIVATE_KEY: ${NODE_PRIVATE_KEY:-}
       DAEMON_KEYSTORE: /keystore/keystore.json
-      DAEMON_KEYSTORE_PASSWORD: ${DAEMON_KEYSTORE_PASSWORD:?set a keystore password}
+      DAEMON_KEYSTORE_PASSWORD: ${DAEMON_KEYSTORE_PASSWORD:-querais-dev}
     volumes:
       - keystore:/keystore
     depends_on:
