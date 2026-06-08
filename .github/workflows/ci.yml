@@ -52,9 +52,9 @@ jobs:
         run: pnpm test:e2e
 
   solidity:
-    name: Solidity static analysis
+    name: Solidity lint (solhint)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -66,31 +66,13 @@ jobs:
           cache: pnpm
       - name: Install (frozen)
         run: pnpm install --frozen-lockfile
-      # Blocking: solhint is pure-JS and parses .sol directly, so it is independent of
-      # the Hardhat version. 0 errors today (warnings are non-fatal style/gas hints).
+      # Blocking Solidity gate. solhint is pure-JS and parses .sol directly, so it is
+      # independent of the Hardhat version. 0 errors today (warnings are non-fatal
+      # style/gas hints). Slither is deferred: driving solc directly under pnpm trips
+      # solc --allow-paths on the symlinked .pnpm store, and its framework auto-detect
+      # doesn't yet support Hardhat 3. Revisit in Slice 2 (see docs/EXECUTION_PLAN.md).
       - name: solhint
         run: pnpm --filter @querais/contracts lint:sol
-      # Slither needs Python + a solc binary; we drive solc directly (bypassing
-      # Hardhat 3, whose build-info format Slither's framework auto-detect doesn't
-      # yet support). OpenZeppelin imports resolve from the installed node_modules.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Slither + solc
-        run: |
-          pip install slither-analyzer solc-select
-          solc-select install 0.8.28
-          solc-select use 0.8.28
-      # Non-blocking for now: Slither's Hardhat 3 support is unproven, so we surface
-      # findings without gating. Flip to blocking once findings are triaged (Slice 0
-      # acceptance) — see docs/EXECUTION_PLAN.md.
-      - name: Slither (non-blocking)
-        continue-on-error: true
-        working-directory: packages/contracts
-        run: |
-          slither contracts/ \
-            --solc-remaps "@openzeppelin/=node_modules/@openzeppelin/" \
-            --exclude-dependencies || true
 
   coverage:
     name: Coverage (reported, non-gating)

@@ -47,16 +47,21 @@ as a deliberate later stage.
 These four slices are the same no matter what we build on top. They make state durable,
 settlement real, and the surface safe. Do all four before opening anything publicly.
 
-### Slice 0 — Lock the green bar into CI + Slither · Effort S · Risk L
+### Slice 0 — Lock the green bar into CI + static analysis · Effort S · Risk L · ✅ DONE
 - **Goal:** every change is gated before we start mutating money-moving contracts.
-- **Build:** GitHub Actions running `build/typecheck/lint/test/test:e2e` on PR; add **Slither**
-  (static analysis on the Solidity) and **coverage**; triage high/medium findings. Add
-  `npm audit` + Dependabot + secret scanning.
-- **Acceptance:** a PR is blocked on red CI; Slither runs and its findings are triaged; the
-  e2e gate runs headless in CI (spawns its own chain).
-- **Why first:** cheapest insurance there is, and Slice 2 rewrites settlement contracts — that
-  work should land against a gate, not before one.
-- **Maps to:** P3.14 (core) + P3.5 (Slither item), pulled early.
+- **Built:** GitHub Actions (`.github/workflows/ci.yml`) running `build/typecheck/lint/test/
+  test:e2e` on PR (blocking), **solhint** as the blocking Solidity gate, **coverage** (node:test,
+  non-gating), **pnpm audit** + **Dependabot** (non-gating). Required Node ≥22.13 (pnpm 11.5.2
+  uses `node:sqlite`).
+- **Acceptance (met):** a PR is blocked on red CI (verified: a failing test turned the gate red);
+  the e2e gate runs headless on Ubuntu (verified green); solhint blocks on Solidity errors
+  (0 today).
+- **Deferred — Slither:** driving solc directly under pnpm trips solc `--allow-paths` on the
+  symlinked `.pnpm` store, and Slither's framework auto-detect doesn't support Hardhat 3 yet.
+  solhint covers the blocking lint; revisit Slither in Slice 2 (a Foundry profile or HH3-native
+  support). Also deferred: contract-line **coverage** (no HH3-compatible tool); GitHub
+  **secret scanning** (a repo setting, not code).
+- **Maps to:** P3.14 (core) + P3.5 (static-analysis item), pulled early.
 
 ### Slice 1 — Persistence behind repositories · Effort L · Risk M
 - **Goal:** stop losing state on restart; give batching a durable ledger to write to.
