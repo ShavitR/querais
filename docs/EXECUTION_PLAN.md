@@ -63,7 +63,12 @@ settlement real, and the surface safe. Do all four before opening anything publi
   **secret scanning** (a repo setting, not code).
 - **Maps to:** P3.14 (core) + P3.5 (static-analysis item), pulled early.
 
-### Slice 1 — Persistence behind repositories · Effort L · Risk M
+### Slice 1 — Persistence behind repositories · Effort L · Risk M · ✅ DONE
+- **Built (merged #15):** `GatewayDb` on Node's built-in `node:sqlite` (zero new deps, behind a
+  repository seam). API keys + faucet claims durable (faucet throttle now an atomic, restart-proof
+  `INSERT`); job records persisted from the dispatcher (non-fatal writes); usage derived from
+  settled rows. New `GET /v1/usage`, enriched `GET /v1/jobs/:id`. DB stays a thin cache/index —
+  on-chain remains the source of truth. Detail in `docs/SLICE1_PLAN.md`.
 - **Goal:** stop losing state on restart; give batching a durable ledger to write to.
 - **Build:** a DB (SQLite dev / Postgres prod) behind small repositories. Persist **API keys**
   (replace `ApiKeyStore` JSON), **job records** (jobId, requester, provider, tokens, status,
