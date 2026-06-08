@@ -1,0 +1,22 @@
+/**
+ * @querais/gateway — OpenAI-compatible API gateway + centralized matching host.
+ *
+ * Public surface for the e2e harness and for M5 (which injects a chain-backed
+ * Settlement implementation in place of the default no-op).
+ */
+export const GATEWAY_VERSION = '0.2.0';
+
+export { buildGateway, type BuildOptions } from './server.js';
+export { loadConfig, type GatewayConfig } from './config.js';
+export { ChainClient } from './chain-client.js';
+export { NodePool } from './node-pool.js';
+export { Dispatcher, type DispatchResult } from './dispatcher.js';
+export {
+  NoopSettlement,
+  ChainSettlement,
+  emaReputationBps,
+  type Settlement,
+  type SettlementContext,
+} from './settlement.js';
+export { layerBVerify, isDegenerateLoop, type VerifyInput, type VerifyResult } from './verify.js';
+export { resolveRequester } from './auth.js';

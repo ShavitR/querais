@@ -1,0 +1,10 @@
+{
+  "name": "@querais/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only QueraIS dashboard (Vite + React). Implemented in M6.",
+  "scripts": {
+    "dev": "node -e \"console.log('@querais/dashboard: Vite app lands in M6')\""
+  }
+}

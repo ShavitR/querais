@@ -1,0 +1,11 @@
+**/dist/**
+**/node_modules/**
+**/artifacts/**
+**/cache/**
+**/typechain-types/**
+**/coverage/**
+packages/contracts/exports/**
+packages/contracts/deployments/**
+packages/contracts/src/abis.ts
+pnpm-lock.yaml
+*.md

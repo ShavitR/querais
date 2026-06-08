@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    // noEmit typecheck: no need to serialize the (very large) inferred viem
+    // contract types into .d.ts, which would otherwise trip TS7056.
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"],
+    // hardhat-viem contract instances expose read/write methods via an index
+    // signature; noUncheckedIndexedAccess would flag every call as possibly
+    // undefined. Disable it for scripts/tests (src/ keeps the strict base config).
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["hardhat.config.ts", "scripts/**/*", "test/**/*", "src/**/*", "artifacts/**/*.d.ts"],
+  "exclude": ["dist", "node_modules", "cache"]
+}

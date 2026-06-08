@@ -1,0 +1,9 @@
+# Normalize line endings to LF for all text so hashing/canonicalization is
+# byte-stable across platforms (jobId derivation depends on this).
+* text=auto eol=lf
+
+# Binary / generated — leave untouched
+*.png binary
+*.jpg binary
+*.gguf binary
+pnpm-lock.yaml -text

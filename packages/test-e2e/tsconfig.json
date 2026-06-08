@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../shared" },
+    { "path": "../matching" },
+    { "path": "../gateway" },
+    { "path": "../node-daemon" }
+  ],
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

@@ -1,0 +1,74 @@
+import pino from 'pino';
+import {
+  loadAddresses,
+  makePublicClient,
+  makeWalletClient,
+  type NodeModelOffer,
+} from '@querais/shared';
+import type { DaemonConfig } from './config.js';
+import { OllamaBackend } from './inference/ollama.js';
+import type { InferenceBackend } from './inference/backend.js';
+import { ensureRegistered } from './registry.js';
+import { GatewayClient } from './gateway-client.js';
+
+/**
+ * Wire the daemon together: verify the inference backend, decide which models to
+ * advertise, register/stake on-chain, then connect to the gateway and start
+ * serving jobs. Returns the live GatewayClient so callers (e2e) can stop it.
+ */
+export async function startDaemon(
+  config: DaemonConfig,
+  backend?: InferenceBackend,
+): Promise<GatewayClient> {
+  const logger = pino({ name: 'querais-node' });
+  const infer = backend ?? new OllamaBackend(config.ollamaUrl);
+
+  if (!(await infer.isAvailable())) {
+    throw new Error(
+      `Inference backend '${infer.name}' unavailable (is Ollama running at ${config.ollamaUrl}?)`,
+    );
+  }
+
+  const available = await infer.listModels();
+  const served = config.servedModels.length
+    ? config.servedModels.filter((m) => available.includes(m))
+    : available;
+  if (served.length === 0) {
+    throw new Error(
+      `No models available to serve (backend reported: ${available.join(', ') || 'none'})`,
+    );
+  }
+
+  const models: NodeModelOffer[] = served.map((model) => ({
+    model,
+    pricePerTokenWei: config.basePricePerTokenWei.toString(),
+    tokensPerSecond: 0,
+  }));
+
+  const publicClient = makePublicClient(config.rpcUrl);
+  const walletClient = makeWalletClient(config.rpcUrl, config.privateKey);
+  const deployment = loadAddresses('localhost');
+
+  const { alreadyRegistered } = await ensureRegistered(
+    publicClient,
+    walletClient,
+    deployment,
+    config.nodeId,
+    config.stakeWei,
+  );
+  logger.info(
+    { wallet: walletClient.account.address, alreadyRegistered, models: served },
+    'node ready on-chain',
+  );
+
+  const client = new GatewayClient({
+    wsUrl: config.gatewayWsUrl,
+    walletClient,
+    nodeId: config.nodeId,
+    models,
+    backend: infer,
+    logger,
+  });
+  client.start();
+  return client;
+}

@@ -1,0 +1,11 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# esbuild ships a platform binary and runs a postinstall to link it; tsx depends
+# on it. Allow its build script so `tsx` works for running/testing TS directly.
+allowBuilds:
+  esbuild: true
+
+onlyBuiltDependencies:
+  - esbuild

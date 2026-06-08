@@ -1,0 +1,21 @@
+{
+  "name": "@querais/test-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "e2e": "tsx src/run-e2e.ts",
+    "demo": "tsx src/demo.ts"
+  },
+  "dependencies": {
+    "@querais/contracts": "workspace:*",
+    "@querais/gateway": "workspace:*",
+    "@querais/matching": "workspace:*",
+    "@querais/node-daemon": "workspace:*",
+    "@querais/shared": "workspace:*",
+    "viem": "^2.52.2"
+  }
+}
