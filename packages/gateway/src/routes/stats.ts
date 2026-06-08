@@ -1,8 +1,9 @@
 import { formatEther } from 'viem';
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../deps.js';
+import { metrics } from '../metrics.js';
 
-/** GET /v1/stats — pool size, models, and live treasury balance (for the dashboard). */
+/** GET /v1/stats — pool size, models, treasury balance, and job metrics (dashboard). */
 export function registerStats(app: FastifyInstance, deps: GatewayDeps): void {
   app.get('/v1/stats', async () => {
     const treasury = deps.chain.deployment.treasury;
@@ -13,6 +14,12 @@ export function registerStats(app: FastifyInstance, deps: GatewayDeps): void {
       treasury: {
         address: treasury,
         balanceQais: formatEther(treasuryBalance),
+      },
+      jobs: {
+        created: metrics.jobsCreated,
+        settled: metrics.jobsSettled,
+        failed: metrics.jobsFailed,
+        tokensServed: metrics.tokensServed,
       },
     };
   });

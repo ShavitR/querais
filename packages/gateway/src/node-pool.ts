@@ -37,6 +37,8 @@ export class NodePool {
   private readonly socketToWallet = new WeakMap<WebSocket, Address>();
   private readonly pendingNonce = new WeakMap<WebSocket, string>();
   private readonly jobHandlers = new Map<string, JobMessageHandler>();
+  private readonly jobToWallet = new Map<string, Address>();
+  private readonly jobsByWallet = new Map<Address, number>();
 
   constructor(
     private readonly chain: ChainClient,
@@ -65,6 +67,11 @@ export class NodePool {
     if (msg.type === 'hello') {
       await this.onHello(socket, msg);
       return;
+    }
+    // Count completed jobs per node (for the leaderboard).
+    if (msg.type === 'completion') {
+      const w = this.jobToWallet.get(msg.jobId);
+      if (w) this.jobsByWallet.set(w, (this.jobsByWallet.get(w) ?? 0) + 1);
     }
     // token / completion / job_error → route to the job's handler
     const handler = this.jobHandlers.get(msg.jobId);
@@ -137,11 +144,13 @@ export class NodePool {
     const node = this.nodes.get(wallet);
     if (!node) throw new Error(`node ${wallet} is not connected`);
     this.jobHandlers.set(assignment.spec.jobId, handler);
+    this.jobToWallet.set(assignment.spec.jobId, wallet);
     this.sendTo(node.socket, assignment);
   }
 
   releaseJob(jobId: string): void {
     this.jobHandlers.delete(jobId);
+    this.jobToWallet.delete(jobId);
   }
 
   listNodes(): Array<{
@@ -149,12 +158,14 @@ export class NodePool {
     nodeId: string;
     reputation: number;
     models: NodeModelOffer[];
+    jobsServed: number;
   }> {
     return [...this.nodes.values()].map((n) => ({
       wallet: n.wallet,
       nodeId: n.nodeId,
       reputation: n.reputation,
       models: n.models,
+      jobsServed: this.jobsByWallet.get(n.wallet) ?? 0,
     }));
   }
 

@@ -10,6 +10,7 @@ export function registerNodes(app: FastifyInstance, deps: GatewayDeps): void {
         wallet: n.wallet,
         nodeId: n.nodeId,
         reputation: n.reputation / 10000,
+        jobsServed: n.jobsServed,
         models: n.models.map((m) => ({
           model: m.model,
           pricePerTokenWei: m.pricePerTokenWei,

@@ -108,6 +108,18 @@ export async function runOpsCase(): Promise<void> {
     assert.match(metricsText, /querais_jobs_settled_total \d+/, '/metrics exposes counters');
     assert.match(metricsText, /querais_nodes 1/, '/metrics shows the connected node');
 
+    // Dashboard data: stats.jobs + per-node leaderboard counter.
+    const stats = (await (await fetch(`${h.baseUrl}/v1/stats`)).json()) as {
+      jobs: { settled: number };
+    };
+    assert.ok(stats.jobs.settled >= 1, 'stats.jobs reflects activity');
+    const nodesData = (
+      (await (await fetch(`${h.baseUrl}/v1/nodes`)).json()) as {
+        data: Array<{ jobsServed: number }>;
+      }
+    ).data;
+    assert.ok((nodesData[0]?.jobsServed ?? 0) >= 1, 'node jobsServed increments (leaderboard)');
+
     const ready = (await (await fetch(`${h.baseUrl}/ready`)).json()) as { ready: boolean };
     assert.equal(ready.ready, true, '/ready responds');
 

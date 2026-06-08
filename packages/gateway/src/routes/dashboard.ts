@@ -52,11 +52,14 @@ function html(apiKey: string): string {
     <h2>Network</h2>
     <div class="stat"><span>Active nodes</span><b id="s-nodes">–</b></div>
     <div class="stat"><span>Models</span><b id="s-models">–</b></div>
-    <div class="stat"><span>Treasury (QAIS)</span><b id="s-treasury">–</b></div>
+    <div class="stat"><span>Jobs settled</span><b id="s-settled">–</b></div>
+    <div class="stat"><span>Tokens served</span><b id="s-tokens">–</b></div>
+    <div class="stat"><span>Jobs failed</span><b id="s-failed">–</b></div>
+    <div class="stat"><span>Treasury fees (QAIS)</span><b id="s-treasury">–</b></div>
   </section>
   <section class="card">
-    <h2>Nodes</h2>
-    <table><thead><tr><th>wallet</th><th>rep</th><th>models</th></tr></thead><tbody id="nodes"></tbody></table>
+    <h2>Node Leaderboard</h2>
+    <table><thead><tr><th>#</th><th>wallet</th><th>rep</th><th>jobs</th><th>models</th></tr></thead><tbody id="nodes"></tbody></table>
   </section>
   <section class="card full">
     <h2>Try it</h2>
@@ -76,15 +79,19 @@ async function refresh() {
     const stats = await (await fetch('/v1/stats')).json();
     document.getElementById('s-nodes').textContent = stats.nodes;
     document.getElementById('s-models').textContent = stats.models.join(', ') || '–';
+    document.getElementById('s-settled').textContent = stats.jobs.settled;
+    document.getElementById('s-tokens').textContent = stats.jobs.tokensServed;
+    document.getElementById('s-failed').textContent = stats.jobs.failed;
     document.getElementById('s-treasury').textContent = Number(stats.treasury.balanceQais).toFixed(6);
     const sel = document.getElementById('model');
     const cur = sel.value;
     sel.innerHTML = stats.models.map(m => '<option>'+m+'</option>').join('');
     if (cur) sel.value = cur;
     const nodes = (await (await fetch('/v1/nodes')).json()).data;
-    document.getElementById('nodes').innerHTML = nodes.map(n =>
-      '<tr><td>'+n.wallet.slice(0,10)+'…</td><td>'+n.reputation.toFixed(2)+'</td><td>'+n.models.map(x=>x.model).join(', ')+'</td></tr>'
-    ).join('') || '<tr><td colspan=3 class=muted>no nodes connected</td></tr>';
+    nodes.sort((a, b) => (b.jobsServed - a.jobsServed) || (b.reputation - a.reputation));
+    document.getElementById('nodes').innerHTML = nodes.map((n, i) =>
+      '<tr><td>'+(i+1)+'</td><td>'+n.wallet.slice(0,10)+'…</td><td>'+n.reputation.toFixed(2)+'</td><td>'+n.jobsServed+'</td><td>'+n.models.map(x=>x.model).join(', ')+'</td></tr>'
+    ).join('') || '<tr><td colspan=5 class=muted>no nodes connected</td></tr>';
   } catch (e) { /* gateway warming up */ }
 }
 setInterval(refresh, 2000); refresh();
