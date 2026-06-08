@@ -18,8 +18,14 @@ export function registerFaucet(app: FastifyInstance, deps: GatewayDeps): void {
       return reply.code(400).send(openAiError('a valid address is required', 'invalid_request'));
     }
     try {
-      const txHash = await deps.faucet.claim(address as Address);
-      return reply.send({ ok: true, txHash, amount: deps.faucet.amount.toString() });
+      const claim = await deps.faucet.claim(address as Address);
+      return reply.send({
+        ok: true,
+        qaisTx: claim.qaisTx,
+        ethTx: claim.ethTx ?? null,
+        qais: deps.faucet.qaisAmount.toString(),
+        eth: deps.faucet.ethAmount.toString(),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'faucet error';
       return reply.code(429).send(openAiError(message, 'faucet_refused'));

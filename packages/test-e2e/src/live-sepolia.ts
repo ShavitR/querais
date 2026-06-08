@@ -108,6 +108,7 @@ async function main(): Promise<void> {
     jobDeadlineSeconds: 180,
     rateLimitMax: 120,
     faucetAmountWei: parseEther('5000'),
+    faucetEthWei: 0n,
   };
   const { app } = await buildGateway({ config: gatewayConfig });
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
     servedModels: [MODEL],
     basePricePerTokenWei: parseEther('0.0005'),
     electricityCostPerTokenWei: 0n,
+    autoFaucet: false, // funded by this script's bootstrap
   };
   console.log('Registering node on Sepolia + connecting (real tx)…');
   const daemon = await startDaemon(daemonConfig, backend);

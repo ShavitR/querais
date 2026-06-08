@@ -21,6 +21,8 @@ export interface DaemonConfig {
   basePricePerTokenWei: bigint;
   /** Node electricity cost per token (wei); sets the auto-pricing floor. */
   electricityCostPerTokenWei: bigint;
+  /** Auto-claim gas + stake from the gateway faucet on startup if underfunded. */
+  autoFaucet: boolean;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -65,5 +67,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DaemonConfig {
     electricityCostPerTokenWei: env.DAEMON_ELECTRICITY_WEI
       ? BigInt(env.DAEMON_ELECTRICITY_WEI)
       : 0n,
+    autoFaucet: env.DAEMON_AUTO_FAUCET !== 'false',
   };
 }

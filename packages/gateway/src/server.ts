@@ -20,7 +20,7 @@ import { registerDashboard } from './routes/dashboard.js';
 import { registerKeys } from './routes/keys.js';
 import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
-import { Faucet, type QaisDistributor } from './faucet.js';
+import { Faucet, type FaucetDistributor } from './faucet.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -53,8 +53,8 @@ export async function buildGateway(
   let faucet: Faucet | undefined;
   if (opts.config.faucetPrivateKey) {
     const distWallet = makeWalletClient(rpcUrl, opts.config.faucetPrivateKey, deployment.chainId);
-    const distributor: QaisDistributor = {
-      transfer: async (to, amount) => {
+    const distributor: FaucetDistributor = {
+      transferQais: async (to, amount) => {
         const hash = await distWallet.writeContract({
           address: deployment.contracts.token,
           abi: quaisTokenAbi,
@@ -64,8 +64,13 @@ export async function buildGateway(
         await publicClient.waitForTransactionReceipt({ hash });
         return hash;
       },
+      sendEth: async (to, value) => {
+        const hash = await distWallet.sendTransaction({ to, value });
+        await publicClient.waitForTransactionReceipt({ hash });
+        return hash;
+      },
     };
-    faucet = new Faucet(distributor, opts.config.faucetAmountWei);
+    faucet = new Faucet(distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
   }
 
   const deps: GatewayDeps = {

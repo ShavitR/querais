@@ -21,7 +21,9 @@ export interface GatewayConfig {
   adminToken?: string;
   /** QAIS dispensed per faucet claim (wei). */
   faucetAmountWei: bigint;
-  /** Distributor key for the faucet (must hold QAIS); unset => faucet disabled. */
+  /** ETH (gas) dispensed per faucet claim (wei); 0 = none. Enables zero-touch onboarding. */
+  faucetEthWei: bigint;
+  /** Distributor key for the faucet (must hold QAIS + ETH); unset => faucet disabled. */
   faucetPrivateKey?: Hex;
 }
 
@@ -68,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI
       ? BigInt(env.GATEWAY_FAUCET_AMOUNT_WEI)
       : parseEther('5000'),
+    faucetEthWei: env.GATEWAY_FAUCET_ETH_WEI ? BigInt(env.GATEWAY_FAUCET_ETH_WEI) : 0n,
     ...(env.GATEWAY_FAUCET_PRIVATE_KEY
       ? { faucetPrivateKey: env.GATEWAY_FAUCET_PRIVATE_KEY as Hex }
       : {}),

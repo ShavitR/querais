@@ -101,25 +101,30 @@ against the gateway (buffered + streaming + `models.list()`).
 > Hub-and-spoke testnet (everything routes through a hosted gateway). Testnet only —
 > **no real value**. Replace `GATEWAY_URL` below with the deployed gateway's address.
 
-### Run a node (earn testnet QAIS)
-Requires Docker. The node connects out to the gateway (no inbound ports) and generates
-an encrypted wallet on first run.
+### Run a node (earn testnet QAIS) — two commands, no Docker, no manual funding
 
-```bash
-# Linux/macOS
-./scripts/install-node.sh
-# Windows (PowerShell)
-./scripts/install-node.ps1
+The node generates an encrypted wallet on first run and **auto-funds itself** (gas +
+stake) from the gateway faucet, then registers. It connects *out* to the gateway, so no
+inbound ports.
+
+**Windows (PowerShell):**
+```powershell
+./scripts/setup-node.ps1 -Gateway ws://GATEWAY_HOST:8787/node   # install Node/Ollama + build + pull model
+./scripts/start-node.ps1                                        # run it
 ```
 
-Then fund the printed node address and let it auto-register:
+**Linux/macOS:**
 ```bash
-docker compose logs node | grep "node ready on-chain"   # shows your node wallet
-# 1) get a little Arbitrum Sepolia ETH (gas) from a public faucet
-# 2) get QAIS to stake from the QueraIS faucet:
-curl -X POST GATEWAY_URL/v1/faucet -H 'content-type: application/json' \
-  -d '{"address":"0xYOURNODEADDRESS"}'
+./scripts/setup-node.sh ws://GATEWAY_HOST:8787/node
+./scripts/start-node.sh
 ```
+
+Watch for `node ready on-chain` → `handshake accepted by gateway`. That's it — the faucet
+covers gas + stake automatically.
+
+> **Ultra one-liner** (when the repo is public): `irm <raw>/scripts/bootstrap.ps1 | iex`
+> (set `$env:QUERAIS_GATEWAY` first) — clones, sets up, and starts in one shot.
+> **Have Docker instead?** Use `scripts/install-node.*` + `docker-compose.yml`.
 
 ### Use the API (as a developer)
 Get an API key + starter QAIS from onboarding, then point the OpenAI client at the

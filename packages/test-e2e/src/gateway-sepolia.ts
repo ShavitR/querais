@@ -70,6 +70,7 @@ async function main(): Promise<void> {
     rateLimitMax: 1000,
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('5000'),
+    faucetEthWei: parseEther('0.003'), // drip gas so new nodes self-fund (zero-touch)
     faucetPrivateKey: deployerKey, // distributor for /v1/faucet
   };
 

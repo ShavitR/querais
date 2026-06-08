@@ -8,9 +8,11 @@ import {
 import type { DaemonConfig } from './config.js';
 import { OllamaBackend } from './inference/ollama.js';
 import type { InferenceBackend } from './inference/backend.js';
+import { parseEther } from 'viem';
 import { ensureRegistered } from './registry.js';
 import { GatewayClient } from './gateway-client.js';
 import { computeAutoPrice } from './pricing.js';
+import { ensureFunded, faucetUrlFromGatewayWs } from './auto-fund.js';
 
 /**
  * Wire the daemon together: verify the inference backend, decide which models to
@@ -66,6 +68,19 @@ export async function startDaemon(
   const rpcUrl = deployment.rpcUrl || config.rpcUrl;
   const publicClient = makePublicClient(rpcUrl, deployment.chainId);
   const walletClient = makeWalletClient(rpcUrl, config.privateKey, deployment.chainId);
+
+  // Zero-touch onboarding: self-fund gas + stake from the gateway faucet if needed.
+  if (config.autoFaucet) {
+    await ensureFunded({
+      publicClient,
+      tokenAddress: deployment.contracts.token,
+      address: walletClient.account.address,
+      faucetUrl: faucetUrlFromGatewayWs(config.gatewayWsUrl),
+      requiredQaisWei: config.stakeWei,
+      minEthWei: parseEther('0.0015'),
+      logger,
+    });
+  }
 
   const { alreadyRegistered } = await ensureRegistered(
     publicClient,

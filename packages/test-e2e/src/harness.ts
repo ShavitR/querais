@@ -78,6 +78,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     rateLimitMax: opts.rateLimitMax ?? 120,
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
+    faucetEthWei: 0n, // nodes are pre-funded in tests; no ETH drip needed
     faucetPrivateKey: KEYS.deployer, // holds the bulk of QAIS on localhost
   };
   // No settlement override → buildGateway uses the real ChainSettlement.
@@ -102,6 +103,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     servedModels: [model],
     basePricePerTokenWei: parseEther('0.0005'),
     electricityCostPerTokenWei: 0n,
+    autoFaucet: false, // nodes are pre-funded in tests
   };
   const backend = opts.backend ?? new MockBackend([model]);
   const daemon = await startDaemon(daemonConfig, backend);
