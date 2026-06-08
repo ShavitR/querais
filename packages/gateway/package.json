@@ -25,7 +25,7 @@
     "@querais/shared": "workspace:*",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
-    "pino": "^9.6.0",
+    "pino": "^10.3.1",
     "viem": "^2.52.2",
     "ws": "^8.18.0",
     "zod": "^3.24.1"
