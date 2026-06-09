@@ -69,6 +69,10 @@ async function main(): Promise<void> {
     jobDeadlineSeconds: 300,
     rateLimitMax: 1000,
     batchFlushThreshold: Number(process.env.GATEWAY_BATCH_FLUSH_THRESHOLD ?? '10'),
+    batchFlushIntervalSeconds: Number(process.env.GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS ?? '60'),
+    sessionDeadlineMarginSeconds: Number(
+      process.env.GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS ?? '600',
+    ),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: parseEther('0.003'), // drip gas so new nodes self-fund (zero-touch)

@@ -113,7 +113,7 @@ function creditBalanceOf(
  * the requester sending zero per-call wallet txs and the 95/5 split landing on-chain.
  */
 export async function runBatchedSettlementCase(): Promise<void> {
-  const JOBS = 10;
+  const JOBS = 100; // the acceptance bar: 100 calls settle in ONE on-chain tx
   const h = await startHarness({ batchFlushThreshold: JOBS });
   try {
     const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
