@@ -15,3 +15,4 @@ export * from './openai.js';
 export * from './jobspec.js';
 export * from './messages.js';
 export * from './chain.js';
+export * from './spending-cap.js';

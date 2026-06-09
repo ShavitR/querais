@@ -15,6 +15,7 @@ const CONTRACTS: Array<{ exportName: string; sol: string; contract: string }> = 
   { exportName: 'quaisTokenAbi', sol: 'QUAISToken.sol', contract: 'QUAISToken' },
   { exportName: 'nodeRegistryAbi', sol: 'NodeRegistry.sol', contract: 'NodeRegistry' },
   { exportName: 'jobEscrowAbi', sol: 'JobEscrow.sol', contract: 'JobEscrow' },
+  { exportName: 'creditAccountAbi', sol: 'CreditAccount.sol', contract: 'CreditAccount' },
 ];
 
 function loadAbi(sol: string, contract: string): unknown {

@@ -60,18 +60,26 @@ async function main(): Promise<void> {
   console.log('NodeRegistry    ->', registry.address);
   const escrow = await viem.deployContract('JobEscrow', [token.address, treasury, admin]);
   console.log('JobEscrow       ->', escrow.address);
+  const creditAccount = await viem.deployContract('CreditAccount', [
+    token.address,
+    treasury,
+    admin,
+  ]);
+  console.log('CreditAccount   ->', creditAccount.address);
 
   // Grant the gateway its operational roles.
   const ORACLE_ROLE = await registry.read.ORACLE_ROLE();
   const SLASHER_ROLE = await registry.read.SLASHER_ROLE();
   const MATCHING_ENGINE_ROLE = await escrow.read.MATCHING_ENGINE_ROLE();
   const ESCROW_ORACLE_ROLE = await escrow.read.ORACLE_ROLE();
+  const SETTLER_ROLE = await creditAccount.read.SETTLER_ROLE();
   await registry.write.grantRole([ORACLE_ROLE, gatewayAddr]);
   await registry.write.grantRole([SLASHER_ROLE, gatewayAddr]);
   await escrow.write.grantRole([ESCROW_ORACLE_ROLE, gatewayAddr]);
   await escrow.write.grantRole([MATCHING_ENGINE_ROLE, gatewayAddr]);
+  await creditAccount.write.grantRole([SETTLER_ROLE, gatewayAddr]);
   console.log(
-    'Granted ORACLE + SLASHER (registry) and ORACLE + MATCHING_ENGINE (escrow) to gateway',
+    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit) to gateway',
   );
 
   // Fund test node/requester with QAIS where we know their addresses.
@@ -94,6 +102,7 @@ async function main(): Promise<void> {
       token: token.address,
       nodeRegistry: registry.address,
       jobEscrow: escrow.address,
+      creditAccount: creditAccount.address,
     },
     treasury,
     accounts: {
@@ -117,6 +126,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `  hardhat verify --network ${networkName} ${escrow.address} ${token.address} ${treasury} ${admin}`,
+    );
+    console.log(
+      `  hardhat verify --network ${networkName} ${creditAccount.address} ${token.address} ${treasury} ${admin}`,
     );
   }
 }

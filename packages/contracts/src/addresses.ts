@@ -16,6 +16,7 @@ export interface Deployment {
     token: Address;
     nodeRegistry: Address;
     jobEscrow: Address;
+    creditAccount: Address;
   };
   treasury: Address;
   accounts: {
