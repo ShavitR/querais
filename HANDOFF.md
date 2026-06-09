@@ -32,7 +32,7 @@ the EXECUTION_PLAN wins). The thesis: **make the protocol complete/credible firs
 it as a hosted service.** Stages:
 
 ```
-Stage A — Foundation        ✅ 0 CI gate   ✅ 1 Persistence   ⬜ 2 Batched settlement ⭐   ⬜ 3 Harden surface
+Stage A — Foundation        ✅ 0 CI gate   ✅ 1 Persistence   ✅ 2 Batched settlement   ⬜ 3 Harden surface ⭐
 Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
@@ -42,12 +42,15 @@ Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node
 (e.g. Slice 1 shipped as 1A then 1B). Build a slice → full green bar → commit → PR → CI green
 → merge. Pause for review at each slice boundary.
 
-**The immediate next milestone is Slice 2 — batched session-deposit settlement** (the marquee
-work; biggest whitepaper-vs-code gap). Intended design: a new `CreditAccount.sol` (deposit →
-EIP-712 signed spending cap → `batchSettle([...])` → withdraw-after-notice), an off-chain
-signed-debit ledger persisted in the Slice 1 DB, and `BatchedSettlement implements Settlement`
-(keep per-job `ChainSettlement` as fallback). It rewrites money-moving contracts → **confirm
-the plan with the user before building** (see §11).
+**Slice 2 is DONE** (PRs #18 contract → #19 Sepolia deploy → #21 runtime). The marquee work
+shipped: `CreditAccount.sol` (deposit → EIP-712 signed cap → `batchSettle([...])` →
+withdraw-after-notice), the off-chain signed-debit ledger, and `BatchedSettlement implements
+Settlement` with a dispatcher branch (deposited requesters skip per-job escrow; `ChainSettlement`
+stays the fallback). e2e proves 10 jobs settle in **1** tx with **0** requester per-call txs.
+
+**The immediate next milestone is Slice 3 — harden the open surface** (persistent IP+address
+faucet throttle + daily cap, per-key quota tiers with 429s, prompt-abuse limits, WS flood caps,
+a documented key-management + pause drill). See `docs/EXECUTION_PLAN.md` Slice 3.
 
 ---
 
@@ -83,9 +86,29 @@ the plan with the user before building** (see §11).
 
 **Slice 1 — durable gateway state (DONE, merged #15) — see §3a.**
 
+**Slice 2 — batched session-deposit settlement (DONE, merged #18/#19/#21):**
+- `CreditAccount.sol` (new, additive — deployed + Arbiscan-verified on Sepolia; existing 3
+  contracts untouched): `deposit` → EIP-712 `SpendingCap` (signed once off-chain, zero gas) →
+  `batchSettle([...])` paying 95/5 in ONE tx → withdraw-after-notice. `SETTLER_ROLE`-gated; the
+  signed cap bounds worst-case exposure (no principal theft). 18 contract tests + gas benchmark
+  (~36k gas/job for a 20-job batch). First EIP-712 in the repo.
+- `@querais/shared/spending-cap.ts`: EIP-712 domain/types + viem sign/recover/hash + wire schema
+  + `buildSignedSession` (the SDK's one-call signer). Re-exported via the barrel.
+- Gateway: migration 3 adds `credit_sessions` + `debit_entries`; `SessionStore` (one active cap
+  per requester) + `DebitLedgerStore` (durable pending debits). `BatchedSettlement implements
+  Settlement` accrues a signed debit per job and flushes ALL of a requester's debits in one
+  `batchSettle` tx at `batchFlushThreshold` (or on shutdown), updating reputation once per
+  provider per flush. **Dispatcher branches**: active session → skip `createJob`/`assignJob`,
+  settle batched; else the unchanged escrow path. New `POST /v1/sessions` + `GET /v1/credit/info`.
+- SDK: optional `privateKey` + `openSession()` (signs the cap, zero gas) + `creditInfo()`.
+- New e2e scenario `runBatchedSettlementCase`: 10 jobs → 1 `batchSettle` tx, 0 requester txs,
+  95/5 verified on-chain. 7 e2e scenarios total. New env var: **`GATEWAY_BATCH_FLUSH_THRESHOLD`**.
+- Reputation is still per-flush-per-provider (not the full snapshotted multi-dimensional score —
+  that's Slice 4). Detail in `docs/SLICE2_PLAN.md`.
+
 **Deferred (do NOT assume these exist):**
-- Slices 2–9 of the execution plan (batched settlement, harden, reputation completeness,
-  Layer-A verify, tokenomics, hosted deploy, SRE, DX/growth).
+- Slices 3–9 of the execution plan (harden surface, reputation completeness, Layer-A verify,
+  tokenomics, hosted deploy, SRE, DX/growth).
 - **Phase 4/5**: libp2p / on-chain auction / decentralized oracle (remove the trusted gateway),
   full `DisputeResolution` arbitration, TEE prompt privacy, mainnet/TGE, DAO.
 - The dependency **majors** (zod 4, openai 6, typescript 6, @types/node 25, eslint 10, pino 10,
@@ -239,6 +262,7 @@ Manifest: `packages/contracts/deployments/addresses.arbitrumSepolia.json` (commi
 - QUAISToken `0x1e89e050e68e81c32980205ec0db444ede3f4e2c`
 - NodeRegistry `0x6d13d0f94ef912c6817a74c632a378997eacf776`
 - JobEscrow `0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0`
+- CreditAccount `0x1e44f2ce56d90f764121b82bc3571b08a1d15522` (Slice 2; gateway holds SETTLER_ROLE)
 - Deployer = admin = gateway = treasury = requester = `0xc80A8137E57D494b195EdA12f74d7Df324f5b9d6`
   (a single throwaway testnet wallet holding the 1B QAIS + all roles, for the hybrid setup).
 
@@ -283,17 +307,20 @@ Ultraplan-workflow notes).
 
 ## 12. Loose ends / current runtime state
 
-- **`main` is at the merge of #16** (`ci: bump actions to v6 + retune Dependabot`). History:
-  #1 (Slice 0) → #15 (Slice 1) → #16. No open PRs. `git log --oneline` is the source of truth.
+- **`main` is at the merge of #21** (Slice 2B). History: #1 (Slice 0) → #15 (Slice 1) → #16 →
+  #18 (Slice 2A contract) → #19 (Slice 2A Sepolia deploy) → #21 (Slice 2B runtime). No open PRs.
+  `git log --oneline` is the source of truth.
 - **Dependabot backlog cleared.** The 12 auto-opened PRs were resolved: safe action bumps applied
   (#16), majors deferred (config now ignores npm majors), the rest auto-closed by the retune.
   Going forward Dependabot opens **one grouped minor/patch PR per month**.
 - **No hosted gateway/VM node is running** — those are ephemeral and don't survive sessions.
   Restart with `pnpm gateway:sepolia` + the node scripts if needed.
 - The "ultra one-liner" installer (`scripts/bootstrap.*`) still needs the **repo to be public**.
-- **Next action: Slice 2 (batched settlement).** The user was asked how to approach it
-  (plan-for-review / Ultraplan / build) and ended the session here — so **start by confirming the
-  Slice 2 plan approach with them** before writing contract code.
+- **Next action: Slice 3 (harden the open surface).** See `docs/EXECUTION_PLAN.md` Slice 3:
+  persistent IP+address faucet throttle + daily cap + distributor-balance guard, per-key quota
+  tiers (429 + headers), prompt-abuse limits (max size, token caps, banned patterns), WS
+  flood/conn caps, and a documented key-management + pause drill (the gateway holds every
+  privileged role + a gas wallet — that blast radius needs a runbook). Effort M, Risk H.
 
 ---
 
