@@ -36,5 +36,11 @@ export function makeWalletClient(rpcUrl: string, privateKey: Hex, chainId?: numb
 export type QueraisPublicClient = ReturnType<typeof makePublicClient>;
 export type QueraisWalletClient = ReturnType<typeof makeWalletClient>;
 
-export { quaisTokenAbi, nodeRegistryAbi, jobEscrowAbi, loadAddresses } from '@querais/contracts';
+export {
+  quaisTokenAbi,
+  nodeRegistryAbi,
+  jobEscrowAbi,
+  creditAccountAbi,
+  loadAddresses,
+} from '@querais/contracts';
 export type { Deployment } from '@querais/contracts';
