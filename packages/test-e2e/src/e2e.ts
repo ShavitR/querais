@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import type { Address, Hex } from 'viem';
+import { parseEther, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
+  creditAccountAbi,
   jobEscrowAbi,
   makePublicClient,
+  makeWalletClient,
   nodeRegistryAbi,
   quaisTokenAbi,
   splitPayment,
@@ -16,7 +18,8 @@ import type {
   InferenceRequest,
   InferenceResult,
 } from '@querais/node-daemon';
-import { startHarness, API_KEY, ADMIN_TOKEN } from './harness.js';
+import { QueraisClient } from '@querais/sdk';
+import { startHarness, API_KEY, ADMIN_TOKEN, KEYS } from './harness.js';
 
 function balanceOf(pub: QueraisPublicClient, dep: Deployment, addr: Address): Promise<bigint> {
   return pub.readContract({
@@ -86,6 +89,115 @@ export async function runSuccessCase(): Promise<void> {
     assert.equal(t1 - t0, fee, 'treasury should receive 5%');
     assert.equal(r1 - r0, -actualPayment, 'requester net cost == actual payment (rest refunded)');
     assert.equal(providerPay + fee, actualPayment, 'conservation: pay + fee == payment');
+  } finally {
+    await h.stop();
+  }
+}
+
+function creditBalanceOf(
+  pub: QueraisPublicClient,
+  credit: Address,
+  addr: Address,
+): Promise<bigint> {
+  return pub.readContract({
+    address: credit,
+    abi: creditAccountAbi,
+    functionName: 'balanceOf',
+    args: [addr],
+  });
+}
+
+/**
+ * Batched session-deposit settlement (Slice 2): the requester deposits once + signs ONE
+ * EIP-712 cap, then fires N jobs that all settle in a SINGLE on-chain batchSettle tx — with
+ * the requester sending zero per-call wallet txs and the 95/5 split landing on-chain.
+ */
+export async function runBatchedSettlementCase(): Promise<void> {
+  const JOBS = 10;
+  const h = await startHarness({ batchFlushThreshold: JOBS });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
+    const credit = h.deployment.contracts.creditAccount;
+    const provider = h.deployment.accounts.node;
+    const requester = h.deployment.accounts.requester;
+    const treasury = h.deployment.treasury;
+
+    // Requester deposits into the CreditAccount (one on-chain tx) and approves it.
+    const reqWallet = makeWalletClient(h.deployment.rpcUrl, KEYS.requester, h.deployment.chainId);
+    const deposit = parseEther('500');
+    const approveHash = await reqWallet.writeContract({
+      address: h.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'approve',
+      args: [credit, deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: approveHash });
+    const depositHash = await reqWallet.writeContract({
+      address: credit,
+      abi: creditAccountAbi,
+      functionName: 'deposit',
+      args: [deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: depositHash });
+
+    // Sign ONE spending cap off-chain via the SDK and register the session.
+    const sdk = new QueraisClient({
+      baseUrl: h.baseUrl,
+      apiKey: API_KEY,
+      privateKey: KEYS.requester,
+    });
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    const opened = await sdk.openSession({
+      maxSpendWei: deposit,
+      nonce: 1n,
+      deadline: nowSeconds + 3600n,
+    });
+    assert.equal(opened.ok, true, 'session should open');
+
+    // Snapshot AFTER deposit/approve (so those don't count), BEFORE the jobs.
+    const [p0, t0, c0] = await Promise.all([
+      balanceOf(pub, h.deployment, provider),
+      balanceOf(pub, h.deployment, treasury),
+      creditBalanceOf(pub, credit, requester),
+    ]);
+    const reqTxBefore = await pub.getTransactionCount({ address: requester });
+
+    // Fire N jobs; each accrues a signed debit. The Nth triggers a single batchSettle.
+    for (let i = 0; i < JOBS; i++) {
+      const res = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `batch ${i}` }],
+        max_tokens: 20,
+      });
+      assert.equal(res.status, 200, `job ${i} should return 200`);
+    }
+
+    // Exactly ONE on-chain batchSettle covered all N jobs.
+    const events = await pub.getContractEvents({
+      address: credit,
+      abi: creditAccountAbi,
+      eventName: 'BatchSettled',
+      args: { requester },
+      fromBlock: 0n,
+    });
+    assert.equal(events.length, 1, 'all jobs should settle in exactly one batchSettle tx');
+    const ev = events[0]!.args as { jobCount: bigint; totalPaid: bigint; protocolFee: bigint };
+    assert.equal(ev.jobCount, BigInt(JOBS), 'the one batch should cover every job');
+    assert.ok(ev.totalPaid > 0n, 'some payment should have settled');
+
+    // The requester signed ZERO per-call wallet txs (its on-chain nonce is unchanged).
+    const reqTxAfter = await pub.getTransactionCount({ address: requester });
+    assert.equal(reqTxAfter, reqTxBefore, 'requester sends zero per-call txs');
+
+    // The 95/5 split landed on-chain and the deposit was debited by exactly the gross total.
+    const [p1, t1, c1] = await Promise.all([
+      balanceOf(pub, h.deployment, provider),
+      balanceOf(pub, h.deployment, treasury),
+      creditBalanceOf(pub, credit, requester),
+    ]);
+    assert.equal(t1 - t0, ev.protocolFee, 'treasury receives the summed 5%');
+    assert.equal(p1 - p0, ev.totalPaid - ev.protocolFee, 'provider receives the rest (95%)');
+    assert.equal(c0 - c1, ev.totalPaid, 'deposit debited by exactly the gross total');
   } finally {
     await h.stop();
   }

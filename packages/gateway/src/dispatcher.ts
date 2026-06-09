@@ -20,6 +20,8 @@ import type { ChainClient } from './chain-client.js';
 import type { NodePool } from './node-pool.js';
 import type { Settlement } from './settlement.js';
 import type { JobStore } from './db/jobs.js';
+import type { SessionStore } from './db/sessions.js';
+import type { BatchedSettlement } from './batched-settlement.js';
 import { layerBVerify } from './verify.js';
 import { metrics } from './metrics.js';
 
@@ -53,6 +55,10 @@ export class Dispatcher {
     private readonly settlement: Settlement,
     private readonly jobs: JobStore,
     private readonly logger: Logger,
+    /** Slice 2: when a requester has an active credit session, settle off-chain via
+     *  the ledger + batched CreditAccount.batchSettle instead of the per-job escrow path. */
+    private readonly sessions?: SessionStore,
+    private readonly credit?: BatchedSettlement,
   ) {}
 
   /**
@@ -111,17 +117,33 @@ export class Dispatcher {
     const provider = chosen.offer.wallet;
     const agreedPrice = chosen.offer.pricePerTokenWei;
 
-    // ── Lock + assign on-chain ──
-    await this.chain.createJob(
-      spec.jobId,
-      requester,
-      maxPricePerTokenWei,
-      BigInt(maxTokens),
-      BigInt(spec.deadline),
-    );
-    await this.chain.assignJob(spec.jobId, provider, agreedPrice);
+    // ── Choose the settlement venue ──
+    // A requester with an active, signed credit session settles off-chain via the batched
+    // CreditAccount (zero per-call wallet txs); everyone else uses the per-job JobEscrow path.
+    const batched = !!(this.credit && this.sessions?.getActive(requester, chainNow));
+
+    // ── Lock + assign ──
+    if (batched) {
+      // No on-chain createJob/assignJob: the deposit + signed cap are the collateral.
+      this.logger.info(
+        { jobId: spec.jobId, provider, model: spec.model },
+        'job assigned (batched, off-chain)',
+      );
+    } else {
+      await this.chain.createJob(
+        spec.jobId,
+        requester,
+        maxPricePerTokenWei,
+        BigInt(maxTokens),
+        BigInt(spec.deadline),
+      );
+      await this.chain.assignJob(spec.jobId, provider, agreedPrice);
+      this.logger.info(
+        { jobId: spec.jobId, provider, model: spec.model },
+        'job created & assigned',
+      );
+    }
     metrics.jobsCreated += 1;
-    this.logger.info({ jobId: spec.jobId, provider, model: spec.model }, 'job created & assigned');
     this.persist(() =>
       this.jobs.recordAssigned({
         jobId: spec.jobId,
@@ -144,26 +166,28 @@ export class Dispatcher {
       report: streamed.report,
       maxTokens,
     });
+    const settlement: Settlement = batched && this.credit ? this.credit : this.settlement;
     if (!verdict.ok) {
       metrics.jobsFailed += 1;
       const reason = verdict.reason ?? 'verification failed';
-      await this.settlement.fail(spec.jobId, reason);
+      await settlement.fail(spec.jobId, reason, provider);
       this.persist(() => this.jobs.markFailed(spec.jobId, reason));
       throw new VerificationError(reason);
     }
 
-    // ── Settle (no-op in M4, chain-backed in M5) ──
-    await this.settlement.settle({
+    // ── Settle: escrow per-job, or accrue a signed debit for the next batch ──
+    const payment = paymentFor(agreedPrice, verdict.authoritativeTokens);
+    await settlement.settle({
       jobId: spec.jobId,
       provider,
       requester,
       authoritativeTokens: verdict.authoritativeTokens,
       resultHash: streamed.report.resultHash,
+      paymentWei: payment,
     });
     metrics.jobsSettled += 1;
     metrics.tokensServed += verdict.authoritativeTokens;
     // Mirror the settlement split (same integer math the contract used) into the job record.
-    const payment = paymentFor(agreedPrice, verdict.authoritativeTokens);
     const { providerPay, fee } = splitPayment(payment);
     this.persist(() =>
       this.jobs.markSettled(spec.jobId, {

@@ -18,6 +18,9 @@ export {
   type Settlement,
   type SettlementContext,
 } from './settlement.js';
+export { BatchedSettlement, type BatchedSettlementOptions } from './batched-settlement.js';
+export { SessionStore, type CreditSession } from './db/sessions.js';
+export { DebitLedgerStore, type DebitEntry } from './db/ledger.js';
 export { layerBVerify, isDegenerateLoop, type VerifyInput, type VerifyResult } from './verify.js';
 export { resolveRequester } from './auth.js';
 export { ApiKeyStore } from './key-store.js';

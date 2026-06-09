@@ -12,6 +12,7 @@ import {
   type Hex,
   type TypedDataDomain,
 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { z } from 'zod';
 
 /** Mirrors CreditAccount.SpendingCap. bigints are uint256 wei/seconds. */
@@ -127,6 +128,38 @@ export function toSpendingCap(wire: SignedSpendingCapWire): { cap: SpendingCap; 
     },
     signature: wire.signature as Hex,
   };
+}
+
+/** Everything needed to build + sign a session cap from a private key (the SDK's view). */
+export interface BuildSessionParams {
+  maxSpendWei: bigint;
+  nonce: bigint;
+  deadline: bigint;
+  settler: Address;
+  chainId: number;
+  verifyingContract: Address;
+}
+
+/**
+ * Build, sign, and serialize a spending cap from a private key — the one call the SDK makes
+ * to open a session. The requester is derived from the key; the result is POSTed to
+ * `/v1/sessions`. Keeps all signing in `shared` so the SDK needs no viem dependency.
+ */
+export async function buildSignedSession(
+  privateKey: Hex,
+  p: BuildSessionParams,
+): Promise<SignedSpendingCapWire> {
+  const account = privateKeyToAccount(privateKey);
+  const cap: SpendingCap = {
+    requester: account.address,
+    settler: p.settler,
+    maxSpendWei: p.maxSpendWei,
+    nonce: p.nonce,
+    deadline: p.deadline,
+  };
+  const domain = spendingCapDomain(p.chainId, p.verifyingContract);
+  const signature = await signSpendingCap(account, cap, domain);
+  return toSignedSpendingCapWire(cap, signature);
 }
 
 /** Serialize a typed cap + signature into the wire form (bigints → decimal strings). */

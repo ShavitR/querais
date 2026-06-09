@@ -42,6 +42,8 @@ export interface HarnessOptions {
   model?: string;
   /** Rate-limit max requests/key/min (default 120). */
   rateLimitMax?: number;
+  /** Slice 2: batched-settlement flush threshold (default 25). */
+  batchFlushThreshold?: number;
 }
 
 /**
@@ -76,6 +78,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     defaultMinReputation: 0,
     jobDeadlineSeconds: 120,
     rateLimitMax: opts.rateLimitMax ?? 120,
+    batchFlushThreshold: opts.batchFlushThreshold ?? 25,
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
     faucetEthWei: 0n, // nodes are pre-funded in tests; no ETH drip needed

@@ -25,6 +25,9 @@ export interface GatewayConfig {
   faucetEthWei: bigint;
   /** Distributor key for the faucet (must hold QAIS + ETH); unset => faucet disabled. */
   faucetPrivateKey?: Hex;
+  /** Slice 2: flush a requester's accrued debits to CreditAccount.batchSettle once this many
+   *  jobs have settled off-chain (also flushed on graceful shutdown). */
+  batchFlushThreshold: number;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -65,6 +68,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     defaultMinReputation: Number(env.GATEWAY_DEFAULT_MIN_REPUTATION ?? '0'),
     jobDeadlineSeconds: Number(env.GATEWAY_JOB_DEADLINE_SECONDS ?? '120'),
     rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
+    batchFlushThreshold: Number(env.GATEWAY_BATCH_FLUSH_THRESHOLD ?? '25'),
     ...(env.GATEWAY_DB_PATH ? { dbPath: env.GATEWAY_DB_PATH } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI

@@ -107,6 +107,7 @@ async function main(): Promise<void> {
     defaultMinReputation: 0,
     jobDeadlineSeconds: 180,
     rateLimitMax: 120,
+    batchFlushThreshold: 25,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: 0n,
   };

@@ -11,6 +11,7 @@ import { startChainAndDeploy } from './chain.js';
 import {
   runSuccessCase,
   runFailureCase,
+  runBatchedSettlementCase,
   runOpsCase,
   runOnboardingCase,
   runFaucetCase,
@@ -29,6 +30,10 @@ async function main(): Promise<void> {
     console.log('▶  failure case: garbage result → Layer-B reject → refund…');
     await runFailureCase();
     console.log('✅ failure case passed');
+
+    console.log('▶  batched settlement case: 10 jobs → 1 batchSettle tx, 0 requester txs…');
+    await runBatchedSettlementCase();
+    console.log('✅ batched settlement case passed');
 
     console.log('▶  parity case: official OpenAI SDK against the gateway…');
     await runOpenAiParityCase();

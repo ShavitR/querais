@@ -40,6 +40,31 @@ const MIGRATIONS: readonly string[] = [
      updated_at       INTEGER NOT NULL
    );
    CREATE INDEX idx_jobs_requester ON jobs(requester, status);`,
+
+  // 3 — Slice 2 batched settlement: the requester's signed spending cap (one active
+  // session per requester) and the off-chain signed-debit ledger that accumulates what's
+  // owed between on-chain batchSettle flushes. The on-chain CreditAccount + the signed cap
+  // remain the source of truth / bound; these rows are the gateway's durable working set.
+  // wei amounts are TEXT (they overflow SQLite's 64-bit INTEGER).
+  `CREATE TABLE credit_sessions (
+     requester      TEXT PRIMARY KEY,
+     settler        TEXT NOT NULL,
+     max_spend_wei  TEXT NOT NULL,
+     nonce          TEXT NOT NULL,
+     deadline       INTEGER NOT NULL,
+     signature      TEXT NOT NULL,
+     created_at     INTEGER NOT NULL
+   );
+   CREATE TABLE debit_entries (
+     job_id      TEXT PRIMARY KEY,
+     requester   TEXT NOT NULL,
+     provider    TEXT NOT NULL,
+     amount_wei  TEXT NOT NULL,
+     tokens      INTEGER NOT NULL,
+     batch_id    TEXT,
+     created_at  INTEGER NOT NULL
+   );
+   CREATE INDEX idx_debits_pending ON debit_entries(requester, batch_id);`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */
