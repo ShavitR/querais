@@ -73,6 +73,36 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * Batched venue only when the session (a) outlives the cap deadline margin — a debit
+   * accrued now must still be flushable before the cap expires — and (b) has headroom for
+   * this job's worst case under both the signed cap and the on-chain deposit. Anything
+   * short falls back to the per-job escrow path, which needs neither.
+   */
+  private async useBatchedVenue(
+    requester: Address,
+    chainNow: number,
+    worstCaseWei: bigint,
+  ): Promise<boolean> {
+    if (!this.credit || !this.sessions) return false;
+    const margin = this.config.sessionDeadlineMarginSeconds;
+    if (!this.sessions.getActive(requester, chainNow + margin)) return false;
+    try {
+      if (await this.credit.canAccrue(requester, worstCaseWei)) return true;
+      this.logger.info(
+        { requester },
+        'credit session lacks headroom — falling back to per-job escrow',
+      );
+      return false;
+    } catch (err) {
+      this.logger.warn(
+        { err, requester },
+        'credit headroom check failed — falling back to per-job escrow',
+      );
+      return false;
+    }
+  }
+
   async dispatch(
     req: ChatCompletionRequest,
     requester: Address,
@@ -120,7 +150,11 @@ export class Dispatcher {
     // ── Choose the settlement venue ──
     // A requester with an active, signed credit session settles off-chain via the batched
     // CreditAccount (zero per-call wallet txs); everyone else uses the per-job JobEscrow path.
-    const batched = !!(this.credit && this.sessions?.getActive(requester, chainNow));
+    const batched = await this.useBatchedVenue(
+      requester,
+      chainNow,
+      agreedPrice * BigInt(maxTokens),
+    );
 
     // ── Lock + assign ──
     if (batched) {

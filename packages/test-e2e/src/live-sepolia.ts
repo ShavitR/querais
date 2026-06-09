@@ -108,6 +108,8 @@ async function main(): Promise<void> {
     jobDeadlineSeconds: 180,
     rateLimitMax: 120,
     batchFlushThreshold: 25,
+    batchFlushIntervalSeconds: 60,
+    sessionDeadlineMarginSeconds: 360,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: 0n,
   };

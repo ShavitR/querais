@@ -69,9 +69,20 @@ export class DebitLedgerStore {
     return rows.map((r) => r.requester as Address);
   }
 
-  /** Stamp a set of jobs as flushed in batch `batchId` (the settle tx hash). */
-  markBatched(jobIds: Hex[], batchId: Hex): void {
+  /**
+   * Stamp a set of jobs as flushed in batch `batchId` — normally the settle tx hash, or a
+   * `recovered:*` sentinel when reconciliation finds a debit already settled on-chain.
+   * Atomic: a crash mid-update can't leave a batch half-marked.
+   */
+  markBatched(jobIds: Hex[], batchId: string): void {
     const stmt = this.db.conn.prepare('UPDATE debit_entries SET batch_id=? WHERE job_id=?');
-    for (const id of jobIds) stmt.run(batchId, id);
+    this.db.conn.exec('BEGIN');
+    try {
+      for (const id of jobIds) stmt.run(batchId, id);
+      this.db.conn.exec('COMMIT');
+    } catch (err) {
+      this.db.conn.exec('ROLLBACK');
+      throw err;
+    }
   }
 }

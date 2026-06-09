@@ -38,6 +38,19 @@ export class ChainClient {
     public readonly deployment: Deployment,
   ) {}
 
+  /**
+   * Wait for a write to mine AND succeed. viem does not throw on a mined-but-reverted
+   * tx — without this check a revert (e.g. cap expired between gas estimation and
+   * inclusion) would be treated as settled, stranding provider payments.
+   */
+  private async waitForSuccess(hash: Hex, what: string): Promise<Hex> {
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== 'success') {
+      throw new Error(`${what} reverted on-chain (tx ${hash})`);
+    }
+    return hash;
+  }
+
   // ── Reads ──────────────────────────────────────────────────────────────────
   getNode(wallet: Address) {
     return this.publicClient.readContract({
@@ -86,8 +99,7 @@ export class ChainClient {
       functionName: 'createJob',
       args: [jobId, requester, maxPricePerTokenWei, maxTokens, deadline],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'createJob');
   }
 
   async assignJob(jobId: Hex, provider: Address, agreedPricePerTokenWei: bigint): Promise<Hex> {
@@ -97,8 +109,7 @@ export class ChainClient {
       functionName: 'assignJob',
       args: [jobId, provider, agreedPricePerTokenWei],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'assignJob');
   }
 
   // ── Oracle writes (used from M5 settlement) ──────────────────────────────────
@@ -109,8 +120,7 @@ export class ChainClient {
       functionName: 'completeJob',
       args: [jobId, actualTokens, resultHash],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'completeJob');
   }
 
   async verifyAndRelease(jobId: Hex): Promise<Hex> {
@@ -120,8 +130,7 @@ export class ChainClient {
       functionName: 'verifyAndRelease',
       args: [jobId],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'verifyAndRelease');
   }
 
   async failJob(jobId: Hex, reason: string): Promise<Hex> {
@@ -131,8 +140,7 @@ export class ChainClient {
       functionName: 'failJob',
       args: [jobId, reason],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'failJob');
   }
 
   async slash(wallet: Address, amount: bigint, reason: string): Promise<Hex> {
@@ -142,8 +150,7 @@ export class ChainClient {
       functionName: 'slash',
       args: [wallet, amount, reason],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'slash');
   }
 
   async updateReputation(wallet: Address, newScore: number): Promise<Hex> {
@@ -153,8 +160,7 @@ export class ChainClient {
       functionName: 'updateReputation',
       args: [wallet, newScore],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'updateReputation');
   }
 
   // ── CreditAccount (Slice 2 batched settlement) ───────────────────────────────
@@ -178,8 +184,7 @@ export class ChainClient {
       functionName: 'batchSettle',
       args: [capArg, cap.signature, debitArg],
     });
-    await this.publicClient.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.waitForSuccess(hash, 'batchSettle');
   }
 
   /** A requester's deposited, unspent CreditAccount balance (wei). */
@@ -189,6 +194,26 @@ export class ChainClient {
       abi: creditAccountAbi,
       functionName: 'balanceOf',
       args: [requester],
+    });
+  }
+
+  /** Whether a job has already been settled in some batch (idempotency guard mirror). */
+  settledJob(jobId: Hex): Promise<boolean> {
+    return this.publicClient.readContract({
+      address: this.deployment.contracts.creditAccount,
+      abi: creditAccountAbi,
+      functionName: 'settledJob',
+      args: [jobId],
+    });
+  }
+
+  /** Cumulative wei already settled against a requester's cap nonce. */
+  spentAgainst(requester: Address, nonce: bigint): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.deployment.contracts.creditAccount,
+      abi: creditAccountAbi,
+      functionName: 'spentAgainst',
+      args: [requester, nonce],
     });
   }
 }

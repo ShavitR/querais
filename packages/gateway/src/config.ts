@@ -28,6 +28,13 @@ export interface GatewayConfig {
   /** Slice 2: flush a requester's accrued debits to CreditAccount.batchSettle once this many
    *  jobs have settled off-chain (also flushed on graceful shutdown). */
   batchFlushThreshold: number;
+  /** Slice 2C: also flush every requester's pending debits on this interval, so a
+   *  low-traffic requester never waits unboundedly for the threshold. */
+  batchFlushIntervalSeconds: number;
+  /** Slice 2C: stop routing jobs to the batched venue (and flush what's pending) once a
+   *  session cap is within this many seconds of its deadline — a debit that misses the
+   *  deadline can never settle on-chain. */
+  sessionDeadlineMarginSeconds: number;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -69,6 +76,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     jobDeadlineSeconds: Number(env.GATEWAY_JOB_DEADLINE_SECONDS ?? '120'),
     rateLimitMax: Number(env.GATEWAY_RATE_LIMIT_MAX ?? '120'),
     batchFlushThreshold: Number(env.GATEWAY_BATCH_FLUSH_THRESHOLD ?? '25'),
+    batchFlushIntervalSeconds: Number(env.GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS ?? '60'),
+    sessionDeadlineMarginSeconds: Number(env.GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS ?? '240'),
     ...(env.GATEWAY_DB_PATH ? { dbPath: env.GATEWAY_DB_PATH } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI

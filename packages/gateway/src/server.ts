@@ -62,6 +62,7 @@ export async function buildGateway(
   const ledger = new DebitLedgerStore(db);
   const credit = new BatchedSettlement(chain, sessions, ledger, logger, {
     flushThreshold: opts.config.batchFlushThreshold,
+    deadlineMarginSeconds: opts.config.sessionDeadlineMarginSeconds,
   });
   const dispatcher = new Dispatcher(
     opts.config,
@@ -115,9 +116,18 @@ export async function buildGateway(
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
+  // Interval flush ("flush every N sec / M jobs"): a low-traffic requester's debits never
+  // wait unboundedly for the threshold. unref() so the timer can't hold the process open.
+  const flushTimer = setInterval(() => {
+    void credit
+      .flushAll()
+      .catch((err: unknown) => logger.error({ err }, 'interval flushAll failed'));
+  }, opts.config.batchFlushIntervalSeconds * 1000);
+  flushTimer.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
+    clearInterval(flushTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
   });
