@@ -1,10 +1,29 @@
-import type { ChatMessage } from '@querais/shared';
+import { buildSignedSession, type ChatMessage } from '@querais/shared';
 
 export interface QueraisClientOptions {
   /** Gateway base URL, e.g. http://127.0.0.1:8787 */
   baseUrl: string;
   /** Bearer API key. */
   apiKey: string;
+  /** Optional requester private key — only needed to open a batched-settlement session. */
+  privateKey?: `0x${string}`;
+}
+
+/** What the gateway needs you to know to sign a spending cap (`GET /v1/credit/info`). */
+export interface CreditInfo {
+  chainId: number;
+  creditAccount: `0x${string}`;
+  token: `0x${string}`;
+  settler: `0x${string}`;
+}
+
+export interface OpenSessionOptions {
+  /** Cumulative ceiling the gateway may settle against this session (wei). */
+  maxSpendWei: bigint;
+  /** Session nonce (namespaces independent caps for the same requester). */
+  nonce: bigint;
+  /** Unix-seconds expiry; the gateway/contract reject the cap after this. */
+  deadline: bigint;
 }
 
 export interface ChatOptions {
@@ -123,5 +142,40 @@ export class QueraisClient {
   async stats(): Promise<unknown> {
     const res = await fetch(`${this.opts.baseUrl}/v1/stats`, { headers: this.headers() });
     return res.json();
+  }
+
+  /** Fetch the data needed to build + sign a spending cap (chainId, contract, settler). */
+  async creditInfo(): Promise<CreditInfo> {
+    const res = await fetch(`${this.opts.baseUrl}/v1/credit/info`, { headers: this.headers() });
+    if (!res.ok) throw new Error(`QueraIS credit info failed: HTTP ${res.status}`);
+    return (await res.json()) as CreditInfo;
+  }
+
+  /**
+   * Open a batched-settlement session: sign an EIP-712 spending cap with the client's
+   * private key (signed once, off-chain, zero gas) and register it with the gateway. After
+   * this, jobs from this key settle in batches — no per-call wallet tx. Requires `privateKey`
+   * in the client options and a CreditAccount deposit already in place.
+   */
+  async openSession(opts: OpenSessionOptions): Promise<{ ok: boolean; nonce: string }> {
+    if (!this.opts.privateKey) throw new Error('openSession requires a privateKey in client opts');
+    const info = await this.creditInfo();
+    const wire = await buildSignedSession(this.opts.privateKey, {
+      maxSpendWei: opts.maxSpendWei,
+      nonce: opts.nonce,
+      deadline: opts.deadline,
+      settler: info.settler,
+      chainId: info.chainId,
+      verifyingContract: info.creditAccount,
+    });
+    const res = await fetch(`${this.opts.baseUrl}/v1/sessions`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(wire),
+    });
+    if (!res.ok) {
+      throw new Error(`QueraIS openSession failed: HTTP ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as { ok: boolean; nonce: string };
   }
 }

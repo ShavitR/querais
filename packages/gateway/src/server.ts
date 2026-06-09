@@ -23,7 +23,11 @@ import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
 import { GatewayDb } from './db/index.js';
 import { JobStore } from './db/jobs.js';
+import { SessionStore } from './db/sessions.js';
+import { DebitLedgerStore } from './db/ledger.js';
+import { BatchedSettlement } from './batched-settlement.js';
 import { registerUsage } from './routes/usage.js';
+import { registerSessions } from './routes/sessions.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -47,11 +51,28 @@ export async function buildGateway(
   const walletClient = makeWalletClient(rpcUrl, opts.config.privateKey, deployment.chainId);
 
   const chain = new ChainClient(publicClient, walletClient, deployment);
+  const settler = walletClient.account.address;
   const pool = new NodePool(chain, logger);
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const db = new GatewayDb(opts.config.dbPath);
   const jobs = new JobStore(db);
-  const dispatcher = new Dispatcher(opts.config, chain, pool, settlement, jobs, logger);
+  // Slice 2: durable signed-cap sessions + the batched-settlement venue. Dormant until a
+  // requester opens a session via POST /v1/sessions; otherwise the per-job escrow path runs.
+  const sessions = new SessionStore(db);
+  const ledger = new DebitLedgerStore(db);
+  const credit = new BatchedSettlement(chain, sessions, ledger, logger, {
+    flushThreshold: opts.config.batchFlushThreshold,
+  });
+  const dispatcher = new Dispatcher(
+    opts.config,
+    chain,
+    pool,
+    settlement,
+    jobs,
+    logger,
+    sessions,
+    credit,
+  );
   const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
@@ -87,12 +108,17 @@ export async function buildGateway(
     jobs,
     keyStore,
     faucet,
+    settler,
+    sessions,
+    credit,
     logger,
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
-  // Release the SQLite connection (and its WAL handles) on graceful shutdown.
-  app.addHook('onClose', () => {
+  // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
+  // connection (and its WAL handles).
+  app.addHook('onClose', async () => {
+    await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
   });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
@@ -125,6 +151,7 @@ export async function buildGateway(
   registerNodes(app, deps);
   registerJobs(app, deps);
   registerUsage(app, deps);
+  registerSessions(app, deps);
   registerStats(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);
