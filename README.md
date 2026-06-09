@@ -1,165 +1,429 @@
-# QueraIS — MVP
+# QueraIS
 
-A runnable, end-to-end vertical slice of **QueraIS**, a decentralized P2P marketplace
-for AI inference compute. A requester submits an OpenAI-compatible prompt → the gateway
-matches it to a node → the node runs **real inference** (via Ollama) → the result streams
-back → payment **settles on-chain** with a 95% provider / 5% protocol split.
+**A decentralized, peer-to-peer marketplace for AI inference compute — "BitTorrent for AI."**
+Anyone with a GPU can run a node and earn cryptocurrency by serving LLM inference; anyone who
+needs AI compute buys it through an OpenAI-compatible API without going through a centralized
+provider. Payment settles on-chain in the `$QAIS` token with a 95% provider / 5% protocol split.
 
-> This is an MVP slice — a complete *loop*, not a complete *product*. See
-> `*.md` design docs in this folder for the full vision, and
-> `~/.claude/plans/foamy-riding-badger.md` for the build plan.
+This repository is a **real, working implementation** — not a mockup. The contracts are deployed
+and verified on Arbitrum Sepolia, real `gemma3:4b` inference runs through it, and a job has
+settled on-chain end-to-end across two machines.
 
-## Stack
+> **Testnet only — no real value.** Everything runs on Arbitrum Sepolia (chainId `421614`).
+> The current architecture is **hybrid hub-and-spoke** (a trusted gateway does matching and
+> settlement); the fully decentralized mesh is a later phase. See the design docs below.
 
-- **TypeScript** everywhere (gateway, matching, node daemon, SDK) — pnpm workspaces, ESM, strict.
-- **Solidity** contracts (`QUAISToken`, `NodeRegistry`, `JobEscrow`) on a local **Hardhat** chain.
-- **Ollama** as the inference backend (abstracted so llama.cpp/vLLM can slot in later).
+---
+
+## Table of contents
+
+1. [What works today](#what-works-today)
+2. [Prerequisites](#prerequisites)
+3. [60-second demo](#60-second-demo) ← start here
+4. [Call it from your code (OpenAI drop-in)](#call-it-from-your-code-openai-drop-in)
+5. [Batched settlement: pay once, run thousands of jobs](#batched-settlement-pay-once-run-thousands-of-jobs)
+6. [Run the full stack manually](#run-the-full-stack-manually)
+7. [Run a node and earn testnet QAIS](#run-a-node-and-earn-testnet-qais)
+8. [Host your own gateway on Sepolia](#host-your-own-gateway-on-sepolia)
+9. [How a request flows](#how-a-request-flows)
+10. [Repository layout](#repository-layout)
+11. [All commands](#all-commands)
+12. [Deployed contracts](#deployed-contracts-arbitrum-sepolia)
+13. [Trust & security model](#trust--security-model)
+14. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
+15. [Project docs](#project-docs)
+
+---
+
+## What works today
+
+The project is built in **slices** against `docs/EXECUTION_PLAN.md`. Done and merged:
+
+| Slice | What it delivers | Status |
+|------|------------------|--------|
+| 0 | CI green-bar gate (build · typecheck · lint · test · e2e) + Solidity lint | ✅ |
+| 1 | Durable gateway state on `node:sqlite` (API keys, faucet claims, job history) | ✅ |
+| 2 | **Batched session-deposit settlement** — deposit once, sign one EIP-712 cap, settle thousands of jobs in one tx | ✅ |
+
+The end-to-end loop works in both directions:
+
+- **Inference**: OpenAI-compatible request → matching → real Ollama inference → streamed result.
+- **Settlement**: per-job on-chain escrow **or** batched settlement against a pre-funded credit
+  account — 95% provider / 5% treasury, with staking, slashing, and a reputation score.
+
+Next up is Slice 3 (hardening the public surface). See `HANDOFF.md` for the live status.
+
+---
 
 ## Prerequisites
 
-- Node.js ≥ 20 (developed on v26), `pnpm` (`npm i -g pnpm`)
-- [Ollama](https://ollama.com) running locally with a model pulled, e.g. `ollama pull qwen3:1.7b`
+| Tool | Version | Why |
+|------|---------|-----|
+| **Node.js** | **≥ 22.13** (dev on v26) | The toolchain uses Node's built-in `node:sqlite`, which is only stable from 22.13. Node 20 will fail at install with `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`. |
+| **pnpm** | ≥ 9 (`npm i -g pnpm`) | Workspace package manager. |
+| **Ollama** | latest | The inference backend. Install from [ollama.com](https://ollama.com) and make sure it's running (`ollama serve`). |
 
-## Layout
+Check your Node version first: `node -v` — it must print `v22.13` or higher.
 
-```
-packages/
-  contracts/    Solidity + Hardhat (deploy writes ABIs + addresses to exports/)
-  shared/       @querais/shared — types, schemas, jobId, pricing, chain bindings (pure)
-  matching/     @querais/matching — pure provider scorer/selection (never touches chain)
-  gateway/      @querais/gateway — Fastify OpenAI-compatible API + dispatcher + settlement
-  node-daemon/  @querais/node-daemon — provider: registers, runs inference, reports
-  sdk/          @querais/sdk — OpenAI-shaped client + `querais` CLI
-  test-e2e/     @querais/test-e2e — whole-slice acceptance harness + demo
-apps/
-  dashboard/    read-only React UI (live nodes, jobs, balances)
-```
+> The unit tests and the e2e gate use a **mock** inference backend, so you can run
+> `pnpm test` / `pnpm test:e2e` **without Ollama**. You only need Ollama for `pnpm demo`
+> and for running a real node.
 
-## Common scripts
+---
 
-```bash
-pnpm install          # install workspace
-pnpm build            # build all packages
-pnpm lint             # eslint + prettier check
-pnpm test             # all package tests
-pnpm chain            # start local Hardhat node            (M1+)
-pnpm deploy:local     # deploy contracts to local chain     (M1+)
-pnpm dev:gateway      # run the gateway                     (M4+)
-pnpm dev:daemon       # run a node daemon                   (M3+)
-pnpm test:e2e         # full end-to-end acceptance test     (M6)
-pnpm demo             # human-visible end-to-end demo        (M6)
-```
+## 60-second demo
 
-## Quickstart (full demo)
+This spins up a throwaway local blockchain, deploys all contracts, starts a gateway **and** a
+node, runs a **real streaming completion**, prints the protocol fee earned on-chain, and leaves
+a live dashboard open. Everything is self-contained on your machine.
 
 ```bash
 pnpm install
-ollama pull gemma3:4b      # one-time, if not already pulled
-pnpm demo                  # spins up chain + contracts + gateway + node, runs a
-                           # real streaming completion, prints the dashboard URL
+pnpm build                 # compiles contracts + builds every package (required once)
+ollama pull gemma3:4b      # ~3.3 GB; optional — the node auto-pulls it on first run anyway
+pnpm demo
 ```
 
-Open the printed dashboard URL to watch live nodes, the treasury balance, and try
-your own prompts. `pnpm test:e2e` runs the self-contained acceptance gate (success +
-failure settlement paths) without needing a browser.
+**What success looks like:** you'll see the prompt stream token-by-token in the terminal, a
+line showing the on-chain treasury fee, and a dashboard URL like `http://127.0.0.1:8787/`.
+Open it to watch live nodes, balances, and to try your own prompts in the browser.
 
-## Use it from your code (OpenAI drop-in)
+Want just the automated proof, no browser? Run the acceptance gate:
 
-Point the **official OpenAI client** at the gateway — change one line (the base URL):
+```bash
+pnpm test:e2e             # spins up its own chain, runs 7 end-to-end scenarios, tears down
+```
 
+It exercises: successful settlement (95/5), a failed-verification refund + slash, OpenAI-SDK
+parity, ops/rate-limiting, key onboarding, the faucet, and **batched settlement** (10 jobs → 1
+on-chain tx, 0 requester wallet txs).
+
+---
+
+## Call it from your code (OpenAI drop-in)
+
+The gateway is OpenAI-compatible — point the **official OpenAI client** at it and change one
+line (the base URL). You need a gateway running with a node connected; the simplest way is the
+[manual stack](#run-the-full-stack-manually) below (its API key is `sk-querais-dev`, from
+`.env.example`).
+
+**Python:**
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="sk-querais-dev")
-r = client.chat.completions.create(model="gemma3:4b",
-    messages=[{"role": "user", "content": "Hello"}])
+r = client.chat.completions.create(
+    model="gemma3:4b",
+    messages=[{"role": "user", "content": "Explain Arbitrum in one sentence."}],
+)
 print(r.choices[0].message.content)
 ```
 
+**TypeScript / JavaScript:**
 ```ts
 import OpenAI from 'openai';
 const client = new OpenAI({ baseURL: 'http://127.0.0.1:8787/v1', apiKey: 'sk-querais-dev' });
 const r = await client.chat.completions.create({
   model: 'gemma3:4b',
-  messages: [{ role: 'user', content: 'Hello' }],
+  messages: [{ role: 'user', content: 'Explain Arbitrum in one sentence.' }],
 });
 console.log(r.choices[0].message.content);
 ```
 
-Or the bundled `querais` CLI (`@querais/sdk`):
+Streaming (`stream: true`), `models.list()`, and the usage object all work — drop-in parity is
+enforced by the e2e suite, which runs the real `openai` SDK against the gateway.
 
+**Or the bundled `querais` CLI** (`@querais/sdk`):
 ```bash
 querais chat "Hello"   # streams a completion
 querais models         # models available on the network
-querais nodes          # active nodes + reputation
+querais nodes          # active nodes + their reputation
 ```
 
-Drop-in compatibility is enforced by the e2e suite, which runs the real `openai` SDK
-against the gateway (buffered + streaming + `models.list()`).
+> **Which API key?** It's whatever the gateway was configured with.
+> `pnpm dev:gateway` reads `GATEWAY_API_KEYS` from `.env` (default `sk-querais-dev`);
+> `pnpm gateway:sepolia` uses `sk-host`; `pnpm demo` uses `sk-test`.
 
-## Join the public testnet
+---
 
-> Hub-and-spoke testnet (everything routes through a hosted gateway). Testnet only —
-> **no real value**. Replace `GATEWAY_URL` below with the deployed gateway's address.
+## Batched settlement: pay once, run thousands of jobs
 
-### Run a node (earn testnet QAIS) — two commands, no Docker, no manual funding
+By default every API call costs an on-chain transaction. **Batched settlement** removes that:
+the requester deposits `$QAIS` into the `CreditAccount` contract **once**, signs a single
+EIP-712 *spending cap* off-chain (zero gas), and then fires unlimited jobs. The gateway
+accumulates the signed debits and settles them all in **one** `batchSettle` transaction — the
+requester signs **nothing** per call, and the signed cap bounds the most the gateway could ever
+spend (no way to touch your principal beyond the cap).
 
-The node generates an encrypted wallet on first run and **auto-funds itself** (gas +
-stake) from the gateway faucet, then registers. It connects *out* to the gateway, so no
-inbound ports.
+Using the SDK (the only extra requirement is a requester private key for the one signature):
+
+```ts
+import { QueraisClient } from '@querais/sdk';
+
+const client = new QueraisClient({
+  baseUrl: 'http://127.0.0.1:8787',
+  apiKey: 'sk-querais-dev',
+  privateKey: '0x…',            // requester wallet — used ONCE to sign the cap, off-chain
+});
+
+// (1) Deposit $QAIS into the CreditAccount on-chain — see GET /v1/credit/info for the address.
+// (2) Open a session: sign a spending cap (zero gas) and register it.
+await client.openSession({
+  maxSpendWei: 10n ** 21n,                              // 1000 QAIS ceiling for this session
+  nonce: 1n,
+  deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+});
+
+// (3) From now on, jobs from this key settle in batches — no per-call wallet tx.
+const r = await client.chat([{ role: 'user', content: 'Hi' }], { model: 'gemma3:4b' });
+```
+
+The gateway flushes a batch once enough jobs accumulate (`GATEWAY_BATCH_FLUSH_THRESHOLD`) or on
+shutdown. Verified end-to-end in `pnpm test:e2e`: **10 jobs → 1 on-chain `batchSettle` → 0
+requester transactions**, with the 95/5 split landing on-chain.
+
+---
+
+## Run the full stack manually
+
+For development you can run each piece in its own terminal (so the gateway stays up for you to
+hit from code). From the repo root:
+
+```bash
+# one-time
+pnpm install && pnpm build
+cp .env.example .env          # the defaults are Hardhat dev accounts — fine for localhost
+
+# terminal 1 — local blockchain
+pnpm chain
+
+# terminal 2 — deploy all contracts to the local chain
+pnpm deploy:local
+
+# terminal 3 — the gateway (OpenAI API on http://127.0.0.1:8787, dashboard at /)
+pnpm dev:gateway
+
+# terminal 4 — a node daemon (needs Ollama running with the model)
+pnpm dev:daemon
+```
+
+Now hit `http://127.0.0.1:8787/v1` with the [drop-in examples above](#call-it-from-your-code-openai-drop-in)
+(key `sk-querais-dev`).
+
+---
+
+## Run a node and earn testnet QAIS
+
+Join an existing network as a provider. The node generates an **encrypted wallet** on first
+run, **auto-funds itself** (gas + stake) from the gateway's faucet, stakes, and registers — no
+manual funding, no Docker required. It connects *out* to the gateway, so **no inbound ports** are
+needed on your machine.
+
+> Replace `GATEWAY_HOST` with the gateway operator's address. Your machine needs **Node ≥ 22.13**
+> and **Ollama**; the setup script installs what's missing and pulls the model.
 
 **Windows (PowerShell):**
 ```powershell
-./scripts/setup-node.ps1 -Gateway ws://GATEWAY_HOST:8787/node   # install Node/Ollama + build + pull model
+./scripts/setup-node.ps1 -Gateway ws://GATEWAY_HOST:8787/node   # install + build + pull model
 ./scripts/start-node.ps1                                        # run it
 ```
 
-**Linux/macOS:**
+**Linux / macOS:**
 ```bash
 ./scripts/setup-node.sh ws://GATEWAY_HOST:8787/node
 ./scripts/start-node.sh
 ```
 
-Watch for `node ready on-chain` → `handshake accepted by gateway`. That's it — the faucet
-covers gas + stake automatically.
+**Success =** the logs print `node ready on-chain` → `connected to gateway` →
+`handshake accepted by gateway`. The faucet covers gas + stake automatically; from then on the
+node competes for jobs and earns the 95% provider share of each one it serves.
 
-> **Ultra one-liner** (when the repo is public): `irm <raw>/scripts/bootstrap.ps1 | iex`
-> (set `$env:QUERAIS_GATEWAY` first) — clones, sets up, and starts in one shot.
-> **Have Docker instead?** Use `scripts/install-node.*` + `docker-compose.yml`.
+> **Prefer Docker?** Use `scripts/install-node.sh` + `docker-compose.yml`.
+> **Ultra one-liner** (once the repo is public): set `$env:QUERAIS_GATEWAY` then
+> `irm <raw-url>/scripts/bootstrap.ps1 | iex` — clones, sets up, and starts in one shot.
 
-### Use the API (as a developer)
-Get an API key + starter QAIS from onboarding, then point the OpenAI client at the
-gateway (`GATEWAY_URL/v1`) exactly as in the drop-in example above. Jobs are served by
-whichever node wins the match and settle on Arbitrum Sepolia.
+---
 
-> Deploying the gateway itself (Dockerfiles in `packages/*/Dockerfile`, TLS, secrets) is
-> an operator step — see the Dockerfiles and `docker-compose.yml`.
+## Host your own gateway on Sepolia
 
-## How the slice works
+To operate a network others can join (the contracts are already deployed on Sepolia — you
+reuse them):
 
-1. A requester POSTs to `/v1/chat/completions` (OpenAI-compatible) with a Bearer API key.
-2. The gateway normalizes it into a canonical `JobSpec` (deterministic `jobId`), then
-   the matching engine scores the connected nodes (price + reputation) and picks one.
-3. The gateway locks the requester's `$QAIS` in `JobEscrow` (`createJob` → `assignJob`).
-4. The chosen node runs **real inference** (Ollama) and streams tokens back; the gateway
-   proxies them to the requester and counts them independently.
-5. **Layer-B verification** checks the result (non-empty, length, no loops, and that the
-   provider's `resultHash` matches exactly what was forwarded).
-6. On pass, settlement is atomic: **95% to the provider, 5% to the treasury, remainder
-   refunded**, the job is `VERIFIED`, and the node's reputation EMA updates. On fail, the
-   requester is fully refunded.
+```bash
+cp .env.example .env          # then fill DEPLOYER_PRIVATE_KEY + ARBITRUM_SEPOLIA_RPC_URL
+pnpm gateway:sepolia          # binds 0.0.0.0:8787, enables the faucet (gas + QAIS drip)
+```
 
-## Security & production notes
+It prints the host IPs, the node WS endpoint, the API key (`sk-host`), and the one firewall
+command to open port 8787. Nodes then join with the scripts above pointed at
+`ws://<your-host>:8787/node`. `pnpm prepare:vm-node` helps pre-fund a node key for a second
+machine / VM.
 
-The contracts follow a production-minded baseline — checks-effects-interactions on every
-fund-moving function, OpenZeppelin `ReentrancyGuard` / `SafeERC20` / `AccessControl` /
-`Pausable`, custom errors, and a strict job state machine — covered by 30 tests including a
-reentrancy-attacker contract and fuzzed settlement invariants. Before any real deployment:
-add a **Slither** pass and **coverage** in CI (current Hardhat 3 lacks a built-in coverage
-task; revisit when the HH3 plugin lands), external audits, and replace the trusted-gateway
-oracle/matching with the on-chain Phase-2 design (see the `querais_*.md` specs).
+> Deploying the contracts yourself instead of reusing the existing ones:
+> `pnpm deploy:sepolia` (full suite) or `pnpm deploy:credit:sepolia` (add only the
+> `CreditAccount` to an existing deployment). Both write to
+> `packages/contracts/deployments/addresses.arbitrumSepolia.json`.
 
-## Status
+---
 
-**MVP complete** — all 7 milestones (M0–M6) built and verified end-to-end: contracts
-deployed + 30 tests; shared types; node daemon with live Ollama inference; gateway +
-matching; on-chain settlement; and a self-contained e2e gate + live demo + dashboard.
+## How a request flows
+
+```
+requester ──POST /v1/chat/completions──▶ gateway ──match──▶ node ──Ollama──▶ tokens
+                                            │                                    │
+                                            ◀──────────── streamed back ─────────┘
+                                            │
+                                            ├─ verify (Layer-B: non-empty, length,
+                                            │   no loops, resultHash matches forwarded text)
+                                            │
+                                            └─ settle ▼
+        ┌───────────────────────────────────────────────────────────────────┐
+        │  No credit session  → JobEscrow: createJob → assignJob →            │
+        │                        verifyAndRelease  (1 tx/job: 95% / 5% / refund)│
+        │  Active credit session → record a signed debit; flush a batch of    │
+        │                        them in ONE CreditAccount.batchSettle tx      │
+        └───────────────────────────────────────────────────────────────────┘
+```
+
+1. The gateway authenticates the Bearer API key → requester wallet, normalizes the request into
+   a canonical `JobSpec` (deterministic `jobId`), and the **pure matching engine** scores
+   connected nodes on price + reputation and picks one.
+2. The chosen node runs **real inference** (Ollama) and streams tokens; the gateway proxies them
+   to the requester **and counts them independently** (it settles on `min(node, gateway)` — it
+   never trusts the node's count alone).
+3. **Layer-B verification** checks the output is non-empty, within length, loop-free, and that
+   the provider's `resultHash` matches exactly what was forwarded.
+4. **Settlement** runs the escrow path or the batched path (above). On a verification failure
+   the requester is fully refunded and the provider's reputation drops + its stake is slashed.
+
+---
+
+## Repository layout
+
+```
+packages/
+  contracts/    Solidity + Hardhat 3. contracts/*.sol; scripts/{deploy,deploy-credit-account,
+                export-abis,preflight}.ts; deployments/addresses.<network>.json (sepolia
+                committed); src/ builds dist/ exporting the ABIs + loadAddresses().
+  shared/       @querais/shared — the cross-layer contract: types, zod schemas, deterministic
+                jobId, pricing math, EIP-712 spending caps, the gateway↔node wire protocol,
+                viem chain bindings. Pure (no chain at runtime except thin helpers).
+  matching/     @querais/matching — pure provider scorer/selection (never touches the chain).
+  gateway/      @querais/gateway — Fastify OpenAI-compatible API + dispatcher + settlement
+                (per-job + batched) + node pool + verify + db/ (node:sqlite) + routes/.
+  node-daemon/  @querais/node-daemon — the provider: encrypted keystore, auto-funding,
+                auto-pricing, model auto-pull, auto-reconnect, real Ollama inference.
+  sdk/          @querais/sdk — OpenAI-shaped client (+ openSession) and the `querais` CLI.
+  test-e2e/     @querais/test-e2e — the 7-scenario acceptance gate, the demo, and the
+                Sepolia ops scripts (gateway:sepolia, live:sepolia, prepare:vm-node).
+apps/
+  dashboard/    placeholder — the live dashboard is served by the gateway itself at `/`.
+docs/           EXECUTION_PLAN.md (the roadmap) · SLICE1_PLAN.md · SLICE2_PLAN.md · PHASE3_PLAN.md
+HANDOFF.md      current project status for the next contributor — read this first.
+querais_*.md    the 7 original design/whitepaper documents (vision, architecture, tokenomics…).
+```
+
+---
+
+## All commands
+
+```bash
+# setup & quality
+pnpm install              # install the workspace
+pnpm build                # build every package (contracts: compile + export ABIs + tsc)
+pnpm typecheck            # type-check everything
+pnpm format               # prettier --write .   (run before lint)
+pnpm lint                 # eslint + prettier --check
+pnpm test                 # all unit tests (uses a mock backend — no Ollama needed)
+pnpm test:e2e             # self-contained 7-scenario end-to-end gate
+pnpm test:coverage        # TS coverage report (non-gating)
+
+# local chain & run
+pnpm chain                # start a local Hardhat node
+pnpm deploy:local         # deploy all contracts to the local chain
+pnpm dev:gateway          # run the gateway (reads .env)
+pnpm dev:daemon           # run a node daemon (reads .env; needs Ollama)
+pnpm demo                 # the full self-contained demo + dashboard
+
+# Arbitrum Sepolia (testnet)
+pnpm deploy:sepolia       # deploy the full contract suite
+pnpm deploy:credit:sepolia# add only CreditAccount to an existing deployment
+pnpm gateway:sepolia      # run a public gateway on Sepolia (faucet on)
+pnpm prepare:vm-node      # pre-fund a node key for a second machine
+
+# Solidity-only
+pnpm --filter @querais/contracts lint:sol   # solhint (also runs in CI)
+```
+
+**The green bar** = `build · typecheck · lint · test · test:e2e` all pass. CI
+(`.github/workflows/ci.yml`) runs the same bar plus solhint on every PR; a PR must be green to
+merge.
+
+---
+
+## Deployed contracts (Arbitrum Sepolia)
+
+`chainId 421614` — committed in `packages/contracts/deployments/addresses.arbitrumSepolia.json`.
+
+| Contract | Address | Role |
+|----------|---------|------|
+| QUAISToken    | `0x1e89e050e68e81c32980205ec0db444ede3f4e2c` | ERC-20 `$QAIS` (fixed supply, burnable) |
+| NodeRegistry  | `0x6d13d0f94ef912c6817a74c632a378997eacf776` | node registration, staking, reputation |
+| JobEscrow     | `0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0` | per-job lock + 95/5 settlement |
+| CreditAccount | `0x1e44f2ce56d90f764121b82bc3571b08a1d15522` | deposits + EIP-712 caps + batched settlement |
+
+All are OpenZeppelin-based (`AccessControl`, `ReentrancyGuard`, `SafeERC20`, `Pausable`) and
+verified on the block explorer.
+
+---
+
+## Trust & security model
+
+This is **Phase 1: hybrid hub-and-spoke**. One trusted **gateway** does matching, holds the
+`ORACLE` / `MATCHING_ENGINE` / `SLASHER` / `SETTLER` roles, and pays settlement gas.
+
+- **What the gateway can't do:** steal deposited principal. It can only settle jobs at the
+  prices the node agreed to, and batched settlement is bounded by the requester's *signed* cap.
+- **What protects providers:** token counts are `min(node, gateway)`; bad results are slashed.
+- **What's deliberately deferred:** removing the trusted gateway (libp2p mesh + on-chain auction
+  + decentralized oracle), full dispute arbitration, semantic (Layer-A) verification, and prompt
+  privacy. These are Phase 4/5 — see the design docs.
+
+**Contracts** follow checks-effects-interactions on every fund-moving function, use custom
+errors and a strict job state machine, and are covered by **48 Solidity tests** including a
+reentrancy-attacker mock, fuzzed conservation invariants, EIP-712 signature/replay guards, and a
+gas-per-job benchmark. Before any **mainnet** use: external audit, a Slither pass (currently
+deferred — Hardhat 3 framework support is pending), and the Phase-2 decentralization work.
+
+---
+
+## Environment gotchas (read if something breaks)
+
+- **`ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`** → your Node is < 22.13. Upgrade. This is the
+  single most common setup failure.
+- **`.env` not loading** → if you created it with Notepad it may be saved as `.env.txt` with a
+  BOM. Create it with `cp .env.example .env` (or save as UTF-8 without BOM).
+- **Windows / PowerShell** is a first-class shell here. If you use the git-bash side, use
+  forward-slash paths (`/c/Users/...`) — git-bash silently drops `cd C:\...`.
+- **Ollama errors in the demo** → make sure `ollama serve` is running and the model is pulled
+  (`ollama pull gemma3:4b`). On a low-RAM machine a 4B model leans on swap and is slow.
+- **`pnpm demo` / imports fail right after clone** → you skipped `pnpm build`. The packages
+  import each other's built `dist/`, so build once before running.
+
+---
+
+## Project docs
+
+Read these for the full picture (in the repo root and `docs/`):
+
+- **`HANDOFF.md`** — current status, what's built, how to run/verify, and the next milestone.
+- **`docs/EXECUTION_PLAN.md`** — the live, slice-by-slice roadmap.
+- **`docs/SLICE1_PLAN.md`**, **`docs/SLICE2_PLAN.md`** — detail on the persistence and
+  batched-settlement work.
+- **`querais_overview.md`**, **`querais_protocol_architecture.md`**, `querais_token_economics.md`,
+  `querais_reputation_system.md`, `querais_smart_contracts.md`, `querais_node_design.md`,
+  `querais_go_to_market.md` — the original vision and specifications.
+
+---
+
+*QueraIS is testnet software under active development. No token has launched and nothing here
+has real-world monetary value.*
