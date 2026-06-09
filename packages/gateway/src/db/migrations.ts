@@ -65,6 +65,13 @@ const MIGRATIONS: readonly string[] = [
      created_at  INTEGER NOT NULL
    );
    CREATE INDEX idx_debits_pending ON debit_entries(requester, batch_id);`,
+
+  // 4 — Slice 3 surface hardening: faucet claims remember the claiming IP (per-IP daily
+  // throttle + global daily cap query off claimed_at), and API keys carry a quota tier.
+  `ALTER TABLE faucet_claims ADD COLUMN ip TEXT;
+   CREATE INDEX idx_faucet_ip ON faucet_claims(ip, claimed_at);
+   CREATE INDEX idx_faucet_claimed_at ON faucet_claims(claimed_at);
+   ALTER TABLE api_keys ADD COLUMN tier TEXT NOT NULL DEFAULT 'free';`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */

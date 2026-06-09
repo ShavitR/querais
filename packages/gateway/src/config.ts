@@ -1,5 +1,61 @@
 import { parseEther, type Address, type Hex } from 'viem';
 
+/** Daily budgets for one API-key quota tier. */
+export interface QuotaTier {
+  dailyJobs: number;
+  dailyTokens: number;
+}
+
+/**
+ * Slice 3 surface-hardening knobs. All optional with safe defaults (see
+ * {@link HARDENING_DEFAULTS}) so existing config call-sites are untouched; override
+ * any subset via `hardening` in {@link GatewayConfig} or the `GATEWAY_*` env vars.
+ */
+export interface HardeningConfig {
+  /** Max faucet claims per source IP per rolling 24h. */
+  faucetIpDailyLimit: number;
+  /** Max faucet claims network-wide per rolling 24h. */
+  faucetDailyCap: number;
+  /** Per-key quota tiers (the `tier` column on api_keys selects one; default 'free'). */
+  quotaTiers: Record<string, QuotaTier>;
+  /** Prompt-abuse limits, enforced before any chain interaction. */
+  maxMessages: number;
+  maxPromptChars: number;
+  maxTokensCap: number;
+  /** Reject prompts matching any of these patterns (default: none). */
+  bannedPatterns: RegExp[];
+  /** /node WebSocket flood protection. */
+  wsMaxConnections: number;
+  wsMaxPerIp: number;
+  wsHandshakeTimeoutMs: number;
+  wsMaxMessagesPerSecond: number;
+}
+
+export const HARDENING_DEFAULTS: HardeningConfig = {
+  faucetIpDailyLimit: 3,
+  faucetDailyCap: 100,
+  quotaTiers: {
+    free: { dailyJobs: 200, dailyTokens: 200_000 },
+    pro: { dailyJobs: 5_000, dailyTokens: 5_000_000 },
+    unlimited: { dailyJobs: Number.MAX_SAFE_INTEGER, dailyTokens: Number.MAX_SAFE_INTEGER },
+  },
+  maxMessages: 50,
+  maxPromptChars: 32_000,
+  maxTokensCap: 4_096,
+  bannedPatterns: [],
+  wsMaxConnections: 256,
+  wsMaxPerIp: 4,
+  wsHandshakeTimeoutMs: 10_000,
+  // Generous: every streamed token is one WS message, so a fast node serving
+  // back-to-back jobs legitimately sustains ~1k msg/s. This blocks raw floods only.
+  wsMaxMessagesPerSecond: 5_000,
+};
+
+/** Merge a partial override (config/env) over the hardening defaults. */
+export function resolveHardening(partial?: Partial<HardeningConfig>): HardeningConfig {
+  return { ...HARDENING_DEFAULTS, ...partial };
+}
+
 export interface GatewayConfig {
   port: number;
   /** Deployment to load (addresses.<network>.json): 'localhost' | 'arbitrumSepolia' | … */
@@ -35,6 +91,9 @@ export interface GatewayConfig {
    *  session cap is within this many seconds of its deadline — a debit that misses the
    *  deadline can never settle on-chain. */
   sessionDeadlineMarginSeconds: number;
+  /** Slice 3: surface-hardening overrides (faucet throttles, quota tiers, prompt limits,
+   *  WS caps). Unset fields fall back to HARDENING_DEFAULTS. */
+  hardening?: Partial<HardeningConfig>;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -61,8 +120,40 @@ function parseApiKeys(raw: string): Map<string, Address> {
   return map;
 }
 
+/** Read any GATEWAY_* hardening overrides present in the environment. */
+function hardeningFromEnv(env: NodeJS.ProcessEnv): Partial<HardeningConfig> {
+  const out: Partial<HardeningConfig> = {};
+  const num = (key: string, field: keyof HardeningConfig) => {
+    if (env[key] !== undefined && env[key] !== '') {
+      (out as Record<string, unknown>)[field] = Number(env[key]);
+    }
+  };
+  num('GATEWAY_FAUCET_IP_DAILY_LIMIT', 'faucetIpDailyLimit');
+  num('GATEWAY_FAUCET_DAILY_CAP', 'faucetDailyCap');
+  num('GATEWAY_MAX_MESSAGES', 'maxMessages');
+  num('GATEWAY_MAX_PROMPT_CHARS', 'maxPromptChars');
+  num('GATEWAY_MAX_TOKENS_CAP', 'maxTokensCap');
+  num('GATEWAY_WS_MAX_CONNECTIONS', 'wsMaxConnections');
+  num('GATEWAY_WS_MAX_PER_IP', 'wsMaxPerIp');
+  num('GATEWAY_WS_HANDSHAKE_TIMEOUT_MS', 'wsHandshakeTimeoutMs');
+  num('GATEWAY_WS_MAX_MESSAGES_PER_SECOND', 'wsMaxMessagesPerSecond');
+  if (env.GATEWAY_QUOTA_TIERS) {
+    // JSON: {"free":{"dailyJobs":200,"dailyTokens":200000},...}
+    out.quotaTiers = JSON.parse(env.GATEWAY_QUOTA_TIERS) as Record<string, QuotaTier>;
+  }
+  if (env.GATEWAY_BANNED_PATTERNS) {
+    // Comma-separated regex sources, applied case-insensitively.
+    out.bannedPatterns = env.GATEWAY_BANNED_PATTERNS.split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p) => new RegExp(p, 'i'));
+  }
+  return out;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   return {
+    hardening: hardeningFromEnv(env),
     port: Number(env.GATEWAY_PORT ?? '8787'),
     network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),

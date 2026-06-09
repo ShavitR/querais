@@ -164,4 +164,18 @@ export class JobStore {
     }
     return { jobs: rows.length, tokens, spentWei: spent.toString() };
   }
+
+  /**
+   * Quota consumption over a rolling window (Slice 3): EVERY dispatched job counts toward
+   * the job budget (failed attempts burn quota — the abuse deterrent), tokens as settled.
+   */
+  usageSince(requester: Address, sinceMs: number): { jobs: number; tokens: number } {
+    const row = this.db.conn
+      .prepare(
+        `SELECT COUNT(*) AS jobs, COALESCE(SUM(COALESCE(actual_tokens, 0)), 0) AS tokens
+         FROM jobs WHERE requester=? AND created_at > ?`,
+      )
+      .get(requester.toLowerCase(), sinceMs) as { jobs: number; tokens: number };
+    return { jobs: row.jobs, tokens: row.tokens };
+  }
 }

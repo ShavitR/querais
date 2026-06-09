@@ -15,6 +15,7 @@ import {
   runOpsCase,
   runOnboardingCase,
   runFaucetCase,
+  runHardeningCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -50,6 +51,10 @@ async function main(): Promise<void> {
     console.log('▶  faucet case: fresh address claims QAIS once…');
     await runFaucetCase();
     console.log('✅ faucet case passed');
+
+    console.log('▶  hardening case: quotas 429, prompt limits 400, faucet IP throttle…');
+    await runHardeningCase();
+    console.log('✅ hardening case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

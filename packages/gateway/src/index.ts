@@ -7,9 +7,17 @@
 export const GATEWAY_VERSION = '0.2.0';
 
 export { buildGateway, type BuildOptions } from './server.js';
-export { loadConfig, type GatewayConfig } from './config.js';
+export {
+  loadConfig,
+  resolveHardening,
+  HARDENING_DEFAULTS,
+  type GatewayConfig,
+  type HardeningConfig,
+  type QuotaTier,
+} from './config.js';
+export { QuotaEnforcer, validatePromptLimits, type QuotaVerdict } from './quota.js';
 export { ChainClient } from './chain-client.js';
-export { NodePool } from './node-pool.js';
+export { NodePool, type NodePoolOptions } from './node-pool.js';
 export { Dispatcher, type DispatchResult } from './dispatcher.js';
 export {
   NoopSettlement,
