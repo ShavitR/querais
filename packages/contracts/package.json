@@ -30,6 +30,7 @@
     "chain": "hardhat node",
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network arbitrumSepolia",
+    "deploy:credit:sepolia": "hardhat run scripts/deploy-credit-account.ts --network arbitrumSepolia",
     "verify:sepolia": "hardhat verify --network arbitrumSepolia",
     "preflight:sepolia": "tsx scripts/preflight.ts"
   },
