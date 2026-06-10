@@ -22,6 +22,7 @@ import type { Settlement } from './settlement.js';
 import type { JobStore } from './db/jobs.js';
 import type { SessionStore } from './db/sessions.js';
 import type { BatchedSettlement } from './batched-settlement.js';
+import type { ReputationService } from './reputation.js';
 import { layerBVerify } from './verify.js';
 import { metrics } from './metrics.js';
 
@@ -39,6 +40,8 @@ interface StreamedJob {
   content: string;
   tokenCount: number;
   report: CompletionReport;
+  /** Time-to-first-token (ms from assignment), undefined if no token arrived. */
+  firstTokenMs?: number;
 }
 
 /**
@@ -59,6 +62,9 @@ export class Dispatcher {
      *  the ledger + batched CreditAccount.batchSettle instead of the per-job escrow path. */
     private readonly sessions?: SessionStore,
     private readonly credit?: BatchedSettlement,
+    /** Slice 4: the dispatcher is the single point that knows provider + verdict for
+     *  BOTH venues, so it (not Settlement) records pass/fail into the accuracy EMA. */
+    private readonly reputation?: ReputationService,
   ) {}
 
   /**
@@ -192,6 +198,12 @@ export class Dispatcher {
 
     // ── Stream from the node ──
     const streamed = await this.runJob(spec, agreedPrice, provider, onToken);
+    // Latency telemetry (Slice 4): TTFT is stamped for pass AND fail outcomes — a slow
+    // node that fails verification is still slow.
+    if (streamed.firstTokenMs !== undefined) {
+      const ttft = streamed.firstTokenMs;
+      this.persist(() => this.jobs.recordFirstToken(spec.jobId, ttft));
+    }
 
     // ── Layer-B verify ──
     const verdict = layerBVerify({
@@ -206,6 +218,9 @@ export class Dispatcher {
       const reason = verdict.reason ?? 'verification failed';
       await settlement.fail(spec.jobId, reason, provider);
       this.persist(() => this.jobs.markFailed(spec.jobId, reason));
+      this.persist(() => this.reputation?.recordOutcome(provider, 'fail'));
+      // The failure must be visible to matching immediately (composite drops).
+      await this.pool.refreshReputation(provider).catch(() => {});
       throw new VerificationError(reason);
     }
 
@@ -231,7 +246,9 @@ export class Dispatcher {
         feeWei: fee,
       }),
     );
-    // Reflect the on-chain reputation bump in the pool cache (for /v1/nodes + matching).
+    // Fold the verified pass into the accuracy EMA, then reflect the new composite in
+    // the pool cache (for /v1/nodes + matching).
+    this.persist(() => this.reputation?.recordOutcome(provider, 'pass'));
     await this.pool.refreshReputation(provider).catch(() => {});
 
     return {
@@ -254,6 +271,8 @@ export class Dispatcher {
     return new Promise<StreamedJob>((resolve, reject) => {
       let content = '';
       let tokenCount = 0;
+      let firstTokenMs: number | undefined;
+      const assignedAt = Date.now();
       const timer = setTimeout(
         () => {
           this.pool.releaseJob(spec.jobId);
@@ -270,13 +289,19 @@ export class Dispatcher {
       try {
         this.pool.assign(provider, assignment, (msg) => {
           if (msg.type === 'token') {
+            firstTokenMs ??= Date.now() - assignedAt; // TTFT (Slice 4 Latency dimension)
             content += msg.content;
             tokenCount += 1;
             onToken?.(msg.content);
           } else if (msg.type === 'completion') {
             clearTimeout(timer);
             this.pool.releaseJob(spec.jobId);
-            resolve({ content, tokenCount, report: msg });
+            resolve({
+              content,
+              tokenCount,
+              report: msg,
+              ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
+            });
           } else {
             clearTimeout(timer);
             this.pool.releaseJob(spec.jobId);

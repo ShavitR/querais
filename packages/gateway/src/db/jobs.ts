@@ -133,6 +133,24 @@ export class JobStore {
       );
   }
 
+  /** Stamp the measured time-to-first-token (Slice 4 Latency telemetry). */
+  recordFirstToken(jobId: Hex, firstTokenMs: number): void {
+    this.db.conn
+      .prepare(`UPDATE jobs SET first_token_ms=?, updated_at=? WHERE job_id=?`)
+      .run(Math.round(firstTokenMs), Date.now(), jobId);
+  }
+
+  /** TTFT samples for a provider since `sinceMs` (the Latency dimension's P95 input). */
+  firstTokenMsSince(provider: Address, sinceMs: number): number[] {
+    const rows = this.db.conn
+      .prepare(
+        `SELECT first_token_ms FROM jobs
+         WHERE provider=? AND created_at > ? AND first_token_ms IS NOT NULL`,
+      )
+      .all(provider.toLowerCase(), sinceMs) as { first_token_ms: number }[];
+    return rows.map((r) => r.first_token_ms);
+  }
+
   markFailed(jobId: Hex, reason: string): void {
     this.db.conn
       .prepare(`UPDATE jobs SET status='failed', reason=?, updated_at=? WHERE job_id=?`)

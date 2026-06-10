@@ -12,6 +12,7 @@ import type { JobStore } from './db/jobs.js';
 import type { SessionStore } from './db/sessions.js';
 import type { DebitLedgerStore } from './db/ledger.js';
 import type { BatchedSettlement } from './batched-settlement.js';
+import type { ReputationService } from './reputation.js';
 
 /** Everything the route handlers need, assembled once at startup. */
 export interface GatewayDeps {
@@ -29,6 +30,8 @@ export interface GatewayDeps {
   sessions?: SessionStore;
   ledger?: DebitLedgerStore;
   credit?: BatchedSettlement;
+  /** Slice 4: the 5-dimension reputation oracle (accuracy EMA + derived dimensions). */
+  reputation: ReputationService;
   /** Slice 3 surface hardening: resolved limits + the per-key quota enforcer. */
   hardening: HardeningConfig;
   quota: QuotaEnforcer;

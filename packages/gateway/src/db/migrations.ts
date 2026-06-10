@@ -72,6 +72,41 @@ const MIGRATIONS: readonly string[] = [
    CREATE INDEX idx_faucet_ip ON faucet_claims(ip, claimed_at);
    CREATE INDEX idx_faucet_claimed_at ON faucet_claims(claimed_at);
    ALTER TABLE api_keys ADD COLUMN tier TEXT NOT NULL DEFAULT 'free';`,
+
+  // 5 — Slice 4 reputation telemetry. Per-job TTFT lives on the job row (the Latency
+  // dimension is DERIVED from job rows — no counter tables); uptime comes from
+  // connect/disconnect session intervals; node_reputation holds the gateway-side
+  // accuracy-EMA working state (seeded at 7000, NEVER from the on-chain composite);
+  // reputation_snapshots receives the daily published scores (first written in 4B —
+  // shipped here so the slice needs one migration). Timestamps are ms epochs.
+  `ALTER TABLE jobs ADD COLUMN first_token_ms INTEGER;
+   CREATE INDEX idx_jobs_provider ON jobs(provider, created_at);
+   CREATE TABLE node_sessions (
+     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+     wallet          TEXT NOT NULL,
+     connected_at    INTEGER NOT NULL,
+     disconnected_at INTEGER,
+     last_seen       INTEGER NOT NULL
+   );
+   CREATE INDEX idx_node_sessions_wallet ON node_sessions(wallet, connected_at);
+   CREATE TABLE node_reputation (
+     wallet       TEXT PRIMARY KEY,
+     accuracy_bps INTEGER NOT NULL,
+     updated_at   INTEGER NOT NULL
+   );
+   CREATE TABLE reputation_snapshots (
+     wallet        TEXT NOT NULL,
+     composite_bps INTEGER NOT NULL,
+     accuracy_bps  INTEGER NOT NULL,
+     uptime_bps    INTEGER NOT NULL,
+     latency_bps   INTEGER NOT NULL,
+     longevity_bps INTEGER NOT NULL,
+     stake_bps     INTEGER NOT NULL,
+     tx_hash       TEXT,
+     flagged       INTEGER NOT NULL DEFAULT 0,
+     created_at    INTEGER NOT NULL,
+     PRIMARY KEY (wallet, created_at)
+   );`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */

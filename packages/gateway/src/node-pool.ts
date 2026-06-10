@@ -14,6 +14,8 @@ import {
 } from '@querais/shared';
 import type { NodeOffer } from '@querais/matching';
 import type { ChainClient } from './chain-client.js';
+import type { ReputationService } from './reputation.js';
+import type { NodeSessionStore } from './db/node-sessions.js';
 
 interface PooledNode {
   socket: WebSocket;
@@ -33,6 +35,17 @@ export interface NodePoolOptions {
   handshakeTimeoutMs: number;
   /** Close sockets that exceed this sustained message rate. */
   maxMessagesPerSecond: number;
+  /** ws ping cadence for dead-TCP detection + last_seen (Slice 4 uptime telemetry). */
+  pingIntervalMs: number;
+}
+
+/** Slice 4 reputation telemetry hooks — both optional so existing call-sites/tests
+ *  run unchanged (the pool then behaves exactly as before: raw on-chain score). */
+export interface NodePoolServices {
+  /** Computes the composite the pool feeds matching (in place of the raw chain score). */
+  reputation?: ReputationService;
+  /** Records connect/disconnect session intervals (the Uptime dimension's input). */
+  sessions?: NodeSessionStore;
 }
 
 const POOL_DEFAULTS: NodePoolOptions = {
@@ -42,6 +55,7 @@ const POOL_DEFAULTS: NodePoolOptions = {
   // Every streamed token is one WS message — a fast node legitimately sustains ~1k msg/s,
   // so this default only blocks raw floods (tune via hardening config).
   maxMessagesPerSecond: 5_000,
+  pingIntervalMs: 60_000,
 };
 
 /** Messages a job handler cares about (everything after assignment). */
@@ -65,14 +79,19 @@ export class NodePool {
   private readonly socketIp = new WeakMap<WebSocket, string>();
   private readonly ipCounts = new Map<string, number>();
   private readonly handshakeTimers = new WeakMap<WebSocket, NodeJS.Timeout>();
+  // Slice 4: per-authenticated-socket keepalive ping timers (dead-TCP detection).
+  private readonly pingTimers = new WeakMap<WebSocket, NodeJS.Timeout>();
   private readonly opts: NodePoolOptions;
+  private readonly services: NodePoolServices;
 
   constructor(
     private readonly chain: ChainClient,
     private readonly logger: Logger,
     opts?: Partial<NodePoolOptions>,
+    services?: NodePoolServices,
   ) {
     this.opts = { ...POOL_DEFAULTS, ...opts };
+    this.services = services ?? {};
   }
 
   /** Wire up a freshly-connected node socket and send it an auth challenge. */
@@ -177,20 +196,57 @@ export class NodePool {
       return;
     }
 
+    // Slice 4: open the uptime session BEFORE computing the composite (so the Uptime
+    // dimension sees this connection), then feed matching the composite rather than
+    // the raw on-chain score. Falls back to the chain score without the services.
+    this.recordSession(() => this.services.sessions?.open(hello.wallet, Date.now()));
+    const reputation = this.services.reputation
+      ? await this.services.reputation.compositeFor(hello.wallet, node)
+      : Number(node.reputationScore);
+
     const pooled: PooledNode = {
       socket,
       wallet: hello.wallet,
       nodeId: hello.nodeId,
       models: hello.models,
-      reputation: Number(node.reputationScore),
+      reputation,
     };
     this.nodes.set(hello.wallet, pooled);
     this.socketToWallet.set(socket, hello.wallet);
+    this.startPinging(socket, hello.wallet);
     this.sendTo(socket, { type: 'hello_ack', ok: true });
     this.logger.info(
-      { wallet: hello.wallet, models: hello.models.map((m) => m.model) },
+      { wallet: hello.wallet, models: hello.models.map((m) => m.model), reputation },
       'node joined pool',
     );
+  }
+
+  /**
+   * Keepalive on the authenticated socket: `ws` pings every interval; a socket that
+   * missed the previous pong is dead TCP and gets terminated (the node daemon's `ws`
+   * auto-pongs — zero wire-protocol or daemon changes). Pongs advance last_seen.
+   */
+  private startPinging(socket: WebSocket, wallet: Address): void {
+    let alive = true;
+    socket.on('pong', () => {
+      alive = true;
+      this.recordSession(() => this.services.sessions?.touch(wallet, Date.now()));
+    });
+    const timer = setInterval(() => {
+      if (!alive) {
+        this.logger.warn({ wallet }, 'terminating node socket: missed keepalive pong');
+        socket.terminate();
+        return;
+      }
+      alive = false;
+      try {
+        socket.ping();
+      } catch {
+        socket.terminate();
+      }
+    }, this.opts.pingIntervalMs);
+    timer.unref?.();
+    this.pingTimers.set(socket, timer);
   }
 
   /** Flatten the pool into matching offers (one per node×model). */
@@ -225,12 +281,14 @@ export class NodePool {
     this.jobToWallet.delete(jobId);
   }
 
-  /** Refresh a pooled node's cached reputation from on-chain (after settlement). */
+  /** Recompute a pooled node's cached reputation after a job outcome: the composite
+   *  when the reputation service is wired (Slice 4), else the raw on-chain score. */
   async refreshReputation(wallet: Address): Promise<void> {
     const node = this.nodes.get(wallet);
     if (!node) return;
-    const onchain = await this.chain.getNode(wallet);
-    node.reputation = Number(onchain.reputationScore);
+    node.reputation = this.services.reputation
+      ? await this.services.reputation.compositeFor(wallet)
+      : Number((await this.chain.getNode(wallet)).reputationScore);
   }
 
   listNodes(): Array<{
@@ -274,6 +332,8 @@ export class NodePool {
     this.connections.delete(socket);
     const timer = this.handshakeTimers.get(socket);
     if (timer) clearTimeout(timer);
+    const pingTimer = this.pingTimers.get(socket);
+    if (pingTimer) clearInterval(pingTimer);
     const ip = this.socketIp.get(socket);
     if (ip) {
       const n = (this.ipCounts.get(ip) ?? 1) - 1;
@@ -284,9 +344,22 @@ export class NodePool {
 
     const wallet = this.socketToWallet.get(socket);
     if (wallet) {
+      this.recordSession(() => this.services.sessions?.close(wallet, Date.now()));
       this.nodes.delete(wallet);
       this.socketToWallet.delete(socket);
       this.logger.info({ wallet }, 'node left pool');
+    }
+  }
+
+  /**
+   * Uptime telemetry must never take the gateway (or a shutdown) down: a socket-close
+   * event can land after the DB is closed, and a storage hiccup is not a pool failure.
+   */
+  private recordSession(fn: () => void): void {
+    try {
+      fn();
+    } catch (err) {
+      this.logger.warn({ err }, 'node session telemetry write failed (non-fatal)');
     }
   }
 }

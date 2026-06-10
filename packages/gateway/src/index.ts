@@ -22,10 +22,27 @@ export { Dispatcher, type DispatchResult } from './dispatcher.js';
 export {
   NoopSettlement,
   ChainSettlement,
-  emaReputationBps,
   type Settlement,
   type SettlementContext,
 } from './settlement.js';
+export {
+  emaReputationBps,
+  compositeBps,
+  latencyGradeBps,
+  longevityScoreBps,
+  stakeScoreBps,
+  uptimeRatioBps,
+  p95,
+  ReputationService,
+  WEIGHTS_BPS,
+  INITIAL_ACCURACY_BPS,
+  PASS_ALPHA,
+  FAIL_ALPHA,
+  type ReputationDimensions,
+  type DimensionScores,
+} from './reputation.js';
+export { NodeSessionStore, type SessionInterval } from './db/node-sessions.js';
+export { NodeReputationStore, type AccuracyState } from './db/node-reputation.js';
 export { BatchedSettlement, type BatchedSettlementOptions } from './batched-settlement.js';
 export { SessionStore, type CreditSession } from './db/sessions.js';
 export { DebitLedgerStore, type DebitEntry } from './db/ledger.js';

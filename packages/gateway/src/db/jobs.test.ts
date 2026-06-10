@@ -70,6 +70,21 @@ test('records assignment, settlement, and aggregates usage from settled jobs onl
   assert.deepEqual(jobs.usageFor(PROVIDER), { jobs: 0, tokens: 0, spentWei: '0' });
 });
 
+test('TTFT telemetry: recordFirstToken stamps the row; firstTokenMsSince filters by provider/window', () => {
+  const jobs = new JobStore(new GatewayDb());
+  jobs.recordAssigned(assigned(JOB_A));
+  jobs.recordAssigned(assigned(JOB_B));
+  jobs.recordAssigned(assigned(JOB_C, { provider: REQUESTER })); // different provider
+
+  jobs.recordFirstToken(JOB_A, 320.7); // rounded to integer ms
+  jobs.recordFirstToken(JOB_B, 1200);
+  jobs.recordFirstToken(JOB_C, 50);
+
+  const samples = jobs.firstTokenMsSince(PROVIDER, 0).sort((a, b) => a - b);
+  assert.deepEqual(samples, [321, 1200], 'only this provider, only stamped rows');
+  assert.deepEqual(jobs.firstTokenMsSince(PROVIDER, Date.now() + 1000), [], 'window filters');
+});
+
 test('job records survive a restart', () => {
   const path = join(tmpdir(), `querais-jobs-${process.pid}-${Date.now()}.db`);
   try {
