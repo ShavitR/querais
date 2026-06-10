@@ -58,9 +58,9 @@ settlement real, and the surface safe. Do all four before opening anything publi
   (0 today).
 - **Deferred — Slither:** driving solc directly under pnpm trips solc `--allow-paths` on the
   symlinked `.pnpm` store, and Slither's framework auto-detect doesn't support Hardhat 3 yet.
-  solhint covers the blocking lint; revisit Slither in Slice 2 (a Foundry profile or HH3-native
-  support). Also deferred: contract-line **coverage** (no HH3-compatible tool); GitHub
-  **secret scanning** (a repo setting, not code).
+  → **Resolved in Slice 3B-2** via a symlink-free scratch copy (see that slice and
+  `docs/SLITHER_TRIAGE.md`). Still deferred: contract-line **coverage** (no HH3-compatible
+  tool); GitHub **secret scanning** (a repo setting, not code).
 - **Maps to:** P3.14 (core) + P3.5 (static-analysis item), pulled early.
 
 ### Slice 1 — Persistence behind repositories · Effort L · Risk M · ✅ DONE
@@ -93,12 +93,12 @@ settlement real, and the surface safe. Do all four before opening anything publi
   everything economic (tokenomics, node earnings at volume) sits on top of it.
 - **Maps to:** P3.3.
 
-### Slice 3 — Harden the open surface · Effort M · Risk H · ◐ 3A+3B-1 DONE
+### Slice 3 — Harden the open surface · Effort M · Risk H · ✅ DONE (3A+3B-1+3B-2)
 - **Goal:** survive an adversarial internet *before* exposing anything.
 - **Built — 3A (merged #25):** persistent IP+address faucet throttle + daily cap +
   distributor balance guard; per-key **quota tiers** (429 with headers); prompt-abuse
   limits; WS flood/conn caps; e2e hardening scenario.
-- **Built — 3B-1 (`slice-3b-ops`):** `docs/RUNBOOK_KEYS.md` (key inventory, blast radius,
+- **Built — 3B-1 (merged #26):** `docs/RUNBOOK_KEYS.md` (key inventory, blast radius,
   incident response, rotation, drill log); `scripts/pause.ts` incident CLI (tsx+viem, no
   HH runtime, receipt-checked, idempotent); `test/Pausable.ts` pinning pause semantics
   (exit/refund paths stay open while paused); e2e pause drill (9th scenario, real script);
@@ -108,8 +108,13 @@ settlement real, and the surface safe. Do all four before opening anything publi
 - **Acceptance (met):** the faucet can't be drained by one actor across restarts; quotas
   enforce; the "gateway key leaked" drill has a runbook; pausing contracts is rehearsed —
   both locally (re-runs on every `pnpm test:e2e`) and live on Sepolia.
-- **Remaining — 3B-2:** Slither revisit (timeboxed, non-gating CI job or documented
-  deferral with evidence).
+- **Built — 3B-2 (`slice-3b-slither`):** the Slice 0 Slither deferral, closed. Non-gating
+  `slither` CI job (slither-analyzer 0.11.5 + solc 0.8.28) on a **symlink-free scratch
+  copy** of the contracts (crytic-compile still can't parse HH3 build-info, and
+  `--allow-paths` rejects pnpm's symlinked store — evidence in `docs/SLITHER_TRIAGE.md`).
+  Triage config `packages/contracts/slither.config.json`; baseline = exactly **1
+  acknowledged finding** (`arbitrary-send-erc20` in `JobEscrow.createJob`, the documented
+  trusted-gateway model); the job goes red only when NEW findings appear.
 - **Maps to:** core of P3.5.
 
 ---

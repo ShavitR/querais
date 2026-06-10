@@ -33,7 +33,11 @@ An attacker holding the gateway hot key **can**:
   remaining headroom (SETTLER_ROLE) — bounded per requester by `maxSpendWei`
 - drain the gateway's gas ETH and the faucet's QAIS (plain transfers)
 - slash any node 1% per call (SLASHER_ROLE) and corrupt reputation (ORACLE_ROLE)
-- create/assign/complete junk jobs (MATCHING_ENGINE + ORACLE on JobEscrow)
+- create/assign/complete junk jobs (MATCHING_ENGINE + ORACLE on JobEscrow) —
+  including pulling each requester's **standing JobEscrow allowance** into escrow
+  via `createJob` and settling it to a colluding provider (Slither's acknowledged
+  `arbitrary-send-erc20` finding, `docs/SLITHER_TRIAGE.md`) — bounded per
+  requester by whatever allowance they granted JobEscrow
 
 An attacker **cannot**:
 

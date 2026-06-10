@@ -68,11 +68,58 @@ jobs:
         run: pnpm install --frozen-lockfile
       # Blocking Solidity gate. solhint is pure-JS and parses .sol directly, so it is
       # independent of the Hardhat version. 0 errors today (warnings are non-fatal
-      # style/gas hints). Slither is deferred: driving solc directly under pnpm trips
-      # solc --allow-paths on the symlinked .pnpm store, and its framework auto-detect
-      # doesn't yet support Hardhat 3. Revisit in Slice 2 (see docs/EXECUTION_PLAN.md).
+      # style/gas hints). Deeper static analysis runs in the non-gating `slither` job.
       - name: solhint
         run: pnpm --filter @querais/contracts lint:sol
+
+  slither:
+    name: Slither (reported, non-gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Slither cannot drive Hardhat 3 (crytic-compile's hardhat platform expects the
+    # HH2 build-info shape — KeyError: 'output'), and pointing solc at the real tree
+    # trips --allow-paths on pnpm's symlinked store. Workaround: copy contracts plus a
+    # dereferenced OpenZeppelin into a scratch dir and run slither there (no symlinks,
+    # no Hardhat). Triage lives in packages/contracts/slither.config.json; rationale
+    # per excluded detector in docs/SLITHER_TRIAGE.md. Baseline = exactly 1 acknowledged
+    # finding (arbitrary-send-erc20 in JobEscrow.createJob — MATCHING_ENGINE-gated,
+    # bounded by the requester's allowance; the documented trusted-gateway model).
+    # The step exits non-zero only if NEW findings appear; continue-on-error keeps it
+    # non-gating, so "failed (allowed)" == new finding to triage, green == baseline.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install slither + solc 0.8.28
+        run: |
+          pip install slither-analyzer==0.11.5 solc-select
+          solc-select install 0.8.28
+          solc-select use 0.8.28
+      - name: Install (frozen — brings OpenZeppelin)
+        run: pnpm install --frozen-lockfile
+      - name: Build symlink-free scratch tree
+        working-directory: packages/contracts
+        run: |
+          mkdir slither-scratch
+          cp -r contracts slither-scratch/contracts
+          cp -rL node_modules/@openzeppelin/contracts slither-scratch/oz-contracts
+      - name: Slither (fails only on findings beyond the triaged baseline of 1)
+        working-directory: packages/contracts/slither-scratch
+        run: |
+          slither contracts --solc-remaps "@openzeppelin/contracts/=oz-contracts/" \
+            --config-file ../slither.config.json 2>&1 | tee slither.log || true
+          COUNT=$(grep -oE '[0-9]+ result' slither.log | tail -1 | grep -oE '[0-9]+' || echo 0)
+          echo "findings: ${COUNT:-0} (baseline 1 = acknowledged arbitrary-send-erc20, see docs/SLITHER_TRIAGE.md)"
+          test "${COUNT:-0}" -le 1
 
   coverage:
     name: Coverage (reported, non-gating)
