@@ -1,6 +1,7 @@
 import { zeroAddress, type Address, type Hex } from 'viem';
 import type { Logger } from 'pino';
 import type { ChainClient } from './chain-client.js';
+import { emaReputationBps, FAIL_ALPHA, PASS_ALPHA } from './reputation.js';
 
 /**
  * Settlement seam. The dispatcher calls this after Layer-B verification.
@@ -33,19 +34,9 @@ export class NoopSettlement implements Settlement {
   async fail(): Promise<void> {}
 }
 
-// Reputation EMA tuning (mirrors the reputation-system design's accuracy EMA).
-export const PASS_ALPHA = 0.005; // slow-moving on a verified pass
-export const FAIL_ALPHA = 0.05; // 10× faster on an anomaly/failure
-
 // Economic penalty: slash this fraction (basis points) of a node's stake when it
 // returns a verified-bad result. Small per-incident; staking is the real deterrent.
 export const SLASH_BPS = 100n; // 1%
-
-/** EMA update in basis points: next = current·(1-α) + outcome·10000·α, clamped. */
-export function emaReputationBps(currentBps: number, outcome01: number, alpha: number): number {
-  const next = currentBps * (1 - alpha) + outcome01 * 10000 * alpha;
-  return Math.max(0, Math.min(10000, Math.round(next)));
-}
 
 /** Chain-backed settlement: the real money + reputation movement. */
 export class ChainSettlement implements Settlement {

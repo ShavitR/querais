@@ -41,6 +41,34 @@ async function chat(baseUrl: string, body: unknown): Promise<Response> {
   });
 }
 
+/** A node row from GET /v1/nodes with the Slice 4 dimension breakdown. */
+interface NodeView {
+  wallet: string;
+  reputation: number;
+  jobsServed: number;
+  dimensions: {
+    accuracy: number;
+    uptime: number;
+    latency: number;
+    longevity: number;
+    stake: number;
+  };
+}
+
+async function fetchNodes(baseUrl: string): Promise<NodeView[]> {
+  return ((await (await fetch(`${baseUrl}/v1/nodes`)).json()) as { data: NodeView[] }).data;
+}
+
+/** The composite recomputed from the exposed dimensions with the spec weights. */
+function recomputeComposite(d: NodeView['dimensions']): number {
+  return (
+    Math.round(
+      10000 *
+        (0.4 * d.accuracy + 0.25 * d.uptime + 0.15 * d.latency + 0.1 * d.longevity + 0.1 * d.stake),
+    ) / 10000
+  );
+}
+
 /**
  * Happy path: a real (mock) completion comes back AND the escrow settles exactly
  * 95% provider / 5% treasury / refund, with the job marked VERIFIED on-chain.
@@ -263,26 +291,20 @@ export async function runOpsCase(): Promise<void> {
       jobs: { settled: number };
     };
     assert.ok(stats.jobs.settled >= 1, 'stats.jobs reflects activity');
-    const nodesData = (
-      (await (await fetch(`${h.baseUrl}/v1/nodes`)).json()) as {
-        data: Array<{ jobsServed: number; reputation: number }>;
-      }
-    ).data;
+    const nodesData = await fetchNodes(h.baseUrl);
     assert.ok((nodesData[0]?.jobsServed ?? 0) >= 1, 'node jobsServed increments (leaderboard)');
 
-    // Reputation shown by /v1/nodes must match the live on-chain value (cache refresh).
-    const pub = makePublicClient(h.deployment.rpcUrl);
-    const onchain = await pub.readContract({
-      address: h.deployment.contracts.nodeRegistry,
-      abi: nodeRegistryAbi,
-      functionName: 'getNode',
-      args: [h.deployment.accounts.node],
-    });
+    // Slice 4: the displayed reputation is the 5-dimension composite and must equal the
+    // weighted sum of the exposed dimension breakdown (no hidden inputs).
+    const view = nodesData[0]!;
     assert.equal(
-      nodesData[0]?.reputation,
-      Number(onchain.reputationScore) / 10000,
-      '/v1/nodes reputation reflects on-chain (refreshed after settlement)',
+      view.reputation,
+      recomputeComposite(view.dimensions),
+      '/v1/nodes composite equals the recomputed weighted dimension sum',
     );
+    assert.ok(view.dimensions.accuracy > 0.7, 'a verified pass nudges accuracy above the seed');
+    assert.equal(view.dimensions.latency, 1.0, 'MockBackend first token is fast (<500ms)');
+    assert.equal(view.dimensions.uptime, 1.0, 'connected since first seen');
 
     const ready = (await (await fetch(`${h.baseUrl}/ready`)).json()) as { ready: boolean };
     assert.equal(ready.ready, true, '/ready responds');
@@ -355,6 +377,20 @@ export async function runOnboardingCase(): Promise<void> {
     assert.equal(res.status, 200, 'issued key authenticates a job');
     const body = (await res.json()) as { choices: Array<{ message: { content: string } }> };
     assert.match(body.choices[0]!.message.content, /You said: issued key works/);
+
+    // Slice 4: a fresh gateway sees the node with the seeded accuracy (0.70) plus one
+    // verified pass, and exposes the full dimension breakdown.
+    const [view] = await fetchNodes(h.baseUrl);
+    assert.ok(view, '/v1/nodes lists the connected node');
+    assert.ok(
+      view!.dimensions.accuracy >= 0.7 && view!.dimensions.accuracy < 0.71,
+      `accuracy starts at the 0.70 onboarding seed (got ${view!.dimensions.accuracy})`,
+    );
+    assert.equal(
+      view!.reputation,
+      recomputeComposite(view!.dimensions),
+      'composite equals the weighted dimension sum',
+    );
 
     // Issuance is gated: wrong admin token is rejected.
     const bad = await fetch(`${h.baseUrl}/v1/keys`, {
@@ -573,6 +609,7 @@ export async function runFailureCase(): Promise<void> {
       balanceOf(pub, h.deployment, requester),
       stakeOf(provider),
     ]);
+    const [before] = await fetchNodes(h.baseUrl);
 
     const res = await chat(h.baseUrl, {
       model: 'mock-model',
@@ -592,6 +629,26 @@ export async function runFailureCase(): Promise<void> {
     assert.equal(t1, t0, 'treasury must be paid nothing on failure');
     assert.equal(r1, r0, 'requester must be fully refunded on failure');
     assert.ok(s1 < s0, 'provider stake must be slashed on a verified-bad result');
+
+    // Slice 4: the flaky node's composite reflects the failure immediately — the
+    // accuracy EMA takes a FAIL_ALPHA hit (0.70 → 0.665) and the slash shrinks the
+    // Stake dimension; both drag the composite below its pre-failure value.
+    const [after] = await fetchNodes(h.baseUrl);
+    assert.ok(before && after, '/v1/nodes lists the node before and after');
+    assert.ok(
+      after!.dimensions.accuracy < 0.7,
+      `accuracy drops below the seed after a verified failure (got ${after!.dimensions.accuracy})`,
+    );
+    assert.ok(
+      after!.dimensions.stake < before!.dimensions.stake,
+      'the slash is visible in the Stake dimension',
+    );
+    assert.ok(after!.reputation < before!.reputation, 'the composite drops after a failure');
+    assert.equal(
+      after!.reputation,
+      recomputeComposite(after!.dimensions),
+      'composite equals the weighted dimension sum',
+    );
   } finally {
     await h.stop();
   }

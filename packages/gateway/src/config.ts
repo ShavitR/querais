@@ -29,6 +29,8 @@ export interface HardeningConfig {
   wsMaxPerIp: number;
   wsHandshakeTimeoutMs: number;
   wsMaxMessagesPerSecond: number;
+  /** ws keepalive ping cadence (dead-TCP detection + uptime last_seen, Slice 4). */
+  wsPingIntervalMs: number;
 }
 
 export const HARDENING_DEFAULTS: HardeningConfig = {
@@ -49,6 +51,7 @@ export const HARDENING_DEFAULTS: HardeningConfig = {
   // Generous: every streamed token is one WS message, so a fast node serving
   // back-to-back jobs legitimately sustains ~1k msg/s. This blocks raw floods only.
   wsMaxMessagesPerSecond: 5_000,
+  wsPingIntervalMs: 60_000,
 };
 
 /** Merge a partial override (config/env) over the hardening defaults. */
@@ -137,6 +140,7 @@ function hardeningFromEnv(env: NodeJS.ProcessEnv): Partial<HardeningConfig> {
   num('GATEWAY_WS_MAX_PER_IP', 'wsMaxPerIp');
   num('GATEWAY_WS_HANDSHAKE_TIMEOUT_MS', 'wsHandshakeTimeoutMs');
   num('GATEWAY_WS_MAX_MESSAGES_PER_SECOND', 'wsMaxMessagesPerSecond');
+  num('GATEWAY_WS_PING_INTERVAL_MS', 'wsPingIntervalMs');
   if (env.GATEWAY_QUOTA_TIERS) {
     // JSON: {"free":{"dailyJobs":200,"dailyTokens":200000},...}
     out.quotaTiers = JSON.parse(env.GATEWAY_QUOTA_TIERS) as Record<string, QuotaTier>;

@@ -26,6 +26,9 @@ import { GatewayDb } from './db/index.js';
 import { JobStore } from './db/jobs.js';
 import { SessionStore } from './db/sessions.js';
 import { DebitLedgerStore } from './db/ledger.js';
+import { NodeSessionStore } from './db/node-sessions.js';
+import { NodeReputationStore } from './db/node-reputation.js';
+import { ReputationService } from './reputation.js';
 import { BatchedSettlement } from './batched-settlement.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
@@ -55,15 +58,28 @@ export async function buildGateway(
   const settler = walletClient.account.address;
   // Slice 3 surface hardening: resolved once, shared by routes, faucet, and the WS pool.
   const hardening = resolveHardening(opts.config.hardening);
-  const pool = new NodePool(chain, logger, {
-    maxConnections: hardening.wsMaxConnections,
-    maxPerIp: hardening.wsMaxPerIp,
-    handshakeTimeoutMs: hardening.wsHandshakeTimeoutMs,
-    maxMessagesPerSecond: hardening.wsMaxMessagesPerSecond,
-  });
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const db = new GatewayDb(opts.config.dbPath);
   const jobs = new JobStore(db);
+  // Slice 4 reputation: uptime session intervals + the accuracy-EMA working state feed
+  // the 5-dimension composite the pool serves to matching. Sessions a crashed gateway
+  // left open are closed at their last_seen before anything reads them.
+  const nodeSessions = new NodeSessionStore(db);
+  nodeSessions.closeAllOpen();
+  const nodeReputation = new NodeReputationStore(db);
+  const reputation = new ReputationService(chain, nodeReputation, nodeSessions, jobs, logger);
+  const pool = new NodePool(
+    chain,
+    logger,
+    {
+      maxConnections: hardening.wsMaxConnections,
+      maxPerIp: hardening.wsMaxPerIp,
+      handshakeTimeoutMs: hardening.wsHandshakeTimeoutMs,
+      maxMessagesPerSecond: hardening.wsMaxMessagesPerSecond,
+      pingIntervalMs: hardening.wsPingIntervalMs,
+    },
+    { reputation, sessions: nodeSessions },
+  );
   // Slice 2: durable signed-cap sessions + the batched-settlement venue. Dormant until a
   // requester opens a session via POST /v1/sessions; otherwise the per-job escrow path runs.
   const sessions = new SessionStore(db);
@@ -81,6 +97,7 @@ export async function buildGateway(
     logger,
     sessions,
     credit,
+    reputation,
   );
   const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
   const quota = new QuotaEnforcer(jobs, keyStore, hardening.quotaTiers);
@@ -134,6 +151,7 @@ export async function buildGateway(
     sessions,
     ledger,
     credit,
+    reputation,
     hardening,
     quota,
     logger,

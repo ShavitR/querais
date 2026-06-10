@@ -84,3 +84,39 @@ test('message-rate cap: a flooding socket is closed', () => {
   for (let i = 0; i < 6; i++) s.inject({ type: 'garbage' });
   assert.equal(s.closed?.code, 1008, 'closed once the per-second budget is exceeded');
 });
+
+test('uptime telemetry: a completed handshake opens a session; socket close closes it', async () => {
+  const { privateKeyToAccount, generatePrivateKey } = await import('viem/accounts');
+  const { GatewayDb } = await import('./db/index.js');
+  const { NodeSessionStore } = await import('./db/node-sessions.js');
+
+  const sessions = new NodeSessionStore(new GatewayDb());
+  const pool = new NodePool(chain, logger, {}, { sessions });
+  const s = new FakeSocket();
+  pool.handleConnection(asWs(s), '203.0.113.1');
+
+  // Complete the real signed-nonce handshake with a throwaway wallet.
+  const challenge = JSON.parse(s.sent[0]!) as { nonce: string };
+  const key = generatePrivateKey();
+  const account = privateKeyToAccount(key);
+  const signature = await account.signMessage({ message: challenge.nonce });
+  s.inject({
+    type: 'hello',
+    wallet: account.address,
+    nodeId: 'test-node',
+    nonce: challenge.nonce,
+    signature,
+    models: [{ model: 'mock-model', pricePerTokenWei: '1', tokensPerSecond: 1 }],
+  });
+  // onMessage is async — wait for the handshake to land.
+  for (let i = 0; i < 50 && pool.size() === 0; i++) await delay(10);
+  assert.equal(pool.size(), 1, 'node joined the pool');
+
+  const open = sessions.intervalsSince(account.address, 0);
+  assert.equal(open.length, 1, 'handshake opened a session');
+  assert.equal(open[0]!.end, null, 'session is open while connected');
+
+  s.close();
+  const closed = sessions.intervalsSince(account.address, 0);
+  assert.notEqual(closed[0]!.end, null, 'socket close closes the session');
+});

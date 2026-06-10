@@ -3,14 +3,8 @@ import type { Address, Hex } from 'viem';
 import type { ChainClient, SignedCap } from './chain-client.js';
 import type { SessionStore } from './db/sessions.js';
 import type { DebitLedgerStore } from './db/ledger.js';
-import {
-  emaReputationBps,
-  FAIL_ALPHA,
-  PASS_ALPHA,
-  SLASH_BPS,
-  type Settlement,
-  type SettlementContext,
-} from './settlement.js';
+import { SLASH_BPS, type Settlement, type SettlementContext } from './settlement.js';
+import { emaReputationBps, FAIL_ALPHA, PASS_ALPHA } from './reputation.js';
 
 export interface BatchedSettlementOptions {
   /** Flush a requester's pending debits once this many have accumulated. */
