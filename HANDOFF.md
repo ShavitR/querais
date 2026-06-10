@@ -34,7 +34,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
-                            ◐ 3 Harden surface (3A merged #25; 3B-1 ops in PR; 3B-2 Slither next)
+                            ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither in final PR)
 Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
@@ -45,14 +45,13 @@ squash-merged to `main`. Pause for review at slice boundaries. **The user must a
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
 **Immediate next actions (in order):**
-1. **Merge the `slice-3b-ops` PR** (Slice 3B-1 — pause tooling/tests/drill, key runbook,
-   Sepolia admin/pauser key split, `GET /v1/sessions`; needs the user's go-ahead).
-2. **Slice 3B-2 — Slither revisit** on branch `slice-3b-slither`: timeboxed, non-gating CI
-   job (decision ladder: latest slither on HH3 artifacts → Foundry analysis profile →
-   `cp -rL` flatten → documented deferral). Any real-looking finding in money paths →
-   surface to the user before merging.
-3. Then **Stage B**. Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is money-moving
-   contract work → **confirm the design with the user before building** (standing rule).
+1. **Merge the `slice-3b-slither` PR** (Slice 3B-2 — non-gating Slither CI job + triage;
+   needs the user's go-ahead). That completes Stage A.
+2. Then **Stage B**, starting with **Slice 4 — Reputation** (uptime/latency/longevity
+   dimensions, composite score, daily on-chain snapshots; today's gateway-side EMA lives in
+   `gateway/src/settlement.ts`). Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is
+   money-moving contract work → **confirm the design with the user before building**
+   (standing rule).
 
 A session-approved roadmap restatement lives at
 `~/.claude/plans/melodic-scribbling-deer.md` (Slice 2C gap analysis + the staged plan).
@@ -62,11 +61,12 @@ EXECUTION_PLAN.md remains the canonical roadmap.
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
-  *Slither deferred*: solc `--allow-paths` breaks under pnpm's symlinked store and Slither
-  doesn't auto-detect Hardhat 3. *Contract-line coverage deferred* (no HH3 tool).
+  *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
+  Slither can't drive Hardhat 3) — **resolved in 3B-2** via a symlink-free scratch copy.
+  *Contract-line coverage deferred* (no HH3 tool).
 - **Slice 1** — durable gateway state via **`node:sqlite`** (zero new deps): API keys,
   faucet claims (atomic INSERT throttle), job records, derived `/v1/usage`. DB is a thin
   cache/index, never the source of truth (see §6). Detail: `docs/SLICE1_PLAN.md`.
@@ -119,7 +119,7 @@ All gateway-side, additive via a new optional **`hardening`** config group
 - New e2e **hardening scenario**: prompt 400, quota 429 with headers, faucet per-IP 429 on
   fresh addresses.
 
-**Built, awaiting user merge: PR `slice-3b-ops` — Slice 3B-1 (ops hardening).**
+**Slice 3B-1 (merged #26) — ops hardening.**
 No contract changes, no new migrations. See `docs/RUNBOOK_KEYS.md` (the operational core):
 - **`scripts/pause.ts`** (contracts pkg; `pnpm ops:pause` from root) — tsx+viem incident
   CLI, **no Hardhat runtime** (works when the toolchain is broken): `status|pause|unpause
@@ -141,8 +141,19 @@ No contract changes, no new migrations. See `docs/RUNBOOK_KEYS.md` (the operatio
   key holds **neither** (only operational roles). Live pause/unpause drill done
   (time-to-pause 10.5s) — runbook §6 drill log entry #2.
 
+**In PR, awaiting user merge: `slice-3b-slither` — Slice 3B-2 (Slither CI).**
+The Slice 0 Slither deferral, closed. Non-gating `slither` CI job: slither-analyzer 0.11.5
++ solc 0.8.28 on a **symlink-free scratch copy** of the contracts (crytic-compile can't
+parse HH3 build-info; `--allow-paths` rejects pnpm's store — both documented). Triage in
+`packages/contracts/slither.config.json`; full per-detector rationale in
+**`docs/SLITHER_TRIAGE.md`**. Baseline = exactly **1 acknowledged finding**
+(`arbitrary-send-erc20` in `JobEscrow.createJob` — MATCHING_ENGINE-gated, bounded by each
+requester's allowance; the documented trusted-gateway model, runbook §2). The job goes
+red-but-allowed only when findings exceed the baseline — i.e. red == new finding to triage.
+No inline `slither-disable` comments in contracts, ever.
+
 **Deferred (do NOT assume these exist):**
-- **Slice 3B-2** (Slither CI revisit) and Slices 4–9.
+- Slices 4–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -173,6 +184,7 @@ packages/
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
+docs/SLITHER_TRIAGE.md   Slither setup rationale + acknowledged/excluded findings
 docs/SLICE1_PLAN.md      thin-DB principle + node:sqlite rationale
 docs/PHASE3_PLAN.md      broader workstream catalogue
 querais_*.md             the 7 original design/whitepaper docs — read for intent
@@ -272,8 +284,10 @@ Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` (full) or
   multiple `-m` flags / `--body-file <file>`. End commit messages with:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - **`.env` via Notepad becomes `.env.txt` + a BOM** — write with `Out-File -Encoding ascii`.
-- **Hardhat 3:** `defineConfig`, `network.connect()`, solc 0.8.28/cancun. No coverage tool;
-  Slither framework auto-detect unsupported (revisit in 3B).
+- **Hardhat 3:** `defineConfig`, `network.connect()`, solc 0.8.28/cancun. No coverage tool.
+  Slither can't drive HH3 (crytic-compile `KeyError: 'output'`) — CI runs it on a
+  symlink-free scratch copy instead (3B-2, `docs/SLITHER_TRIAGE.md`). Beware: a failed
+  `slither .` attempt runs `npx hardhat clean` — rebuild before testing.
 - **Ollama** backend (`gemma3:4b`, `qwen3:1.7b` with `think:false`). Tests/e2e use MockBackend.
 - **Parallel sessions exist** (Ultraplan/remote agents merged PRs #21/#23 while another
   session was open, and the local checkout switched branches underneath it). Before
@@ -345,11 +359,11 @@ Persistent memories: `~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`
 
 ## 12. Loose ends / current runtime state
 
-- **The `slice-3b-ops` PR (Slice 3B-1) is OPEN — merging needs the user's go-ahead.**
-  `main` is at #25 (Slice 3A).
+- **The `slice-3b-slither` PR (Slice 3B-2) is OPEN — merging needs the user's go-ahead.**
+  `main` is at #26 (Slice 3B-1).
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have merged it already.
-- After 3B-1 merges: **Slice 3B-2** (Slither, scope in §2), then Stage B.
+- After 3B-2 merges: Stage A is complete → **Stage B, Slice 4 Reputation** (scope in §2).
 - The **Sepolia key split is already executed on-chain** (it's an on-chain fact, not tied
   to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the repo-root `.env`.
   Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) — the

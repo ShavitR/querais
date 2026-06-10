@@ -1,0 +1,4 @@
+{
+  "filter_paths": "oz-contracts|mocks",
+  "detectors_to_exclude": "timestamp,cyclomatic-complexity,assembly,uninitialized-local,solc-version,pragma,naming-convention"
+}
