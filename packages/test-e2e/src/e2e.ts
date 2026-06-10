@@ -359,6 +359,66 @@ export async function runFaucetCase(): Promise<void> {
   }
 }
 
+/**
+ * Surface hardening (Slice 3): per-key daily quotas return 429 with quota headers once
+ * the budget is burned, prompt-abuse limits return 400 before any chain interaction,
+ * and the faucet's per-IP throttle blocks fresh addresses from the same source.
+ */
+export async function runHardeningCase(): Promise<void> {
+  const h = await startHarness({
+    hardening: {
+      quotaTiers: { free: { dailyJobs: 2, dailyTokens: 1_000_000 } },
+      maxPromptChars: 200,
+      faucetIpDailyLimit: 2,
+    },
+  });
+  try {
+    // 1. Prompt limits: an oversized prompt is refused with 400 (no chain interaction).
+    // (Run before the quota is burned — quota is checked first in the route.)
+    const big = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'x'.repeat(500) }],
+      max_tokens: 20,
+    });
+    assert.equal(big.status, 400, 'oversized prompt is refused');
+
+    // 2. Quota: the free tier allows 2 jobs/day — the 3rd is refused with headers.
+    for (let i = 0; i < 2; i++) {
+      const ok = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `quota ${i}` }],
+        max_tokens: 20,
+      });
+      assert.equal(ok.status, 200, `job ${i} within quota should succeed`);
+    }
+    const over = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'one too many' }],
+      max_tokens: 20,
+    });
+    assert.equal(over.status, 429, 'job beyond the daily quota is refused');
+    assert.equal(over.headers.get('x-querais-quota-remaining-jobs'), '0');
+    const overBody = (await over.json()) as { error: { type: string } };
+    assert.equal(overBody.error.type, 'quota_exceeded');
+
+    // 3. Faucet per-IP throttle: fresh addresses, same source IP — the 3rd is refused.
+    const claim = (addr: string) =>
+      fetch(`${h.baseUrl}/v1/faucet`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ address: addr }),
+      });
+    const a1 = await claim(privateKeyToAccount(generatePrivateKey()).address);
+    const a2 = await claim(privateKeyToAccount(generatePrivateKey()).address);
+    const a3 = await claim(privateKeyToAccount(generatePrivateKey()).address);
+    assert.equal(a1.status, 200, 'first claim from this IP succeeds');
+    assert.equal(a2.status, 200, 'second claim from this IP succeeds');
+    assert.equal(a3.status, 429, 'third claim from the same IP is throttled');
+  } finally {
+    await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';

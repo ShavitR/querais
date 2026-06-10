@@ -2,11 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { buildChatCompletion, buildChunk, chatCompletionRequestSchema } from '@querais/shared';
 import type { GatewayDeps } from '../deps.js';
 import { resolveRequester } from '../auth.js';
+import { validatePromptLimits } from '../quota.js';
 import { openAiError, randomId, sendError, sseData } from '../http.js';
 
 /**
  * POST /v1/chat/completions — the OpenAI-compatible entrypoint. Supports both
  * buffered and streaming (SSE) responses. Auth via Bearer API key → requester wallet.
+ * Slice 3: per-key daily quotas (429 + x-querais-quota-* headers) and prompt-abuse
+ * limits run before any matching or chain interaction.
  */
 export function registerChatCompletions(app: FastifyInstance, deps: GatewayDeps): void {
   app.post('/v1/chat/completions', async (request, reply) => {
@@ -17,11 +20,31 @@ export function registerChatCompletions(app: FastifyInstance, deps: GatewayDeps)
       return sendError(reply, err);
     }
 
+    // Per-key daily quota (jobs + tokens, derived from persisted job rows).
+    const apiKey = (request.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+    const quota = deps.quota.check(apiKey, requester);
+    reply.header('x-querais-quota-tier', quota.tier);
+    reply.header('x-querais-quota-remaining-jobs', String(quota.remainingJobs));
+    reply.header('x-querais-quota-remaining-tokens', String(quota.remainingTokens));
+    if (!quota.ok) {
+      reply.header('x-querais-quota-limit-jobs', String(quota.limitJobs));
+      reply.header('x-querais-quota-limit-tokens', String(quota.limitTokens));
+      return reply
+        .code(429)
+        .send(openAiError('daily quota exceeded for this API key', 'quota_exceeded'));
+    }
+
     const parsed = chatCompletionRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send(openAiError(parsed.error.message, 'invalid_request'));
     }
     const req = parsed.data;
+
+    // Prompt-abuse limits — refuse before touching matching or the chain.
+    const refusal = validatePromptLimits(req, deps.hardening);
+    if (refusal) {
+      return reply.code(400).send(openAiError(refusal, 'invalid_request'));
+    }
     const id = `chatcmpl-${randomId()}`;
     const created = Math.floor(Date.now() / 1000);
 

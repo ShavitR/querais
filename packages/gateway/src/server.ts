@@ -1,11 +1,12 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
 import type { WebSocket } from 'ws';
 import pino, { type Logger } from 'pino';
 import { renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
-import type { GatewayConfig } from './config.js';
+import { resolveHardening, type GatewayConfig } from './config.js';
+import { QuotaEnforcer } from './quota.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';
 import { Dispatcher } from './dispatcher.js';
@@ -52,7 +53,14 @@ export async function buildGateway(
 
   const chain = new ChainClient(publicClient, walletClient, deployment);
   const settler = walletClient.account.address;
-  const pool = new NodePool(chain, logger);
+  // Slice 3 surface hardening: resolved once, shared by routes, faucet, and the WS pool.
+  const hardening = resolveHardening(opts.config.hardening);
+  const pool = new NodePool(chain, logger, {
+    maxConnections: hardening.wsMaxConnections,
+    maxPerIp: hardening.wsMaxPerIp,
+    handshakeTimeoutMs: hardening.wsHandshakeTimeoutMs,
+    maxMessagesPerSecond: hardening.wsMaxMessagesPerSecond,
+  });
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const db = new GatewayDb(opts.config.dbPath);
   const jobs = new JobStore(db);
@@ -75,6 +83,7 @@ export async function buildGateway(
     credit,
   );
   const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
+  const quota = new QuotaEnforcer(jobs, keyStore, hardening.quotaTiers);
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
   let faucet: Faucet | undefined;
@@ -96,8 +105,20 @@ export async function buildGateway(
         await publicClient.waitForTransactionReceipt({ hash });
         return hash;
       },
+      // Balance guard (Slice 3): the faucet refuses cleanly once the well is dry.
+      qaisBalance: () =>
+        publicClient.readContract({
+          address: deployment.contracts.token,
+          abi: quaisTokenAbi,
+          functionName: 'balanceOf',
+          args: [distWallet.account.address],
+        }),
+      ethBalance: () => publicClient.getBalance({ address: distWallet.account.address }),
     };
-    faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei);
+    faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei, {
+      ipDailyLimit: hardening.faucetIpDailyLimit,
+      dailyCap: hardening.faucetDailyCap,
+    });
   }
 
   const deps: GatewayDeps = {
@@ -112,6 +133,8 @@ export async function buildGateway(
     settler,
     sessions,
     credit,
+    hardening,
+    quota,
     logger,
   };
 
@@ -146,8 +169,8 @@ export async function buildGateway(
 
   // Infra endpoints — excluded from rate limiting.
   const noLimit = { config: { rateLimit: false } };
-  app.get('/node', { websocket: true, ...noLimit }, (socket: WebSocket) => {
-    pool.handleConnection(socket);
+  app.get('/node', { websocket: true, ...noLimit }, (socket: WebSocket, request) => {
+    pool.handleConnection(socket, (request as FastifyRequest).ip);
   });
   app.get('/health', noLimit, async () => ({ status: 'ok', nodes: pool.size() }));
   app.get('/ready', noLimit, async () => ({ ready: true, nodes: pool.size() }));

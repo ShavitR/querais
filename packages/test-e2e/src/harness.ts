@@ -7,7 +7,12 @@ import {
   quaisTokenAbi,
   type Deployment,
 } from '@querais/shared';
-import { buildGateway, type GatewayConfig, type Settlement } from '@querais/gateway';
+import {
+  buildGateway,
+  type GatewayConfig,
+  type HardeningConfig,
+  type Settlement,
+} from '@querais/gateway';
 import {
   startDaemon,
   deriveNodeId,
@@ -46,6 +51,8 @@ export interface HarnessOptions {
   batchFlushThreshold?: number;
   /** Slice 2C: deadline margin for routing to the batched venue (default 240s). */
   sessionDeadlineMarginSeconds?: number;
+  /** Slice 3: surface-hardening overrides (quota tiers, prompt limits, WS caps, faucet). */
+  hardening?: Partial<HardeningConfig>;
 }
 
 /**
@@ -83,6 +90,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     batchFlushThreshold: opts.batchFlushThreshold ?? 25,
     batchFlushIntervalSeconds: 60,
     sessionDeadlineMarginSeconds: opts.sessionDeadlineMarginSeconds ?? 240,
+    ...(opts.hardening ? { hardening: opts.hardening } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
     faucetEthWei: 0n, // nodes are pre-funded in tests; no ETH drip needed

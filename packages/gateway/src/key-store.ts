@@ -29,12 +29,20 @@ export class ApiKeyStore {
     return row?.wallet as Address | undefined;
   }
 
+  /** The key's quota tier (Slice 3); undefined for unknown keys. */
+  tierOf(key: string): string | undefined {
+    const row = this.db.conn.prepare('SELECT tier FROM api_keys WHERE key = ?').get(key) as
+      | { tier: string }
+      | undefined;
+    return row?.tier;
+  }
+
   /** Mint a new API key bound to a (lowercased) wallet, persist, and return it. */
-  issue(wallet: Address): string {
+  issue(wallet: Address, tier = 'free'): string {
     const key = `sk-querais-${randomBytes(18).toString('hex')}`;
     this.db.conn
-      .prepare('INSERT INTO api_keys(key, wallet, created_at) VALUES(?, ?, ?)')
-      .run(key, wallet.toLowerCase(), Date.now());
+      .prepare('INSERT INTO api_keys(key, wallet, tier, created_at) VALUES(?, ?, ?, ?)')
+      .run(key, wallet.toLowerCase(), tier, Date.now());
     return key;
   }
 

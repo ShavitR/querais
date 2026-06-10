@@ -18,7 +18,7 @@ export function registerFaucet(app: FastifyInstance, deps: GatewayDeps): void {
       return reply.code(400).send(openAiError('a valid address is required', 'invalid_request'));
     }
     try {
-      const claim = await deps.faucet.claim(address as Address);
+      const claim = await deps.faucet.claim(address as Address, request.ip);
       return reply.send({
         ok: true,
         qaisTx: claim.qaisTx,

@@ -1,7 +1,8 @@
 import type { Logger } from 'pino';
 import type { Address } from 'viem';
-import type { GatewayConfig } from './config.js';
+import type { GatewayConfig, HardeningConfig } from './config.js';
 import type { ChainClient } from './chain-client.js';
+import type { QuotaEnforcer } from './quota.js';
 import type { NodePool } from './node-pool.js';
 import type { Dispatcher } from './dispatcher.js';
 import type { ApiKeyStore } from './key-store.js';
@@ -26,5 +27,8 @@ export interface GatewayDeps {
   /** Slice 2 credit sessions + batched settlement (present unless explicitly overridden). */
   sessions?: SessionStore;
   credit?: BatchedSettlement;
+  /** Slice 3 surface hardening: resolved limits + the per-key quota enforcer. */
+  hardening: HardeningConfig;
+  quota: QuotaEnforcer;
   logger: Logger;
 }
