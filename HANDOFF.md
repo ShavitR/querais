@@ -34,7 +34,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
-                            ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither in final PR)
+                            ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
 Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
@@ -44,18 +44,20 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Immediate next actions (in order):**
-1. **Merge the `slice-3b-slither` PR** (Slice 3B-2 — non-gating Slither CI job + triage;
-   needs the user's go-ahead). That completes Stage A.
-2. Then **Stage B**, starting with **Slice 4 — Reputation** (uptime/latency/longevity
-   dimensions, composite score, daily on-chain snapshots; today's gateway-side EMA lives in
-   `gateway/src/settlement.ts`). Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is
-   money-moving contract work → **confirm the design with the user before building**
-   (standing rule).
+**Stage A is COMPLETE. Immediate next actions (in order):**
+1. **Stage B, Slice 4 — Reputation completeness** (scope, build list, and acceptance
+   criteria are in `docs/EXECUTION_PLAN.md` Slice 4): daemon heartbeats → Uptime; per-job
+   TTFT → Latency; `registeredAt` → Longevity; composite 5-dimension score; **batched
+   daily on-chain `updateReputation` snapshots**; decay + rapid-decline flag. Today's
+   accuracy EMA lives in `gateway/src/settlement.ts` (PASS/FAIL alphas); `matching` stays
+   pure and consumes the composite score. **Plan before building** (the user wants big
+   work planned and confirmed first — §11), then the slice rhythm above.
+2. Then Slice 5 (Layer-A verify), Slice 6 (Tokenomics). Slice 6 (`ProtocolTreasury.sol`,
+   60/20/20 split) is money-moving contract work → **confirm the design with the user
+   before building** (standing rule).
 
-A session-approved roadmap restatement lives at
-`~/.claude/plans/melodic-scribbling-deer.md` (Slice 2C gap analysis + the staged plan).
-EXECUTION_PLAN.md remains the canonical roadmap.
+`docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
+this repo (no local-machine files are required; see §12 for what remote agents can't do).
 
 ---
 
@@ -141,7 +143,7 @@ No contract changes, no new migrations. See `docs/RUNBOOK_KEYS.md` (the operatio
   key holds **neither** (only operational roles). Live pause/unpause drill done
   (time-to-pause 10.5s) — runbook §6 drill log entry #2.
 
-**In PR, awaiting user merge: `slice-3b-slither` — Slice 3B-2 (Slither CI).**
+**Slice 3B-2 (merged #27) — Slither CI.**
 The Slice 0 Slither deferral, closed. Non-gating `slither` CI job: slither-analyzer 0.11.5
 + solc 0.8.28 on a **symlink-free scratch copy** of the contracts (crytic-compile can't
 parse HH3 build-info; `--allow-paths` rejects pnpm's store — both documented). Triage in
@@ -248,21 +250,23 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 
 ## 7. Run & verify (commands)
 
-From the repo root (PowerShell). **Always `Set-Location C:\Users\mynew\Desktop\querais`
-first if a previous Hardhat command ran — see §8.**
+From the repo root, any OS — these run identically on the maintainer's Windows box, a
+Linux remote/cloud agent, and CI. First: `cp .env.example .env` (localhost/e2e need only
+the well-known Hardhat dev accounts shipped in the example — no real secrets). On
+Windows, return to the repo root if a previous Hardhat command ran — see §8.
 
 ```
 pnpm install
 pnpm build               # REBUILD BEFORE test:e2e after editing gateway src — e2e consumes dist/!
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
-pnpm test                # all unit tests (102 TS + the contract suite)
+pnpm test                # all unit tests (109 TS + the 55-test contract suite)
 pnpm test:e2e            # self-contained: fresh local chain → 9 scenarios (~25s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
-Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` (full) or
-`pnpm deploy:credit:sepolia` (additive). Hosted test: `pnpm gateway:sepolia` + node scripts;
-`pnpm prepare:vm-node` auto-funds a node key.
+Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
+`pnpm deploy:sepolia` (full) or `pnpm deploy:credit:sepolia` (additive). Hosted test:
+`pnpm gateway:sepolia` + node scripts; `pnpm prepare:vm-node` auto-funds a node key.
 
 **Green bar = build + typecheck + lint + test + test:e2e.** CI runs the same on every PR
 (+ solhint); a PR must be green to merge.
@@ -270,6 +274,9 @@ Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` (full) or
 ---
 
 ## 8. Environment traps (these already cost time)
+
+Cross-platform traps first; the PowerShell/Windows ones apply only to the maintainer's
+local checkout (a Linux remote agent or CI can skip those).
 
 - **Node ≥ 22.13 REQUIRED** (`node:sqlite`). Local dev Node 26; CI Node 22.
 - **Windows + PowerShell.** The Bash tool is git-bash — backslash paths silently fail; use
@@ -353,23 +360,34 @@ GPU attestation, prompt privacy.
   The latest session: deep-dive subagents → plan mode → approval → build. Ask for big work.
 - **Dumb-proof UX matters.** Cost-aware — batch work, don't churn CI.
 
-Persistent memories: `~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`.
+Persistent memories live on the maintainer's local machine
+(`~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`) — remote agents don't have
+them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything required.
 
 ---
 
 ## 12. Loose ends / current runtime state
 
-- **The `slice-3b-slither` PR (Slice 3B-2) is OPEN — merging needs the user's go-ahead.**
-  `main` is at #26 (Slice 3B-1).
+- **Stage A is complete** — `main` is at #27 (Slice 3B-2 Slither). Next: **Stage B,
+  Slice 4 Reputation** (scope in §2). No slice PR is open.
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
-  parallel session may have merged it already.
-- After 3B-2 merges: Stage A is complete → **Stage B, Slice 4 Reputation** (scope in §2).
+  parallel session may have changed state since this file was written.
+- **Remote agents (no local files): what you can and cannot do.**
+  - ✅ Everything code-side: the full green bar (incl. e2e — it spawns its own local
+    chain), new slices, PRs. `cp .env.example .env` is all the setup needed; CI proves
+    the whole flow works on a fresh Ubuntu box.
+  - ❌ Anything needing real keys: Sepolia deploys, `pnpm gateway:sepolia`, pause/rotation
+    drills, the faucet. The hot gateway key and cold admin key live ONLY in the
+    maintainer's local `.env` (gitignored) — they are not in this repo, by design. If a
+    slice needs a live Sepolia action, build + test it against localhost/e2e and leave
+    the operator a copy-pasteable command list (pattern: `RUNBOOK_KEYS.md` §7).
+  - The same merge rule applies: open a PR, get CI green, **ask the user to merge**.
 - The **Sepolia key split is already executed on-chain** (it's an on-chain fact, not tied
-  to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the repo-root `.env`.
-  Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) — the
-  supply-chain age policy working as designed; leave it until the package ages in.
+  to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the maintainer's
+  `.env`. Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`)
+  — the supply-chain age policy working as designed; leave it until the package ages in.
 - **No hosted gateway/VM node is running** — restart with `pnpm gateway:sepolia` + the node
-  scripts if needed (the VM at 172.22.52.24 has a restart recipe in project memory).
+  scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
 - Counts that tests assert or reports cite: e2e = **9 scenarios**, gateway unit = **56**,
@@ -382,8 +400,9 @@ Persistent memories: `~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`
 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
-3. `Set-Location C:\Users\mynew\Desktop\querais; pnpm install; pnpm build; pnpm test` → green.
+3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
 4. `pnpm test:e2e` → 9 scenarios pass (self-contained, ~25s).
-5. Skim `dispatcher.ts`, `batched-settlement.ts`, `quota.ts`, `CreditAccount.sol`, `e2e.ts`,
-   and `docs/RUNBOOK_KEYS.md`.
-6. Confirm the Slice 3B scope with the user, then follow the rhythm in §2.
+5. Skim `dispatcher.ts`, `batched-settlement.ts`, `settlement.ts` (the EMA Slice 4
+   replaces), `CreditAccount.sol`, `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.
+6. Plan Slice 4 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
+   the rhythm in §2.
