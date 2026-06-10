@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { join } from 'node:path';
 import { parseEther, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
@@ -20,6 +22,7 @@ import type {
 } from '@querais/node-daemon';
 import { QueraisClient } from '@querais/sdk';
 import { startHarness, API_KEY, ADMIN_TOKEN, KEYS } from './harness.js';
+import { repoRoot } from './chain.js';
 
 function balanceOf(pub: QueraisPublicClient, dep: Deployment, addr: Address): Promise<bigint> {
   return pub.readContract({
@@ -154,6 +157,14 @@ export async function runBatchedSettlementCase(): Promise<void> {
     });
     assert.equal(opened.ok, true, 'session should open');
 
+    // Session status (Slice 3B): a fresh session reports zero spend/pending and full headroom.
+    const fresh = await sdk.sessionStatus();
+    assert.ok(fresh.session, 'GET /v1/sessions reports the active session');
+    assert.equal(fresh.session.spentAgainstWei, '0', 'nothing settled against a fresh cap');
+    assert.equal(fresh.pendingDebits.count, 0, 'no pending debits before any job');
+    assert.equal(fresh.credit.balanceWei, deposit.toString(), 'deposit visible on-chain');
+    assert.equal(fresh.headroomWei, deposit.toString(), 'headroom == cap == deposit here');
+
     // Snapshot AFTER deposit/approve (so those don't count), BEFORE the jobs.
     const [p0, t0, c0] = await Promise.all([
       balanceOf(pub, h.deployment, provider),
@@ -163,7 +174,7 @@ export async function runBatchedSettlementCase(): Promise<void> {
     const reqTxBefore = await pub.getTransactionCount({ address: requester });
 
     // Fire N jobs; each accrues a signed debit. The Nth triggers a single batchSettle.
-    for (let i = 0; i < JOBS; i++) {
+    for (let i = 0; i < JOBS - 1; i++) {
       const res = await chat(h.baseUrl, {
         model: 'mock-model',
         messages: [{ role: 'user', content: `batch ${i}` }],
@@ -171,6 +182,23 @@ export async function runBatchedSettlementCase(): Promise<void> {
       });
       assert.equal(res.status, 200, `job ${i} should return 200`);
     }
+
+    // Session status mid-run (before the flush): debits are pending, headroom is reduced.
+    const midRun = await sdk.sessionStatus();
+    assert.equal(midRun.pendingDebits.count, JOBS - 1, 'unflushed debits are visible');
+    assert.ok(BigInt(midRun.pendingDebits.totalWei) > 0n, 'pending total accrues');
+    assert.equal(midRun.session?.spentAgainstWei, '0', 'nothing on-chain until the flush');
+    assert.ok(
+      BigInt(midRun.headroomWei!) < BigInt(fresh.headroomWei!),
+      'pending debits reduce headroom',
+    );
+
+    const last = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: `batch ${JOBS - 1}` }],
+      max_tokens: 20,
+    });
+    assert.equal(last.status, 200, 'final job should return 200');
 
     // Exactly ONE on-chain batchSettle covered all N jobs.
     const events = await pub.getContractEvents({
@@ -198,6 +226,15 @@ export async function runBatchedSettlementCase(): Promise<void> {
     assert.equal(t1 - t0, ev.protocolFee, 'treasury receives the summed 5%');
     assert.equal(p1 - p0, ev.totalPaid - ev.protocolFee, 'provider receives the rest (95%)');
     assert.equal(c0 - c1, ev.totalPaid, 'deposit debited by exactly the gross total');
+
+    // Session status post-flush: ledger drained, on-chain spend matches the settled total.
+    const settled = await sdk.sessionStatus();
+    assert.equal(settled.pendingDebits.count, 0, 'flush drains the pending ledger');
+    assert.equal(
+      settled.session?.spentAgainstWei,
+      ev.totalPaid.toString(),
+      'on-chain spentAgainst equals the batch total',
+    );
   } finally {
     await h.stop();
   }
@@ -414,6 +451,72 @@ export async function runHardeningCase(): Promise<void> {
     assert.equal(a1.status, 200, 'first claim from this IP succeeds');
     assert.equal(a2.status, 200, 'second claim from this IP succeeds');
     assert.equal(a3.status, 429, 'third claim from the same IP is throttled');
+  } finally {
+    await h.stop();
+  }
+}
+
+/** Run the REAL ops pause script (packages/contracts/scripts/pause.ts) as a child process. */
+function runPauseScript(action: 'status' | 'pause' | 'unpause'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      'pnpm',
+      ['exec', 'tsx', 'scripts/pause.ts', action, '--network', 'localhost'],
+      {
+        cwd: join(repoRoot(), 'packages', 'contracts'),
+        shell: true,
+        stdio: 'inherit', // drill output belongs in the e2e log
+        // On localhost the PAUSER is the deployer/admin key, NOT the gateway key —
+        // this rehearses the production posture (pause works without the hot key).
+        env: { ...process.env, PAUSER_PRIVATE_KEY: KEYS.deployer },
+      },
+    );
+    proc.on('exit', (code) => resolve(code ?? 1));
+    proc.on('error', reject);
+  });
+}
+
+/**
+ * Emergency pause drill (Slice 3B): exercises the real incident tooling end-to-end.
+ * Pausing the contracts makes new work fail (chat 5xx) while the gateway itself stays
+ * up (/health 200); unpausing restores normal service. This is the permanent local
+ * regression for the runbook's "Immediate response" procedure (docs/RUNBOOK_KEYS.md).
+ */
+export async function runPauseDrillCase(): Promise<void> {
+  const h = await startHarness();
+  try {
+    const warm = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'pre-drill warm-up' }],
+      max_tokens: 20,
+    });
+    assert.equal(warm.status, 200, 'service healthy before the drill');
+
+    try {
+      assert.equal(await runPauseScript('pause'), 0, 'pause script must exit 0');
+
+      const paused = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: 'should fail while paused' }],
+        max_tokens: 20,
+      });
+      assert.ok(
+        paused.status >= 500,
+        `chat must fail while contracts are paused (got ${paused.status})`,
+      );
+      const health = await fetch(`${h.baseUrl}/health`);
+      assert.equal(health.status, 200, 'gateway /health stays up while paused');
+    } finally {
+      // Always unpause — later scenarios share this chain. Idempotent if pause failed.
+      assert.equal(await runPauseScript('unpause'), 0, 'unpause script must exit 0');
+    }
+
+    const restored = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'post-drill recovery' }],
+      max_tokens: 20,
+    });
+    assert.equal(restored.status, 200, 'service restored after unpause');
   } finally {
     await h.stop();
   }

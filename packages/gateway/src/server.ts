@@ -132,6 +132,7 @@ export async function buildGateway(
     faucet,
     settler,
     sessions,
+    ledger,
     credit,
     hardening,
     quota,

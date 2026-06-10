@@ -26,6 +26,22 @@ export interface OpenSessionOptions {
   deadline: bigint;
 }
 
+/** GET /v1/sessions — live session/credit/headroom view. Wei as decimal strings. */
+export interface SessionStatus {
+  requester: `0x${string}`;
+  settler: `0x${string}`;
+  session: {
+    nonce: string;
+    maxSpendWei: string;
+    deadline: string;
+    spentAgainstWei: string;
+    capRemainingWei: string;
+  } | null;
+  credit: { balanceWei: string };
+  pendingDebits: { count: number; totalWei: string };
+  headroomWei: string | null;
+}
+
 export interface ChatOptions {
   model: string;
   maxTokens?: number;
@@ -177,5 +193,18 @@ export class QueraisClient {
       throw new Error(`QueraIS openSession failed: HTTP ${res.status} ${await res.text()}`);
     }
     return (await res.json()) as { ok: boolean; nonce: string };
+  }
+
+  /**
+   * The requester's live session status: active cap (if any), on-chain spend against it,
+   * credit balance, unflushed debits, and `headroomWei` — the largest worst-case job cost
+   * the gateway would still accept right now (null without an active session).
+   */
+  async sessionStatus(): Promise<SessionStatus> {
+    const res = await fetch(`${this.opts.baseUrl}/v1/sessions`, { headers: this.headers() });
+    if (!res.ok) {
+      throw new Error(`QueraIS sessionStatus failed: HTTP ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as SessionStatus;
   }
 }

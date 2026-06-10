@@ -93,14 +93,23 @@ settlement real, and the surface safe. Do all four before opening anything publi
   everything economic (tokenomics, node earnings at volume) sits on top of it.
 - **Maps to:** P3.3.
 
-### Slice 3 — Harden the open surface · Effort M · Risk H
+### Slice 3 — Harden the open surface · Effort M · Risk H · ◐ 3A+3B-1 DONE
 - **Goal:** survive an adversarial internet *before* exposing anything.
-- **Build:** persistent IP+address faucet throttle + daily cap + distributor balance guard;
-  per-key **quota tiers** (429 with headers); prompt-abuse limits (max prompt size, token
-  caps, banned-pattern checks); WS flood/conn caps; documented **key-management + pause drill**
-  (the gateway holds every privileged role + a gas wallet — that blast radius needs a runbook).
-- **Acceptance:** the faucet can't be drained by one actor across restarts; quotas enforce;
-  a tabletop "gateway key leaked" drill has a runbook; pausing contracts is rehearsed.
+- **Built — 3A (merged #25):** persistent IP+address faucet throttle + daily cap +
+  distributor balance guard; per-key **quota tiers** (429 with headers); prompt-abuse
+  limits; WS flood/conn caps; e2e hardening scenario.
+- **Built — 3B-1 (`slice-3b-ops`):** `docs/RUNBOOK_KEYS.md` (key inventory, blast radius,
+  incident response, rotation, drill log); `scripts/pause.ts` incident CLI (tsx+viem, no
+  HH runtime, receipt-checked, idempotent); `test/Pausable.ts` pinning pause semantics
+  (exit/refund paths stay open while paused); e2e pause drill (9th scenario, real script);
+  `GET /v1/sessions` + SDK `sessionStatus()`; **executed Sepolia admin/pauser key split**
+  (cold EOA `0x85cC...9dE8` holds ADMIN+PAUSER; hot gateway key holds neither) + **live
+  Sepolia pause/unpause rehearsal** (time-to-pause 10.5s, drill log entry #2).
+- **Acceptance (met):** the faucet can't be drained by one actor across restarts; quotas
+  enforce; the "gateway key leaked" drill has a runbook; pausing contracts is rehearsed —
+  both locally (re-runs on every `pnpm test:e2e`) and live on Sepolia.
+- **Remaining — 3B-2:** Slither revisit (timeboxed, non-gating CI job or documented
+  deferral with evidence).
 - **Maps to:** core of P3.5.
 
 ---

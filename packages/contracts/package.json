@@ -32,7 +32,8 @@
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network arbitrumSepolia",
     "deploy:credit:sepolia": "hardhat run scripts/deploy-credit-account.ts --network arbitrumSepolia",
     "verify:sepolia": "hardhat verify --network arbitrumSepolia",
-    "preflight:sepolia": "tsx scripts/preflight.ts"
+    "preflight:sepolia": "tsx scripts/preflight.ts",
+    "pause": "tsx scripts/pause.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1"

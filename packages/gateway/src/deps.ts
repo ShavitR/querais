@@ -10,6 +10,7 @@ import type { Faucet } from './faucet.js';
 import type { GatewayDb } from './db/index.js';
 import type { JobStore } from './db/jobs.js';
 import type { SessionStore } from './db/sessions.js';
+import type { DebitLedgerStore } from './db/ledger.js';
 import type { BatchedSettlement } from './batched-settlement.js';
 
 /** Everything the route handlers need, assembled once at startup. */
@@ -26,6 +27,7 @@ export interface GatewayDeps {
   settler: Address;
   /** Slice 2 credit sessions + batched settlement (present unless explicitly overridden). */
   sessions?: SessionStore;
+  ledger?: DebitLedgerStore;
   credit?: BatchedSettlement;
   /** Slice 3 surface hardening: resolved limits + the per-key quota enforcer. */
   hardening: HardeningConfig;
