@@ -14,125 +14,116 @@ local LLM inference; payment settles in an ERC-20 token (`$QAIS`) on an L2, with
 protocol fee, secured by node staking + slashing + reputation.
 
 Current architecture is **hybrid hub-and-spoke** (the design docs' "Phase 1"): one trusted
-**gateway** does matching + holds the ORACLE/MATCHING/SLASHER keys + pays settlement gas;
-nodes and requesters all talk to it. It is **NOT** a P2P mesh yet (that's the future Phase 4).
+**gateway** does matching + holds the ORACLE/MATCHING/SLASHER/SETTLER keys + pays settlement
+gas; nodes and requesters all talk to it. It is **NOT** a P2P mesh yet (future Phase 4).
 Everything is on **Arbitrum Sepolia testnet — no real value.**
 
-It is real and working: contracts are **deployed + verified on Arbitrum Sepolia**, and a
-job has run **end-to-end across two machines** (a separate VM ran a node that served a real
-`gemma3:4b` completion which settled on-chain).
+It is real and working: contracts are **deployed + verified on Arbitrum Sepolia**, a job has
+run **end-to-end across two machines** (a separate VM served a real `gemma3:4b` completion
+that settled on-chain), and **batched settlement is live**: a requester deposits once, signs
+ONE EIP-712 spending cap, fires 100 API calls with zero per-call wallet txs, and they settle
+in a single `batchSettle` transaction (proven in e2e).
 
 ---
 
 ## 2. The plan we're executing (READ THIS)
 
-The live roadmap is **`docs/EXECUTION_PLAN.md`** — an opinionated, protocol-first sequence
-(a companion to the broader catalogue in `docs/PHASE3_PLAN.md`; where they disagree on order,
-the EXECUTION_PLAN wins). The thesis: **make the protocol complete/credible first, then operate
-it as a hosted service.** Stages:
+The live roadmap is **`docs/EXECUTION_PLAN.md`** — protocol-first sequencing (companion to
+the catalogue in `docs/PHASE3_PLAN.md`; where they disagree on order, EXECUTION_PLAN wins).
+Thesis: **make the protocol complete/credible first, then operate it as a hosted service.**
 
 ```
-Stage A — Foundation        ✅ 0 CI gate   ✅ 1 Persistence   ✅ 2 Batched settlement   ⬜ 3 Harden surface ⭐
+Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
+                            ◐ 3 Harden surface (3A done — PR #25 open; 3B next)
 Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
 
-**Working rhythm (established, stick to it):** one **branch + PR per slice**, gated by the
-**green bar in CI**, squash-merged to `main`. Slices are split into tested increments
-(e.g. Slice 1 shipped as 1A then 1B). Build a slice → full green bar → commit → PR → CI green
-→ merge. Pause for review at each slice boundary.
+**Working rhythm (established, stick to it):** one **branch + PR per slice** (big slices
+split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green bar in CI**,
+squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
+merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Slice 2 is DONE** (PRs #18 contract → #19 Sepolia deploy → #21 runtime). The marquee work
-shipped: `CreditAccount.sol` (deposit → EIP-712 signed cap → `batchSettle([...])` →
-withdraw-after-notice), the off-chain signed-debit ledger, and `BatchedSettlement implements
-Settlement` with a dispatcher branch (deposited requesters skip per-job escrow; `ChainSettlement`
-stays the fallback). e2e proves 10 jobs settle in **1** tx with **0** requester per-call txs.
+**Immediate next actions (in order):**
+1. **Merge PR #25** (Slice 3A — CI is green; needs the user's go-ahead).
+2. **Slice 3B — ops hardening**: key-management runbook + **pause drill** (the gateway holds
+   every privileged role + a gas wallet — document and rehearse "gateway key leaked";
+   contracts are already `Pausable`), a `GET /v1/sessions` status endpoint (session +
+   pending-debit visibility), revisit **Slither** (HH3 support was the blocker, see §3).
+3. Then **Stage B**. Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is money-moving
+   contract work → **confirm the design with the user before building** (standing rule).
 
-**The immediate next milestone is Slice 3 — harden the open surface** (persistent IP+address
-faucet throttle + daily cap, per-key quota tiers with 429s, prompt-abuse limits, WS flood caps,
-a documented key-management + pause drill). See `docs/EXECUTION_PLAN.md` Slice 3.
+A session-approved roadmap restatement lives at
+`~/.claude/plans/melodic-scribbling-deer.md` (Slice 2C gap analysis + the staged plan).
+EXECUTION_PLAN.md remains the canonical roadmap.
 
 ---
 
 ## 3. Status: done / in-progress / deferred
 
-**Built & verified (Phase 1 + "Plan A" packaging, then Slices 0–1 of the execution plan):**
-- Contracts: `QUAISToken`, `NodeRegistry`, `JobEscrow` (+ `ReentrantToken` test mock).
-  Deployed + Arbiscan-verified on Sepolia. 30 contract tests (conservation, access control,
-  reentrancy, fuzz, full node lifecycle). **Unchanged by Slices 0–1.**
-- `@querais/shared`: canonical `JobSpec` + deterministic `jobId`, OpenAI schemas, gateway↔node
-  wire protocol, pricing (basis-point) math, viem chain bindings. 16 tests.
-- `@querais/matching`: pure scorer (0.5·price + 0.5·reputation), never touches chain. 6 tests.
-- `@querais/node-daemon`: real **Ollama** inference, encrypted **keystore**, **auto-pricing**,
-  **model auto-pull**, **auto-reconnect**, **auto-faucet self-funding**. 19 tests.
-- `@querais/gateway`: OpenAI-compatible Fastify API, matching, on-chain settlement (95/5 +
-  reputation EMA), **slashing on bad results**, rate limiting, `/metrics`, served **dashboard**.
-  **Now with durable state (Slice 1) — see §3a.** 22 tests.
-- `@querais/sdk`: OpenAI-shaped client + `querais` CLI. 5 tests.
-- `@querais/test-e2e`: a **6-scenario** acceptance gate + live/ops scripts. The `ops` scenario
-  now also asserts the persisted `/v1/jobs/:id` + `/v1/usage` routes end-to-end.
-- Dumb-proof node onboarding: `scripts/setup-node.*` + `start-node.*`. Docker path also exists.
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24):**
+- **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
+  (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
+  *Slither deferred*: solc `--allow-paths` breaks under pnpm's symlinked store and Slither
+  doesn't auto-detect Hardhat 3. *Contract-line coverage deferred* (no HH3 tool).
+- **Slice 1** — durable gateway state via **`node:sqlite`** (zero new deps): API keys,
+  faucet claims (atomic INSERT throttle), job records, derived `/v1/usage`. DB is a thin
+  cache/index, never the source of truth (see §6). Detail: `docs/SLICE1_PLAN.md`.
+- **Slice 2A** (#18, #19) — **`CreditAccount.sol`**: deposit → EIP-712 signed spending cap
+  → `batchSettle(cap, sig, debits[])` with per-job idempotency (`settledJob`), cumulative
+  cap enforcement (`spentAgainst`), 95/5 split, withdraw-after-1-day-notice. Deployed +
+  verified on Sepolia (additively — token/registry/escrow unchanged).
+- **Slice 2B** (#21) — gateway side: durable `SessionStore` + `DebitLedgerStore` (migration
+  3), `BatchedSettlement implements Settlement` (flush at threshold / shutdown), dispatcher
+  venue choice (active session → batched, else per-job escrow), `POST /v1/sessions` +
+  `GET /v1/credit/info`, SDK `openSession()`.
+- **Slice 2C** (#24) — **settlement-correctness hardening** (money-path gaps found in a
+  line-by-line review of 2B; all gateway-side, no contract changes):
+  - `receipt.status` checked on EVERY chain write (`waitForSuccess` in `chain-client.ts`) —
+    viem does NOT throw on a mined-but-reverted tx.
+  - **Reconcile-on-revert**: if a flush reverts, query `settledJob(jobId)` per pending debit
+    and stamp already-settled ones with a `recovered:*` sentinel — a crash between tx-send
+    and `markBatched` can no longer wedge a requester's ledger forever. `markBatched` is
+    transactional.
+  - **`canAccrue()` headroom**: on-chain spent + off-chain pending + worst-case job cost
+    must fit the signed cap AND the deposit before routing batched; otherwise **fall back
+    to per-job escrow** (providers never serve work the flush could never settle).
+  - **Session-deadline margin** (`sessionDeadlineMarginSeconds`, default 240s): near cap
+    expiry, route to escrow and flush pending debits early (`CapExpired` is unsettleable).
+  - Flush failures **non-fatal** to the triggering request (debit durable; retried on
+    threshold/timer/shutdown). **Interval flush** (`GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS`,
+    default 60s) so low-traffic requesters never wait unboundedly.
+  - E2E batched scenario at the literal acceptance bar: **100 calls → 1 tx, 0 requester txs**.
+- **README rewrite** (#23) — accurate, detailed, dumb-proof (done by a parallel session).
 
-**Slice 0 — CI + static analysis (DONE, merged #1):**
-- `.github/workflows/ci.yml`: **green-bar** job (build/typecheck/lint/test/test:e2e, blocking),
-  **solhint** (blocking Solidity lint), **coverage** + **pnpm audit** (non-gating). Runs on
-  Ubuntu, Node 22, pnpm 11.5.2; seeds `.env` from `.env.example`; e2e is self-contained.
-- `.github/dependabot.yml`: monthly, grouped, **npm majors ignored** (handled deliberately);
-  action bumps grouped. CI actions pinned to **v6**.
-- **Slither was deferred** (documented): driving solc directly under pnpm trips solc
-  `--allow-paths` on the symlinked `.pnpm` store, and its framework auto-detect doesn't support
-  Hardhat 3. solhint covers the blocking Solidity gate; revisit Slither in Slice 2.
-- **Contract-line coverage deferred** (no HH3-compatible tool yet). TS coverage is reported.
-
-**Slice 1 — durable gateway state (DONE, merged #15) — see §3a.**
-
-**Slice 2 — batched session-deposit settlement (DONE, merged #18/#19/#21):**
-- `CreditAccount.sol` (new, additive — deployed + Arbiscan-verified on Sepolia; existing 3
-  contracts untouched): `deposit` → EIP-712 `SpendingCap` (signed once off-chain, zero gas) →
-  `batchSettle([...])` paying 95/5 in ONE tx → withdraw-after-notice. `SETTLER_ROLE`-gated; the
-  signed cap bounds worst-case exposure (no principal theft). 18 contract tests + gas benchmark
-  (~36k gas/job for a 20-job batch). First EIP-712 in the repo.
-- `@querais/shared/spending-cap.ts`: EIP-712 domain/types + viem sign/recover/hash + wire schema
-  + `buildSignedSession` (the SDK's one-call signer). Re-exported via the barrel.
-- Gateway: migration 3 adds `credit_sessions` + `debit_entries`; `SessionStore` (one active cap
-  per requester) + `DebitLedgerStore` (durable pending debits). `BatchedSettlement implements
-  Settlement` accrues a signed debit per job and flushes ALL of a requester's debits in one
-  `batchSettle` tx at `batchFlushThreshold` (or on shutdown), updating reputation once per
-  provider per flush. **Dispatcher branches**: active session → skip `createJob`/`assignJob`,
-  settle batched; else the unchanged escrow path. New `POST /v1/sessions` + `GET /v1/credit/info`.
-- SDK: optional `privateKey` + `openSession()` (signs the cap, zero gas) + `creditInfo()`.
-- New e2e scenario `runBatchedSettlementCase`: 10 jobs → 1 `batchSettle` tx, 0 requester txs,
-  95/5 verified on-chain. 7 e2e scenarios total. New env var: **`GATEWAY_BATCH_FLUSH_THRESHOLD`**.
-- Reputation is still per-flush-per-provider (not the full snapshotted multi-dimensional score —
-  that's Slice 4). Detail in `docs/SLICE2_PLAN.md`.
+**Built, CI-green, awaiting user merge: PR #25 — Slice 3A (harden the open surface).**
+All gateway-side, additive via a new optional **`hardening`** config group
+(`HARDENING_DEFAULTS` in `gateway/src/config.ts`; every knob env-overridable):
+- **Faucet anti-drain** (durable/restart-proof; migration 4 adds `ip` to faucet_claims):
+  per-IP daily throttle (default 3), global daily cap (default 100), distributor **balance
+  guard** (optional `qaisBalance`/`ethBalance` on `FaucetDistributor` — refuses cleanly
+  when dry without burning the address's one claim).
+- **Per-key quota tiers** (`api_keys.tier`, default `free`; free/pro/unlimited via
+  `GATEWAY_QUOTA_TIERS` JSON): daily job + token budgets **derived from persisted job rows**
+  over a rolling 24h window (no counter table); 429 `quota_exceeded` + `x-querais-quota-*`
+  headers; **failed attempts burn job quota**; `POST /v1/keys` accepts optional `tier`.
+  New module: `gateway/src/quota.ts` (`QuotaEnforcer`, `validatePromptLimits`).
+- **Prompt-abuse limits**: max messages (50) / prompt chars (32k) / `max_tokens` cap (4096)
+  / optional banned patterns — 400 **before any matching or chain interaction**.
+- **/node WS flood protection** (`NodePool`, optional opts): connection cap (256), per-IP
+  cap (4), handshake timeout (10s), per-socket message-rate cap. **Rate default is
+  deliberately 5000/s** — every streamed token is one WS message; a 500/s default killed
+  the node mid-e2e. (Silver lining: the 2C recovery machinery handled it unprompted —
+  reconnect + interval flush settled the stranded debits. Working as designed.)
+- New e2e **hardening scenario** (suite now **8 scenarios**, ~15s): prompt 400, quota 429
+  with headers, faucet per-IP 429 on fresh addresses.
 
 **Deferred (do NOT assume these exist):**
-- Slices 3–9 of the execution plan (harden surface, reputation completeness, Layer-A verify,
-  tokenomics, hosted deploy, SRE, DX/growth).
-- **Phase 4/5**: libp2p / on-chain auction / decentralized oracle (remove the trusted gateway),
-  full `DisputeResolution` arbitration, TEE prompt privacy, mainnet/TGE, DAO.
-- The dependency **majors** (zod 4, openai 6, typescript 6, @types/node 25, eslint 10, pino 10,
-  globals 17, dotenv 17) — deliberately deferred; Dependabot no longer auto-proposes them.
-
-### 3a. What Slice 1 added (gateway persistence)
-
-The gateway used to lose all state on restart (API keys in a JSON file, faucet claims in an
-in-memory `Set`, no job history). Slice 1 makes it durable behind a thin repository seam:
-
-- **`packages/gateway/src/db/`**: `GatewayDb` (one shared **`node:sqlite`** connection +
-  `user_version` migration runner), and `JobStore`. **Zero new runtime deps** — `node:sqlite`
-  is built into Node ≥22.13 (synchronous, no native build).
-- `ApiKeyStore` + `Faucet` are DB-backed (public methods unchanged → routes untouched). The
-  faucet's reserve is now an **atomic `INSERT` on a PRIMARY KEY**, so the one-per-address Sybil
-  throttle **survives restart** (the old `Set` was re-claimable by bouncing the process).
-- **Job records** persisted from the dispatcher at assign/settle/fail (writes are **non-fatal**
-  — a DB hiccup never breaks/unsettles a paid job). **Usage is derived** by aggregating settled
-  rows (no second table). `GET /v1/jobs/:id` is enriched; new `GET /v1/usage`.
-- **Design constraint (load-bearing):** the DB is the coordinator's **operational cache/index,
-  NEVER the source of truth for value/trust** — that stays on-chain. Kept thin/dismantlable for
-  Phase 4. See `docs/SLICE1_PLAN.md`.
-- New env var: **`GATEWAY_DB_PATH`** (a SQLite file path; unset = in-memory, used by tests/e2e
-  so they stay self-contained). The old `GATEWAY_API_KEY_STORE` / `apiKeyStorePath` is gone.
+- **Slice 3B** (runbook/pause-drill/sessions-status/Slither) and Slices 4–9.
+- `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
+  `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
+- Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
+- Dependency majors (zod 4, openai 6, ts 6, …) — deliberate; Dependabot ignores npm majors.
 
 ---
 
@@ -140,119 +131,125 @@ in-memory `Set`, no job history). Slice 1 makes it durable behind a thin reposit
 
 ```
 packages/
-  contracts/    Solidity + Hardhat 3. contracts/*.sol, scripts/{deploy,export-abis,preflight}.ts
-                deployments/addresses.<network>.json (sepolia committed, localhost gitignored)
-                .solhint.json (lint:sol) ; src/ → built dist/ exports ABIs + loadAddresses()
-  shared/       @querais/shared — types/schemas/jobId/pricing/wire/chain (the cross-layer contract)
-  matching/     @querais/matching — pure provider selection (no viem at runtime)
-  gateway/      @querais/gateway — src/{server,dispatcher,node-pool,settlement,verify,chain-client,
-                key-store,faucet,metrics,config,auth}.ts + routes/* + db/{index,migrations,jobs}.ts
-  node-daemon/  @querais/node-daemon — src/{daemon,gateway-client,registry,keystore,pricing,
-                auto-fund,report,config}.ts + inference/{backend,ollama,mock}.ts
-  sdk/          @querais/sdk — client.ts + cli.ts
-  test-e2e/     harness.ts + e2e.ts + run-e2e.ts (+ demo, live-sepolia, gateway-sepolia, prepare-vm-node)
+  contracts/    Solidity 0.8.28 + Hardhat 3. QUAISToken, NodeRegistry, JobEscrow,
+                CreditAccount (+ reentrancy test mocks). deployments/addresses.<network>.json.
+                ~55 tests (conservation, guards, reentrancy, EIP-712 parity, gas benchmark).
+  shared/       @querais/shared — JobSpec/jobId, OpenAI schemas, wire protocol, pricing
+                (basis-point), EIP-712 spending-cap sign/recover, chain bindings. 21 tests.
+  matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
+  gateway/      @querais/gateway — Fastify OpenAI API. src/{server,dispatcher,node-pool,
+                settlement,batched-settlement,verify,chain-client,quota,key-store,faucet,
+                metrics,config,auth,http}.ts + routes/* + db/{index,migrations,jobs,
+                sessions,ledger}.ts. 50 tests.
+  node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
+                auto-faucet, auto-reconnect. 19 tests.
+  sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`) + `querais` CLI. 5 tests.
+  test-e2e/     harness + 8-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
-.github/        workflows/ci.yml + dependabot.yml   (Slice 0)
-docs/EXECUTION_PLAN.md   the live, protocol-first roadmap (what we're following)
-docs/SLICE1_PLAN.md      Slice 1 detail (the thin-DB principle + node:sqlite rationale)
-docs/PHASE3_PLAN.md      the broader workstream catalogue (P3.1–P3.14)
+docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
+docs/SLICE1_PLAN.md      thin-DB principle + node:sqlite rationale
+docs/PHASE3_PLAN.md      broader workstream catalogue
 querais_*.md             the 7 original design/whitepaper docs — read for intent
 ```
 
-**Most load-bearing files:** `packages/contracts/contracts/JobEscrow.sol` (escrow + 95/5
-settlement), `packages/shared/src/jobspec.ts` (canonical spec + jobId), `packages/gateway/src/
-dispatcher.ts` (match → lock/assign → stream → verify → settle → persist), `packages/gateway/
-src/settlement.ts` (the `Settlement` seam — Slice 2 adds `BatchedSettlement` here),
-`packages/gateway/src/db/*` (Slice 1 persistence), `packages/node-daemon/src/inference/ollama.ts`,
-`packages/test-e2e/src/e2e.ts` (the acceptance scenarios).
+**Most load-bearing files:** `contracts/CreditAccount.sol` + `JobEscrow.sol`,
+`shared/src/spending-cap.ts` (EIP-712 — must mirror the contract), `gateway/src/dispatcher.ts`
+(match → venue choice → stream → verify → settle), `gateway/src/batched-settlement.ts`
+(ledger/flush/reconcile/canAccrue), `gateway/src/quota.ts`, `gateway/src/db/migrations.ts`
+(**4 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
 
 ---
 
 ## 5. Job lifecycle (how a request flows)
 
-1. `POST /v1/chat/completions` (Bearer API key → requester wallet via `ApiKeyStore`, now DB-backed).
-2. Gateway normalizes → canonical `JobSpec` (`jobId = keccak256(canonical bytes)`).
-3. `matching.selectBest()` picks a node from the in-memory pool (price + reputation).
-4. Gateway (MATCHING_ENGINE) `createJob` (locks QAIS) → `assignJob` on-chain. **Job row persisted.**
-5. Node runs **real inference** (Ollama), streams tokens over WS; gateway proxies + **counts
-   tokens independently** (settles on `min(node, gateway)` — trust-minimized).
-6. **Layer-B verify** (`verify.ts`): non-empty, length, no loops, and `resultHash ==
-   hash(forwarded text)`. (Deliberately **no cross-node hash matching** — see §6.)
-7. Settle: `completeJob` → `verifyAndRelease` (95/5 + reputation EMA) on success; `failJob`
-   refund + slash on failure. **Job row updated** (status + settlement split); **usage derived**
-   from settled rows. (`Settlement` interface; `ChainSettlement` impl; Slice 2 adds batching.)
+1. `POST /v1/chat/completions` (Bearer key → wallet via `ApiKeyStore`). **Quota check**
+   (429 + headers) and **prompt limits** (400) run first — before matching or the chain.
+2. Normalize → canonical `JobSpec` (`jobId = keccak256(canonical bytes)`).
+3. `matching.selectBest()` picks a node (price + reputation).
+4. **Venue choice**: active credit session AND deadline outside the margin AND
+   `canAccrue(worst case)` → **batched** (no per-job chain writes; deposit + signed cap are
+   the collateral). Otherwise → per-job escrow (`createJob` + `assignJob`).
+5. Node streams tokens over WS; gateway proxies + counts independently
+   (settles on `min(node, gateway)`).
+6. **Layer-B verify** (non-empty, length, loop detection, `resultHash == hash(forwarded)`).
+7. Settle: batched → durable debit, flushed at threshold/interval/deadline-margin/shutdown
+   in ONE `batchSettle`; escrow → `completeJob` → `verifyAndRelease` (95/5). Reputation EMA
+   on success; refund + slash on failure.
 
 ---
 
 ## 6. Design rules that MUST hold (don't "fix" these)
 
 - **No cross-node output hashing for verification.** `temperature=0` is NOT deterministic
-  across GPUs/backends; hash-matching honest nodes would falsely slash them. Verification is
-  **Layer-B (objective checks) + economic staking**, with Layer-A (semantic similarity sampling)
-  as the future Slice 5. `resultHash` only pins a node to *what it sent the gateway*.
-- **Token count = `min(node-reported, gateway-counted)`** (never trust the node alone).
-- **Job deadlines derive from CHAIN time** (`block.timestamp`), not wall-clock — Hardhat drifts
-  the block clock under bursty load and `createJob` checks `deadline > block.timestamp`.
-- **All fee/price math is integer wei + basis points** (no floats on-chain). Float USD→wei
-  conversion happens once, off-chain, in `shared/src/pricing.ts`.
-- **Contracts**: CEI on every fund-moving fn, OZ `ReentrancyGuard`/`SafeERC20`/`AccessControl`/
-  `Pausable`, custom errors, strict job state machine. `JobEscrow` is the job registry.
-- **`matching` stays pure** (no viem/chain at runtime) so it can move on-chain in Phase 4.
-- **The gateway DB is a thin cache/index, never the source of truth for value/trust** — that
-  stays on-chain. Persistence writes are non-fatal; keep the DB minimal/dismantlable. (Slice 1.)
+  across GPUs/backends. Verification is Layer-B + economic staking; Layer-A (semantic
+  similarity sampling) is Slice 5. `resultHash` only pins a node to what it sent.
+- **Token count = `min(node-reported, gateway-counted)`** — never trust the node alone.
+- **Job deadlines derive from CHAIN time** (`block.timestamp`), not wall-clock.
+- **All fee/price math is integer wei + basis points** (no floats on-chain).
+- **Check `receipt.status` on every chain write** — viem does NOT throw on a
+  mined-but-reverted tx (use/extend `ChainClient.waitForSuccess`). (2C.)
+- **A flush failure must never fail the triggering request** — debits are durable and
+  retried; reconcile-on-revert keeps the ledger unstickable. (2C.)
+- **Never accept batched work the flush couldn't settle** — `canAccrue` headroom + the
+  deadline margin guard this; per-job escrow is the always-available fallback. (2C.)
+- **Usage/quota are DERIVED from job rows** — no counter tables to keep in sync. (3A.)
+- **WS message-rate caps must stay generous** — every streamed token is one WS message; a
+  fast node legitimately sustains ~1k msg/s. The cap blocks raw floods only. (3A.)
+- **Contracts**: CEI on every fund-moving fn, OZ ReentrancyGuard/SafeERC20/AccessControl/
+  Pausable, custom errors, strict state machines.
+- **`matching` stays pure** (no chain IO) so it can move on-chain in Phase 4.
+- **The gateway DB is a thin cache/index, never the source of truth for value/trust.**
 - Keep changes **additive via the existing seams**: `Settlement`, `InferenceBackend`,
-  `ApiKeyStore`, `FaucetDistributor`, `GatewayDb`/`JobStore`, `loadAddresses(network)`, the WS transport.
+  `ApiKeyStore`, `FaucetDistributor`, `GatewayDb`/stores, `NodePoolOptions`,
+  `HardeningConfig`, `loadAddresses(network)`, the WS transport.
 
 ---
 
 ## 7. Run & verify (commands)
 
-From the repo root (PowerShell). **Always `Set-Location C:\Users\mynew\Desktop\querais` first
-if a previous Hardhat command ran — see §8.**
+From the repo root (PowerShell). **Always `Set-Location C:\Users\mynew\Desktop\querais`
+first if a previous Hardhat command ran — see §8.**
 
 ```
-pnpm install              # esbuild build is allow-listed in pnpm-workspace.yaml
-pnpm build               # builds all packages (contracts = hardhat compile + export-abis + tsc)
+pnpm install
+pnpm build               # REBUILD BEFORE test:e2e after editing gateway src — e2e consumes dist/!
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
-pnpm test                # all unit tests (~90+)
-pnpm test:e2e            # self-contained: spawns a fresh local chain, deploys, runs 6 scenarios
+pnpm test                # all unit tests (102 TS + the contract suite)
+pnpm test:e2e            # self-contained: fresh local chain → 8 scenarios (~15s)
 pnpm demo                # local human demo (real Ollama + dashboard)
-pnpm --filter @querais/contracts lint:sol   # solhint (also runs in CI)
 ```
-Local chain manually: `pnpm chain` (terminal 1) + `pnpm deploy:local` (terminal 2).
-Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` → verify cmds it prints.
-Run hosted on Sepolia: `pnpm gateway:sepolia` (binds 0.0.0.0:8787) + a node via
-`scripts/setup-node.*` then `scripts/start-node.*`. `pnpm prepare:vm-node` auto-funds a node key.
+Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` (full) or
+`pnpm deploy:credit:sepolia` (additive). Hosted test: `pnpm gateway:sepolia` + node scripts;
+`pnpm prepare:vm-node` auto-funds a node key.
 
-**Green bar = build + typecheck + lint + test + test:e2e all pass.** That's the bar before any
-commit. **CI runs the same bar on every PR** (`.github/workflows/ci.yml`) + solhint; a PR must
-be green to merge. Verified empirically: CI goes red on a failing test, green on a clean PR.
+**Green bar = build + typecheck + lint + test + test:e2e.** CI runs the same on every PR
+(+ solhint); a PR must be green to merge.
 
 ---
 
 ## 8. Environment traps (these already cost time)
 
-- **Node ≥ 22.13 is REQUIRED** (`engines.node`), not the old `>=20`. pnpm 11.5.2 imports
-  `node:sqlite` (which Slice 1 also uses), absent before 22.13. Node 20 fails at install/CI
-  setup with `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`. **Local dev uses Node 26; CI uses Node 22.**
-- **Windows + PowerShell** is the shell. The **Bash tool is git-bash** — and it strips Windows
-  backslash paths (`cd C:\...` silently fails); use forward-slash paths (`/c/Users/...`).
-  PowerShell's `bash` is WSL and has **no distro** (fails).
-- **CWD drift:** running Hardhat via pnpm leaves the PowerShell CWD in `packages/contracts`.
-  Before any root-level `pnpm lint/test/build`, run `Set-Location C:\Users\mynew\Desktop\querais`.
-- **Format before committing:** run `pnpm exec prettier --write .` then `pnpm lint`. Prettier
-  checks YAML/JSON too (the CI workflow files), so format those after editing.
-- **PowerShell here-strings mangle `git commit -m`** — use multiple `-m` flags. End every commit
-  message with: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
-- **`.env` via Notepad becomes `.env.txt` + a BOM** → vars silently not loaded. Create `.env`
-  with a PowerShell here-string `... | Out-File .env -Encoding ascii`, or set vars inline with `$env:`.
-- **tsx isn't a bare command** — invoke via pnpm scripts or `pnpm --filter <pkg> exec tsx`.
-- **Hardhat 3 specifics:** `defineConfig`, `network.connect()`, solc 0.8.28 (optimizer 200,
-  evmVersion cancun), contract types from generated `artifacts/**`. No built-in coverage; Slither
-  framework auto-detect doesn't support HH3 (see §3, Slice 0).
-- **Ollama** is the inference backend (`gemma3:4b` + `qwen3:1.7b` pulled). qwen3 is a thinking
-  model — the daemon sends `think:false`. Tests/e2e use the **MockBackend** (no Ollama needed).
+- **Node ≥ 22.13 REQUIRED** (`node:sqlite`). Local dev Node 26; CI Node 22.
+- **Windows + PowerShell.** The Bash tool is git-bash — backslash paths silently fail; use
+  `/c/Users/...`. PowerShell's `bash` is WSL with no distro.
+- **CWD drift:** Hardhat-via-pnpm leaves PowerShell CWD in `packages/contracts`. Reset to
+  the repo root before any root-level pnpm command.
+- **`pnpm test:e2e` runs against BUILT packages (`dist/`)** — editing gateway source and
+  re-running e2e without `pnpm build` tests stale code (cost a debugging loop in 3A).
+- **Format before committing:** `pnpm exec prettier --write .` then `pnpm lint` (it checks
+  YAML/JSON/MD too).
+- **PowerShell here-strings mangle `git commit -m` and `gh pr create --body`** — use
+  multiple `-m` flags / `--body-file <file>`. End commit messages with:
+  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+- **`.env` via Notepad becomes `.env.txt` + a BOM** — write with `Out-File -Encoding ascii`.
+- **Hardhat 3:** `defineConfig`, `network.connect()`, solc 0.8.28/cancun. No coverage tool;
+  Slither framework auto-detect unsupported (revisit in 3B).
+- **Ollama** backend (`gemma3:4b`, `qwen3:1.7b` with `think:false`). Tests/e2e use MockBackend.
+- **Parallel sessions exist** (Ultraplan/remote agents merged PRs #21/#23 while another
+  session was open, and the local checkout switched branches underneath it). Before
+  branching or assuming state: `git fetch; git log origin/main --oneline -5; gh pr list`
+  and verify `git branch --show-current` before committing.
 
 ---
 
@@ -262,73 +259,73 @@ Manifest: `packages/contracts/deployments/addresses.arbitrumSepolia.json` (commi
 - QUAISToken `0x1e89e050e68e81c32980205ec0db444ede3f4e2c`
 - NodeRegistry `0x6d13d0f94ef912c6817a74c632a378997eacf776`
 - JobEscrow `0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0`
-- CreditAccount `0x1e44f2ce56d90f764121b82bc3571b08a1d15522` (Slice 2; gateway holds SETTLER_ROLE)
-- Deployer = admin = gateway = treasury = requester = `0xc80A8137E57D494b195EdA12f74d7Df324f5b9d6`
-  (a single throwaway testnet wallet holding the 1B QAIS + all roles, for the hybrid setup).
+- CreditAccount `0x1e44f2ce56d90f764121b82bc3571b08a1d15522`
+- Deployer = admin = gateway = treasury = `0xc80A8137E57D494b195EdA12f74d7Df324f5b9d6`
+  (single throwaway testnet wallet holding all roles, for the hybrid setup).
 
-Secrets live in `.env` (gitignored): `DEPLOYER_PRIVATE_KEY`, `ARBITRUM_SEPOLIA_RPC_URL`,
-`ETHERSCAN_API_KEY`, gateway/node/requester keys, `GATEWAY_DB_PATH` (optional). See `.env.example`
-for every variable. **Never commit `.env`; never put real-value keys in it (testnet only).**
+Secrets in `.env` (gitignored); see `.env.example`. Gateway env knobs added in 2C/3A (all
+optional — defaults in `HARDENING_DEFAULTS`, `gateway/src/config.ts`):
+`GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS`, `GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS`,
+`GATEWAY_FAUCET_IP_DAILY_LIMIT`, `GATEWAY_FAUCET_DAILY_CAP`, `GATEWAY_QUOTA_TIERS` (JSON),
+`GATEWAY_MAX_MESSAGES`, `GATEWAY_MAX_PROMPT_CHARS`, `GATEWAY_MAX_TOKENS_CAP`,
+`GATEWAY_BANNED_PATTERNS` (regex CSV), `GATEWAY_WS_MAX_CONNECTIONS`,
+`GATEWAY_WS_MAX_PER_IP`, `GATEWAY_WS_HANDSHAKE_TIMEOUT_MS`,
+`GATEWAY_WS_MAX_MESSAGES_PER_SECOND`.
 
 ---
 
 ## 10. Trust model (important when changing security)
 
-The gateway is **trusted**: it holds ORACLE+MATCHING+SLASHER roles, a gas wallet, and the
-faucet distributor. Worst case if compromised is bounded (it can only settle at agreed prices;
-no theft of deposited principal), but it is the central point — acknowledged, removing it is
-Phase 4. Slashing (1% on Layer-B failure) + reputation are the live deterrents. NOT yet built:
-full disputes, Layer-A semantic verification, Sybil/GPU attestation, prompt privacy. The Slice 1
-DB does not change this — it holds no value/trust state.
+The gateway is **trusted**: ORACLE+MATCHING+SLASHER+SETTLER roles, a gas wallet, the faucet
+distributor. Worst case if compromised is bounded — it can only settle at signed/agreed
+prices (the CreditAccount cap + signature are enforced on-chain); no theft of deposited
+principal. Removing it is Phase 4. Live deterrents: slashing (1% on Layer-B failure),
+reputation EMA, staking. Slice 3A added the adversarial-surface layers (quotas, throttles,
+flood caps); 3B adds the operational layers (runbook, pause drill). NOT yet built: full
+disputes, Layer-A verification, GPU attestation, prompt privacy.
 
 ---
 
 ## 11. How the user likes to work (observed)
 
-- **Tested, committed increments** — build a slice, run the full green bar, **branch + PR per
-  slice, CI green, squash-merge**, repeat. Split big slices into tested sub-increments.
-- **Honest reporting** — say what passed/failed with evidence; no overclaiming. (E.g. Slither was
-  reported as genuinely-not-working and deferred, not faked green.)
-- **Delegates judgment** — frequently says "continue as you think best"; make the call, state it,
-  and proceed. But **outward/irreversible or money-moving actions: confirm first** — publishing
-  the repo, deploying, spending testnet funds, and **rewriting money-moving contracts (Slice 2)**.
-  The repo `ShavitR/querais` is **private**.
-- Sometimes refines substantial plans remotely in **Ultraplan** (rejects `ExitPlanMode` to hand
-  off) before implementation; other times wants the plan written to `docs/`. Ask/confirm which
-  for big work (it's a documented preference).
-- **Dumb-proof UX matters** (one-line install, zero manual funding).
-- Cost-aware — be efficient with CI cycles and tokens; batch work, don't churn.
+- **Tested, committed increments** — slice → green bar → branch+PR → CI green → squash-merge.
+- **The user approves merges to main** — a permission classifier blocks self-merging;
+  surface "CI is green, ready to merge" and wait for the go-ahead (a short "yes" from them
+  authorizes the merge — then `gh pr merge --squash --delete-branch` works).
+- **Honest reporting** — say what passed/failed with evidence; report your own mistakes
+  (e.g. 3A's 500 msg/s default broke e2e — it was reported and explained, not buried).
+- **Delegates judgment** — "continue as you think best"; make the call, state it, proceed.
+  But **outward/irreversible/money-moving: confirm first** — publishing, deploying, spending
+  funds, and money-moving contract work (the Slice 6 Treasury explicitly so).
+- Sometimes refines big plans in **Ultraplan**; sometimes wants plan mode or `docs/` plans.
+  The latest session: deep-dive subagents → plan mode → approval → build. Ask for big work.
+- **Dumb-proof UX matters.** Cost-aware — batch work, don't churn CI.
 
-Persistent memories for this project live at
-`~/.claude/projects/C--Users-mynew-Desktop-querais/memory/` (Node-floor ≥22.13 + CWD-drift +
-Ultraplan-workflow notes).
+Persistent memories: `~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`.
 
 ---
 
 ## 12. Loose ends / current runtime state
 
-- **`main` is at the merge of #21** (Slice 2B). History: #1 (Slice 0) → #15 (Slice 1) → #16 →
-  #18 (Slice 2A contract) → #19 (Slice 2A Sepolia deploy) → #21 (Slice 2B runtime). No open PRs.
-  `git log --oneline` is the source of truth.
-- **Dependabot backlog cleared.** The 12 auto-opened PRs were resolved: safe action bumps applied
-  (#16), majors deferred (config now ignores npm majors), the rest auto-closed by the retune.
-  Going forward Dependabot opens **one grouped minor/patch PR per month**.
-- **No hosted gateway/VM node is running** — those are ephemeral and don't survive sessions.
-  Restart with `pnpm gateway:sepolia` + the node scripts if needed.
-- The "ultra one-liner" installer (`scripts/bootstrap.*`) still needs the **repo to be public**.
-- **Next action: Slice 3 (harden the open surface).** See `docs/EXECUTION_PLAN.md` Slice 3:
-  persistent IP+address faucet throttle + daily cap + distributor-balance guard, per-key quota
-  tiers (429 + headers), prompt-abuse limits (max size, token caps, banned patterns), WS
-  flood/conn caps, and a documented key-management + pause drill (the gateway holds every
-  privileged role + a gas wallet — that blast radius needs a runbook). Effort M, Risk H.
+- **PR #25 (Slice 3A) is OPEN with CI green — merging needs the user's go-ahead.** Local
+  branch `slice-3a-harden-surface` (pushed). `main` is at #24 (Slice 2C).
+  **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
+  parallel session may have merged it already.
+- After #25 merges: **Slice 3B** (scope in §2), then Stage B.
+- **No hosted gateway/VM node is running** — restart with `pnpm gateway:sepolia` + the node
+  scripts if needed (the VM at 172.22.52.24 has a restart recipe in project memory).
+- The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
+  public — a user decision, likely Slice 9.
+- Counts that tests assert or reports cite: e2e = **8 scenarios**, gateway unit = **50**,
+  TS unit total = **102**, migrations = **4** (`MIGRATION_COUNT` tracks automatically).
 
 ---
 
 ## 13. Your first 5 minutes (suggested)
 
-1. Read this file + `docs/EXECUTION_PLAN.md` (the roadmap) + skim `docs/SLICE1_PLAN.md`.
-2. `Set-Location C:\Users\mynew\Desktop\querais; pnpm install; pnpm build; pnpm test` → expect green
-   (ensure Node ≥22.13).
-3. `pnpm test:e2e` → 6 scenarios pass (spawns its own chain; needs nothing running).
-4. Skim `dispatcher.ts`, `settlement.ts`, `db/jobs.ts`, `JobEscrow.sol`, `e2e.ts` to see the spine.
-5. `git log --oneline -10` for the recent arc, then confirm the **Slice 2** plan approach with the user.
+1. Read this file + `docs/EXECUTION_PLAN.md`.
+2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm whether #25 merged.
+3. `Set-Location C:\Users\mynew\Desktop\querais; pnpm install; pnpm build; pnpm test` → green.
+4. `pnpm test:e2e` → 8 scenarios pass (self-contained, ~15s).
+5. Skim `dispatcher.ts`, `batched-settlement.ts`, `quota.ts`, `CreditAccount.sol`, `e2e.ts`.
+6. Confirm the Slice 3B scope with the user, then follow the rhythm in §2.
