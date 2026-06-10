@@ -124,14 +124,29 @@ settlement real, and the surface safe. Do all four before opening anything publi
 With a durable, batched, hardened core, make the *mechanics* whole. This is what makes the
 protocol credible as a complete design rather than a demo.
 
-### Slice 4 — Reputation completeness · Effort M · Risk L
+### Slice 4 — Reputation completeness · Effort M · Risk L · ✅ DONE (4A #28 · 4B)
 - **Goal:** the full multi-dimensional reputation from the design docs (today: accuracy EMA only).
-- **Build:** daemon **heartbeats** → **Uptime**; **Latency** (TTFT measured per job);
-  **Longevity** (`registeredAt`); composite 5-dimension score; **batched on-chain snapshots**
-  (daily `updateReputation`), decay, rapid-decline → manual-review flag. The pure `matching`
-  scorer consumes the composite score (still no chain access at runtime).
-- **Acceptance:** a flaky/slow node's score reflects it; scores snapshot on-chain daily;
-  matching uses the composite score.
+- **Built — 4A (merged #28), telemetry + composite:** migration 5 (`jobs.first_token_ms`,
+  `node_sessions`, `node_reputation`, `reputation_snapshots` DDL); new
+  `gateway/src/reputation.ts` — pure dimension functions + `ReputationService`;
+  **Composite = 0.40·Accuracy + 0.25·Uptime + 0.15·Latency + 0.10·Longevity + 0.10·Stake**.
+  Uptime from WS connect/disconnect session intervals + `ws` ping/pong keepalive (no wire
+  changes); Latency = graded TTFT P95 over 30d, derived from job rows; Longevity from
+  on-chain `registeredAt` with 30d-inactivity decay; Stake = min(1, stake/10k QAIS);
+  accuracy EMA state gateway-side, seeded 7000, never from the on-chain score. The
+  dispatcher records pass/fail outcomes; the pool feeds matching the composite
+  (`matching/` unchanged); `/v1/nodes` exposes the dimension breakdown.
+- **Built — 4B, snapshots own the chain:** settlement classes move **money only** (per-pass
+  EMA chain writes stripped); `ReputationService.publishNow`/`snapshotAll` publish the
+  composite via `updateReputation` (receipt-checked) on a daily timer
+  (`GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS`, e2e runs it at 2s); failure path
+  publishes immediately after the slash (Stake reflects it); **rapid-decline** (>2000 bps
+  drop in any 7-day window) → manual-review flag (log + metric + snapshot-row flag, NO
+  auto-slash); snapshot history in `reputation_snapshots`; new oracle metrics. 10th e2e
+  scenario: slow-first-token node graded to 0.75 Latency, the timer lands the snapshot
+  on-chain, the registry score equals the recomputed weighted dimension sum.
+- **Acceptance (met):** a flaky/slow node's score reflects it (failure + reputation e2e
+  scenarios); scores snapshot on-chain on the daily epoch timer; matching uses the composite.
 - **Maps to:** P3.7.
 
 ### Slice 5 — Verification depth (Layer-A) · Effort L · Risk H

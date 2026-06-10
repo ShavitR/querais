@@ -110,6 +110,7 @@ async function main(): Promise<void> {
     batchFlushThreshold: 25,
     batchFlushIntervalSeconds: 60,
     sessionDeadlineMarginSeconds: 360,
+    reputationSnapshotIntervalSeconds: 86_400,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: 0n,
   };

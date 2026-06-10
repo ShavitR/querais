@@ -73,6 +73,9 @@ async function main(): Promise<void> {
     sessionDeadlineMarginSeconds: Number(
       process.env.GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS ?? '600',
     ),
+    reputationSnapshotIntervalSeconds: Number(
+      process.env.GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS ?? '86400',
+    ),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: parseEther('0.003'), // drip gas so new nodes self-fund (zero-touch)

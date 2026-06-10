@@ -7,6 +7,10 @@ export const metrics = {
   jobsSettled: 0,
   jobsFailed: 0,
   tokensServed: 0,
+  // Slice 4B: the reputation oracle's on-chain publishing.
+  reputationSnapshots: 0,
+  reputationPublishFailures: 0,
+  reputationFlags: 0,
 };
 
 /** Render the Prometheus exposition, plus a live gauge for connected nodes. */
@@ -24,6 +28,15 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_tokens_served_total Total completion tokens settled.',
     '# TYPE querais_tokens_served_total counter',
     `querais_tokens_served_total ${metrics.tokensServed}`,
+    '# HELP querais_reputation_snapshots_total Reputation scores published on-chain.',
+    '# TYPE querais_reputation_snapshots_total counter',
+    `querais_reputation_snapshots_total ${metrics.reputationSnapshots}`,
+    '# HELP querais_reputation_publish_failures_total Failed on-chain reputation publishes.',
+    '# TYPE querais_reputation_publish_failures_total counter',
+    `querais_reputation_publish_failures_total ${metrics.reputationPublishFailures}`,
+    '# HELP querais_reputation_flags_total Nodes flagged for manual review (rapid decline).',
+    '# TYPE querais_reputation_flags_total counter',
+    `querais_reputation_flags_total ${metrics.reputationFlags}`,
     '# HELP querais_nodes Connected nodes in the pool.',
     '# TYPE querais_nodes gauge',
     `querais_nodes ${nodes}`,

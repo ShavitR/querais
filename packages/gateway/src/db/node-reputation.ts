@@ -22,6 +22,14 @@ export class NodeReputationStore {
     return row ? { accuracyBps: row.accuracy_bps, updatedAt: row.updated_at } : undefined;
   }
 
+  /** Every wallet with accuracy state (the snapshot sweep's candidate set). */
+  wallets(): Address[] {
+    const rows = this.db.conn.prepare(`SELECT wallet FROM node_reputation`).all() as {
+      wallet: string;
+    }[];
+    return rows.map((r) => r.wallet as Address);
+  }
+
   set(wallet: Address, accuracyBps: number): void {
     this.db.conn
       .prepare(

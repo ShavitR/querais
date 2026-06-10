@@ -28,6 +28,7 @@ import { SessionStore } from './db/sessions.js';
 import { DebitLedgerStore } from './db/ledger.js';
 import { NodeSessionStore } from './db/node-sessions.js';
 import { NodeReputationStore } from './db/node-reputation.js';
+import { ReputationSnapshotStore } from './db/reputation-snapshots.js';
 import { ReputationService } from './reputation.js';
 import { BatchedSettlement } from './batched-settlement.js';
 import { registerUsage } from './routes/usage.js';
@@ -67,7 +68,15 @@ export async function buildGateway(
   const nodeSessions = new NodeSessionStore(db);
   nodeSessions.closeAllOpen();
   const nodeReputation = new NodeReputationStore(db);
-  const reputation = new ReputationService(chain, nodeReputation, nodeSessions, jobs, logger);
+  const snapshots = new ReputationSnapshotStore(db);
+  const reputation = new ReputationService(
+    chain,
+    nodeReputation,
+    nodeSessions,
+    jobs,
+    snapshots,
+    logger,
+  );
   const pool = new NodePool(
     chain,
     logger,
@@ -166,10 +175,19 @@ export async function buildGateway(
       .catch((err: unknown) => logger.error({ err }, 'interval flushAll failed'));
   }, opts.config.batchFlushIntervalSeconds * 1000);
   flushTimer.unref();
+  // Daily reputation epoch (Slice 4B): publish every known node's composite on-chain.
+  // Same lifecycle pattern as the flush timer; the interval shrinks to seconds in e2e.
+  const snapshotTimer = setInterval(() => {
+    void reputation
+      .snapshotAll()
+      .catch((err: unknown) => logger.error({ err }, 'reputation snapshot sweep failed'));
+  }, opts.config.reputationSnapshotIntervalSeconds * 1000);
+  snapshotTimer.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
     clearInterval(flushTimer);
+    clearInterval(snapshotTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
   });

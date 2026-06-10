@@ -94,6 +94,9 @@ export interface GatewayConfig {
    *  session cap is within this many seconds of its deadline — a debit that misses the
    *  deadline can never settle on-chain. */
   sessionDeadlineMarginSeconds: number;
+  /** Slice 4B: publish every known node's composite reputation on-chain at this
+   *  interval (the spec's daily epoch snapshot; e2e shrinks it to seconds). */
+  reputationSnapshotIntervalSeconds: number;
   /** Slice 3: surface-hardening overrides (faucet throttles, quota tiers, prompt limits,
    *  WS caps). Unset fields fall back to HARDENING_DEFAULTS. */
   hardening?: Partial<HardeningConfig>;
@@ -173,6 +176,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     batchFlushThreshold: Number(env.GATEWAY_BATCH_FLUSH_THRESHOLD ?? '25'),
     batchFlushIntervalSeconds: Number(env.GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS ?? '60'),
     sessionDeadlineMarginSeconds: Number(env.GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS ?? '240'),
+    reputationSnapshotIntervalSeconds: Number(
+      env.GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS ?? '86400',
+    ),
     ...(env.GATEWAY_DB_PATH ? { dbPath: env.GATEWAY_DB_PATH } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI

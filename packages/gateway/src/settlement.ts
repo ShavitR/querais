@@ -1,7 +1,6 @@
 import { zeroAddress, type Address, type Hex } from 'viem';
 import type { Logger } from 'pino';
 import type { ChainClient } from './chain-client.js';
-import { emaReputationBps, FAIL_ALPHA, PASS_ALPHA } from './reputation.js';
 
 /**
  * Settlement seam. The dispatcher calls this after Layer-B verification.
@@ -48,25 +47,19 @@ export class ChainSettlement implements Settlement {
   async settle(ctx: SettlementContext): Promise<void> {
     await this.chain.completeJob(ctx.jobId, BigInt(ctx.authoritativeTokens), ctx.resultHash);
     await this.chain.verifyAndRelease(ctx.jobId);
-
-    // Reward a verified pass with a small reputation bump.
-    const node = await this.chain.getNode(ctx.provider);
-    const newScore = emaReputationBps(Number(node.reputationScore), 1, PASS_ALPHA);
-    await this.chain.updateReputation(ctx.provider, newScore);
-
-    this.logger.info({ jobId: ctx.jobId, provider: ctx.provider, newScore }, 'job settled');
+    // Settlement moves money ONLY (Slice 4B): reputation accrues off-chain in the
+    // dispatcher's accuracy EMA and reaches the chain via the daily snapshot sweep.
+    this.logger.info({ jobId: ctx.jobId, provider: ctx.provider }, 'job settled');
   }
 
   async fail(jobId: Hex, reason: string): Promise<void> {
     const job = await this.chain.getJob(jobId);
     await this.chain.failJob(jobId, reason);
 
-    // Penalize the provider on a failure: reputation EMA down + a small stake slash.
+    // Economic penalty: a small stake slash. The reputation hit is the dispatcher's
+    // (accuracy EMA + immediate post-slash publish, so Stake reflects the new balance).
     if (job.provider !== zeroAddress) {
       const node = await this.chain.getNode(job.provider);
-      const newScore = emaReputationBps(Number(node.reputationScore), 0, FAIL_ALPHA);
-      await this.chain.updateReputation(job.provider, newScore);
-
       const slashAmount = (node.stakeAmount * SLASH_BPS) / 10000n;
       if (slashAmount > 0n) {
         await this.chain.slash(job.provider, slashAmount, reason);

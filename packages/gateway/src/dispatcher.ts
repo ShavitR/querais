@@ -219,6 +219,16 @@ export class Dispatcher {
       await settlement.fail(spec.jobId, reason, provider);
       this.persist(() => this.jobs.markFailed(spec.jobId, reason));
       this.persist(() => this.reputation?.recordOutcome(provider, 'fail'));
+      // Publish on-chain immediately AFTER the slash (so the Stake dimension reflects
+      // it) — a slashing event must not wait for the daily snapshot. Non-fatal: the
+      // 502 + refund stand regardless, and the sweep retries the publish.
+      if (this.reputation) {
+        await this.reputation
+          .publishNow(provider)
+          .catch((err: unknown) =>
+            this.logger.warn({ err, provider }, 'post-slash reputation publish failed'),
+          );
+      }
       // The failure must be visible to matching immediately (composite drops).
       await this.pool.refreshReputation(provider).catch(() => {});
       throw new VerificationError(reason);

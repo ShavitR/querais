@@ -51,6 +51,8 @@ export interface HarnessOptions {
   batchFlushThreshold?: number;
   /** Slice 2C: deadline margin for routing to the batched venue (default 240s). */
   sessionDeadlineMarginSeconds?: number;
+  /** Slice 4B: reputation snapshot sweep interval (default daily; tests shrink it). */
+  reputationSnapshotIntervalSeconds?: number;
   /** Slice 3: surface-hardening overrides (quota tiers, prompt limits, WS caps, faucet). */
   hardening?: Partial<HardeningConfig>;
 }
@@ -90,6 +92,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     batchFlushThreshold: opts.batchFlushThreshold ?? 25,
     batchFlushIntervalSeconds: 60,
     sessionDeadlineMarginSeconds: opts.sessionDeadlineMarginSeconds ?? 240,
+    reputationSnapshotIntervalSeconds: opts.reputationSnapshotIntervalSeconds ?? 86_400,
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),

@@ -43,6 +43,7 @@ export {
 } from './reputation.js';
 export { NodeSessionStore, type SessionInterval } from './db/node-sessions.js';
 export { NodeReputationStore, type AccuracyState } from './db/node-reputation.js';
+export { ReputationSnapshotStore, type ReputationSnapshot } from './db/reputation-snapshots.js';
 export { BatchedSettlement, type BatchedSettlementOptions } from './batched-settlement.js';
 export { SessionStore, type CreditSession } from './db/sessions.js';
 export { DebitLedgerStore, type DebitEntry } from './db/ledger.js';

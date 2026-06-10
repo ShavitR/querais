@@ -6,6 +6,8 @@ import { GatewayDb } from './db/index.js';
 import { JobStore } from './db/jobs.js';
 import { NodeReputationStore } from './db/node-reputation.js';
 import { NodeSessionStore } from './db/node-sessions.js';
+import { ReputationSnapshotStore } from './db/reputation-snapshots.js';
+import { metrics } from './metrics.js';
 import type { ChainClient } from './chain-client.js';
 import {
   compositeBps,
@@ -22,6 +24,7 @@ import {
 
 const logger = pino({ level: 'silent' });
 const NODE = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as Address;
+const OTHER = '0x90F79bf6EB2c4f870365E785982E1f101E93b906' as Address;
 
 const DAY_MS = 86_400_000;
 const QAIS = 10n ** 18n;
@@ -190,12 +193,20 @@ test('compositeBps applies the 0.40/0.25/0.15/0.10/0.10 weights', () => {
 
 // ── ReputationService ─────────────────────────────────────────────────────────────
 
-function makeService(node?: { registeredAt: bigint; stakeAmount: bigint }) {
+function makeService(node?: {
+  registeredAt: bigint;
+  stakeAmount: bigint;
+  exists?: boolean;
+  /** Make updateReputation throw for this (lowercase) wallet — failure-isolation tests. */
+  failPublishFor?: string;
+}) {
   const db = new GatewayDb();
   const jobs = new JobStore(db);
   const sessions = new NodeSessionStore(db);
   const accuracy = new NodeReputationStore(db);
+  const snapshots = new ReputationSnapshotStore(db);
   let chainReads = 0;
+  const published: Array<{ wallet: string; score: number }> = [];
   const chain = {
     getNode: async () => {
       chainReads += 1;
@@ -204,13 +215,27 @@ function makeService(node?: { registeredAt: bigint; stakeAmount: bigint }) {
         stakeAmount: node?.stakeAmount ?? 0n,
         // A poisoned on-chain score: accuracy must NEVER be seeded from it.
         reputationScore: 1234n,
-        exists: true,
+        exists: node?.exists ?? true,
         isActive: true,
       };
     },
+    updateReputation: async (wallet: string, score: number) => {
+      if (node?.failPublishFor === wallet.toLowerCase()) throw new Error('rpc down');
+      published.push({ wallet, score });
+      return ('0x' + 'ee'.repeat(32)) as `0x${string}`;
+    },
   } as unknown as ChainClient;
-  const service = new ReputationService(chain, accuracy, sessions, jobs, logger);
-  return { service, db, jobs, sessions, accuracy, chainReads: () => chainReads };
+  const service = new ReputationService(chain, accuracy, sessions, jobs, snapshots, logger);
+  return {
+    service,
+    db,
+    jobs,
+    sessions,
+    accuracy,
+    snapshots,
+    published,
+    chainReads: () => chainReads,
+  };
 }
 
 test('recordOutcome seeds at 7000 (never from the on-chain score) and applies the EMA', () => {
@@ -255,4 +280,92 @@ test('dimensionsFor skips the chain read when the node struct is supplied', asyn
   assert.equal(chainReads(), 0);
   await service.dimensionsFor(NODE);
   assert.equal(chainReads(), 1);
+});
+
+// ── snapshots + rapid decline (4B) ───────────────────────────────────────────────
+
+test('publishNow writes the composite on-chain and records the snapshot row', async () => {
+  const { service, published, snapshots } = makeService({
+    registeredAt: 0n,
+    stakeAmount: 2_500n * QAIS,
+  });
+  const dims = await service.publishNow(NODE);
+  assert.ok(dims, 'an existing node publishes');
+  assert.deepEqual(published, [{ wallet: NODE, score: dims!.compositeBps }]);
+
+  const snap = snapshots.latest(NODE);
+  assert.ok(snap, 'a snapshot row was recorded');
+  assert.equal(snap!.compositeBps, dims!.compositeBps);
+  assert.equal(snap!.accuracyBps, dims!.accuracyBps);
+  assert.equal(snap!.flagged, false, 'no prior history → no rapid-decline flag');
+  assert.match(snap!.txHash, /^0x/, 'the publish tx is recorded');
+});
+
+test('publishNow skips a node that is gone from the registry (publish would revert)', async () => {
+  const { service, published } = makeService({ registeredAt: 0n, stakeAmount: 0n, exists: false });
+  assert.equal(await service.publishNow(NODE), undefined);
+  assert.equal(published.length, 0, 'no chain write attempted');
+});
+
+test('rapid decline: a >2000 bps drop within 7 days flags the node (no chain effect)', async () => {
+  const { service, snapshots, accuracy, published } = makeService({
+    registeredAt: 0n,
+    stakeAmount: 0n,
+  });
+  const flagsBefore = metrics.reputationFlags;
+
+  // History: a healthy snapshot (composite 0.40·9000 + 0.25·10000 + 0.15·10000 = 7600 —
+  // uptime/latency default to 1.0 for an unmeasured node; longevity/stake are 0 here).
+  accuracy.set(NODE, 9000);
+  await service.publishNow(NODE);
+  assert.equal(snapshots.latest(NODE)!.flagged, false);
+
+  // A small decline does NOT flag (7600 → 7200 is a 400 bps drop).
+  accuracy.set(NODE, 8000);
+  await service.publishNow(NODE);
+  assert.equal(snapshots.latest(NODE)!.flagged, false, 'a 400 bps drop is not "rapid"');
+
+  // Collapse: accuracy floors → composite drops far more than 2000 bps vs the window max.
+  accuracy.set(NODE, 0);
+  const dims = await service.publishNow(NODE);
+  assert.equal(snapshots.latest(NODE)!.flagged, true, 'the collapse is flagged');
+  assert.equal(metrics.reputationFlags, flagsBefore + 1, 'the flag is counted');
+  // Deliberately NO auto-slash and NO extra chain effect: the only chain writes are
+  // the three updateReputation publishes themselves.
+  assert.equal(published.length, 3);
+  assert.equal(published[2]!.score, dims!.compositeBps);
+});
+
+test('snapshotAll sweeps every known wallet and isolates per-node failures', async () => {
+  const { service, sessions, accuracy, published } = makeService({
+    registeredAt: 0n,
+    stakeAmount: 0n,
+  });
+  const failuresBefore = metrics.reputationPublishFailures;
+  sessions.open(NODE, Date.now()); // known via a session
+  accuracy.set(OTHER, 7015); // known via accuracy state only
+
+  await service.snapshotAll();
+  assert.deepEqual(
+    published.map((p) => p.wallet).sort(),
+    [NODE.toLowerCase(), OTHER.toLowerCase()].sort(),
+    'the sweep covers the union of session + accuracy wallets',
+  );
+  assert.equal(metrics.reputationPublishFailures, failuresBefore, 'no failures counted');
+});
+
+test('snapshotAll continues past a wallet whose publish fails', async () => {
+  const { service, sessions, accuracy, published } = makeService({
+    registeredAt: 0n,
+    stakeAmount: 0n,
+    failPublishFor: NODE.toLowerCase(),
+  });
+  const failuresBefore = metrics.reputationPublishFailures;
+  sessions.open(NODE, Date.now());
+  accuracy.set(OTHER, 7015);
+
+  await service.snapshotAll();
+  assert.equal(published.length, 1, 'the healthy wallet still published');
+  assert.equal(published[0]!.wallet, OTHER.toLowerCase());
+  assert.equal(metrics.reputationPublishFailures, failuresBefore + 1, 'the failure is counted');
 });

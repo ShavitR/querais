@@ -65,6 +65,14 @@ export class NodeSessionStore {
     return rows.map((r) => ({ start: r.connected_at, end: r.disconnected_at }));
   }
 
+  /** Every wallet that has ever connected (the snapshot sweep's candidate set). */
+  wallets(): Address[] {
+    const rows = this.db.conn.prepare(`SELECT DISTINCT wallet FROM node_sessions`).all() as {
+      wallet: string;
+    }[];
+    return rows.map((r) => r.wallet as Address);
+  }
+
   /** When the node was last known alive (open session → its last_seen), or undefined. */
   lastActive(wallet: Address): number | undefined {
     const row = this.db.conn

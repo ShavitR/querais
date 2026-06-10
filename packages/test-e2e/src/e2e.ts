@@ -558,6 +558,101 @@ export async function runPauseDrillCase(): Promise<void> {
   }
 }
 
+/** A backend that serves correct output but takes ~1.2s to emit its first token. */
+class SlowFirstTokenBackend implements InferenceBackend {
+  readonly name = 'slow-first-token';
+  constructor(private readonly delayMs = 1200) {}
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+  async listModels(): Promise<string[]> {
+    return ['mock-model'];
+  }
+  async generate(
+    req: InferenceRequest,
+    onChunk: (chunk: InferenceChunk) => void,
+  ): Promise<InferenceResult> {
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    const lastUser = [...req.messages].reverse().find((m) => m.role === 'user');
+    const words = `You said: ${lastUser?.content ?? ''}`.split(/\s+/).filter(Boolean);
+    let content = '';
+    words.forEach((word, i) => {
+      const piece = (i === 0 ? '' : ' ') + word;
+      content += piece;
+      onChunk({ content: piece });
+    });
+    return { content, promptTokens: 1, completionTokens: words.length, finishReason: 'stop' };
+  }
+}
+
+/**
+ * Reputation snapshots (Slice 4B): a slow-first-token node is graded down on the
+ * Latency dimension (~1200ms TTFT → 0.75), and the snapshot timer publishes the
+ * composite on-chain on its own (interval shrunk to 2s) — the registry score
+ * converges to exactly the weighted dimension sum that /v1/nodes reports.
+ */
+export async function runReputationCase(): Promise<void> {
+  const h = await startHarness({
+    backend: new SlowFirstTokenBackend(),
+    reputationSnapshotIntervalSeconds: 2,
+  });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const provider = h.deployment.accounts.node;
+
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'take your time' }],
+      max_tokens: 30,
+    });
+    assert.equal(res.status, 200, 'slow node still serves a verified job');
+
+    // The slow first token lands in the Latency dimension and drags the composite.
+    const [view] = await fetchNodes(h.baseUrl);
+    assert.ok(view, '/v1/nodes lists the node');
+    assert.equal(
+      view!.dimensions.latency,
+      0.75,
+      `~1200ms TTFT grades the Latency dimension to 0.75 (got ${view!.dimensions.latency})`,
+    );
+    assert.equal(
+      view!.reputation,
+      recomputeComposite(view!.dimensions),
+      'composite equals the weighted dimension sum',
+    );
+    const expectedBps = Math.round(view!.reputation * 10000);
+
+    // The TIMER must land the snapshot on-chain by itself (no failure path involved).
+    const deadline = Date.now() + 15_000;
+    let onchainBps = -1;
+    for (;;) {
+      const node = await pub.readContract({
+        address: h.deployment.contracts.nodeRegistry,
+        abi: nodeRegistryAbi,
+        functionName: 'getNode',
+        args: [provider],
+      });
+      onchainBps = Number(node.reputationScore);
+      if (onchainBps === expectedBps) break;
+      assert.ok(
+        Date.now() < deadline,
+        `timed out waiting for the snapshot timer (on-chain ${onchainBps}, want ${expectedBps})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    // The publish is also visible in the oracle's metrics.
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(
+      metricsText,
+      /querais_reputation_snapshots_total [1-9]/,
+      'snapshot publishes are counted',
+    );
+  } finally {
+    await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';
@@ -648,6 +743,21 @@ export async function runFailureCase(): Promise<void> {
       after!.reputation,
       recomputeComposite(after!.dimensions),
       'composite equals the weighted dimension sum',
+    );
+
+    // Slice 4B: a slashing event publishes on-chain IMMEDIATELY (slash first, then
+    // publish — the Stake dimension already reflects the smaller stake), without
+    // waiting for the daily snapshot sweep.
+    const onchain = await pub.readContract({
+      address: h.deployment.contracts.nodeRegistry,
+      abi: nodeRegistryAbi,
+      functionName: 'getNode',
+      args: [provider],
+    });
+    assert.equal(
+      Number(onchain.reputationScore),
+      Math.round(after!.reputation * 10000),
+      'the post-slash composite is published on-chain immediately',
     );
   } finally {
     await h.stop();

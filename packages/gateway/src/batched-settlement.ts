@@ -4,7 +4,6 @@ import type { ChainClient, SignedCap } from './chain-client.js';
 import type { SessionStore } from './db/sessions.js';
 import type { DebitLedgerStore } from './db/ledger.js';
 import { SLASH_BPS, type Settlement, type SettlementContext } from './settlement.js';
-import { emaReputationBps, FAIL_ALPHA, PASS_ALPHA } from './reputation.js';
 
 export interface BatchedSettlementOptions {
   /** Flush a requester's pending debits once this many have accumulated. */
@@ -85,12 +84,11 @@ export class BatchedSettlement implements Settlement {
   }
 
   async fail(jobId: Hex, reason: string, provider?: Address): Promise<void> {
-    // No payment is owed for a failed job, so nothing is debited. Still penalize the
-    // provider (the job never touched JobEscrow, so the caller supplies the provider).
+    // No payment is owed for a failed job, so nothing is debited. Still slash the
+    // provider (the job never touched JobEscrow, so the caller supplies the provider);
+    // the reputation hit is the dispatcher's (accuracy EMA + immediate publish).
     if (provider) {
       const node = await this.chain.getNode(provider);
-      const newScore = emaReputationBps(Number(node.reputationScore), 0, FAIL_ALPHA);
-      await this.chain.updateReputation(provider, newScore);
       const slashAmount = (node.stakeAmount * SLASH_BPS) / 10000n;
       if (slashAmount > 0n) {
         await this.chain.slash(provider, slashAmount, reason);
@@ -148,24 +146,10 @@ export class BatchedSettlement implements Settlement {
         hash,
       );
 
-      // One reputation update per distinct provider in the batch (a verified pass each).
-      // Money has already moved and the ledger is stamped — a registry hiccup here must
-      // not surface as a flush failure.
-      const counts = new Map<Address, number>();
-      for (const d of debits) counts.set(d.provider, (counts.get(d.provider) ?? 0) + 1);
-      try {
-        for (const [provider, count] of counts) {
-          const node = await this.chain.getNode(provider);
-          let score = Number(node.reputationScore);
-          for (let i = 0; i < count; i++) score = emaReputationBps(score, 1, PASS_ALPHA);
-          await this.chain.updateReputation(provider, score);
-        }
-      } catch (err) {
-        this.logger.warn({ err, requester }, 'post-flush reputation update failed (non-fatal)');
-      }
-
+      // Money only (Slice 4B): each job's verified pass already hit the accuracy EMA in
+      // the dispatcher; the chain gets the composite via the daily snapshot sweep.
       this.logger.info(
-        { requester, jobs: debits.length, providers: counts.size, settleTx: hash },
+        { requester, jobs: debits.length, settleTx: hash },
         'batch settled on-chain',
       );
     } finally {

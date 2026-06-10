@@ -35,7 +35,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
-Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
+Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
 
@@ -44,17 +44,15 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Stage A is COMPLETE. Immediate next actions (in order):**
-1. **Stage B, Slice 4 — Reputation completeness** (scope, build list, and acceptance
-   criteria are in `docs/EXECUTION_PLAN.md` Slice 4): daemon heartbeats → Uptime; per-job
-   TTFT → Latency; `registeredAt` → Longevity; composite 5-dimension score; **batched
-   daily on-chain `updateReputation` snapshots**; decay + rapid-decline flag. Today's
-   accuracy EMA lives in `gateway/src/settlement.ts` (PASS/FAIL alphas); `matching` stays
-   pure and consumes the composite score. **Plan before building** (the user wants big
+**Stage A is COMPLETE; Stage B Slice 4 (Reputation) is COMPLETE. Immediate next actions:**
+1. **Stage B, Slice 5 — Layer-A verification** (scope + acceptance in
+   `docs/EXECUTION_PLAN.md` Slice 5): semantic sampling on oracle nodes via embedding
+   cosine similarity (NOT cross-node hash matching — §6), pattern detection, oracle
+   redundancy, the on-chain challenge hook. **Plan before building** (the user wants big
    work planned and confirmed first — §11), then the slice rhythm above.
-2. Then Slice 5 (Layer-A verify), Slice 6 (Tokenomics). Slice 6 (`ProtocolTreasury.sol`,
-   60/20/20 split) is money-moving contract work → **confirm the design with the user
-   before building** (standing rule).
+2. Then Slice 6 (Tokenomics). Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is
+   money-moving contract work → **confirm the design with the user before building**
+   (standing rule).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -63,7 +61,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -154,8 +152,33 @@ requester's allowance; the documented trusted-gateway model, runbook §2). The j
 red-but-allowed only when findings exceed the baseline — i.e. red == new finding to triage.
 No inline `slither-disable` comments in contracts, ever.
 
+**Slice 4 (4A merged #28, 4B #29) — reputation completeness (Stage B opener).**
+The spec's full 5-dimension score (`querais_reputation_system.md` §2), all gateway-side —
+no contract changes, no redeploy; the chain keeps the single uint16 composite:
+- **Composite = 0.40·Accuracy + 0.25·Uptime + 0.15·Latency + 0.10·Longevity + 0.10·Stake**,
+  computed in `gateway/src/reputation.ts` (pure dimension functions + `ReputationService`).
+  The pool feeds matching the composite (`matching/` unchanged — still pure); `/v1/nodes`
+  exposes the full dimension breakdown.
+- **Telemetry (migration 5):** TTFT stamped per job (`jobs.first_token_ms`, pass AND fail);
+  uptime from WS connect/disconnect session intervals (`node_sessions`) + `ws` built-in
+  ping/pong keepalive (dead-TCP detection + `last_seen`; zero wire/daemon changes);
+  accuracy-EMA working state (`node_reputation`, seeded 7000, NEVER from the on-chain
+  score — that's the composite and would double-count); snapshot history
+  (`reputation_snapshots`).
+- **The dispatcher records outcomes** (single point that knows provider + verdict for both
+  venues); **settlement classes move money only** — per-pass EMA chain writes are gone.
+- **Daily on-chain snapshots (4B):** `ReputationService.snapshotAll()` on a timer
+  (`GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS`, default 86400; e2e runs it at 2s)
+  publishes every known node via `updateReputation` (receipt-checked). The failure path
+  publishes IMMEDIATELY after the slash (Stake reflects it). **Rapid decline** (composite
+  drop >2000 bps in any 7-day window) → manual-review flag: log + metric + snapshot-row
+  flag, deliberately NO auto-slash/chain effect.
+- 10th e2e scenario: a slow-first-token node (~1200ms) grades Latency 0.75, the snapshot
+  timer lands the composite on-chain, and the registry score equals the recomputed
+  weighted dimension sum.
+
 **Deferred (do NOT assume these exist):**
-- Slices 4–9.
+- Slices 5–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -175,14 +198,15 @@ packages/
                 (basis-point), EIP-712 spending-cap sign/recover, chain bindings. 21 tests.
   matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
   gateway/      @querais/gateway — Fastify OpenAI API. src/{server,dispatcher,node-pool,
-                settlement,batched-settlement,verify,chain-client,quota,session-status,
-                key-store,faucet,metrics,config,auth,http}.ts + routes/* + db/{index,
-                migrations,jobs,sessions,ledger}.ts. 56 tests.
+                settlement,batched-settlement,reputation,verify,chain-client,quota,
+                session-status,key-store,faucet,metrics,config,auth,http}.ts + routes/*
+                + db/{index,migrations,jobs,sessions,ledger,node-sessions,
+                node-reputation,reputation-snapshots}.ts. 87 tests.
   node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 9-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 10-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
@@ -195,8 +219,9 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 **Most load-bearing files:** `contracts/CreditAccount.sol` + `JobEscrow.sol`,
 `shared/src/spending-cap.ts` (EIP-712 — must mirror the contract), `gateway/src/dispatcher.ts`
 (match → venue choice → stream → verify → settle), `gateway/src/batched-settlement.ts`
-(ledger/flush/reconcile/canAccrue), `gateway/src/quota.ts`, `gateway/src/db/migrations.ts`
-(**4 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
+(ledger/flush/reconcile/canAccrue), `gateway/src/reputation.ts` (the 5-dimension oracle),
+`gateway/src/quota.ts`, `gateway/src/db/migrations.ts`
+(**5 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
 
 ---
 
@@ -213,8 +238,11 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
    (settles on `min(node, gateway)`).
 6. **Layer-B verify** (non-empty, length, loop detection, `resultHash == hash(forwarded)`).
 7. Settle: batched → durable debit, flushed at threshold/interval/deadline-margin/shutdown
-   in ONE `batchSettle`; escrow → `completeJob` → `verifyAndRelease` (95/5). Reputation EMA
-   on success; refund + slash on failure.
+   in ONE `batchSettle`; escrow → `completeJob` → `verifyAndRelease` (95/5). Settlement
+   moves money ONLY; refund + slash on failure.
+8. Reputation (Slice 4): the dispatcher folds the verified pass/fail into the gateway-side
+   accuracy EMA and refreshes the pool's composite; the chain gets the composite via the
+   daily snapshot sweep — or immediately after a slash.
 
 ---
 
@@ -240,6 +268,11 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 - **Pause freezes value inflows + settlement; every user exit/refund path stays open while
   paused** (a pause can never trap funds). Pinned by `contracts/test/Pausable.ts` and the
   `RUNBOOK_KEYS.md` §5 table — change them together. QUAISToken is NOT pausable. (3B-1.)
+- **Settlement moves money only; snapshots own the reputation chain writes.** (4B.) The
+  dispatcher records outcomes into the gateway-side accuracy EMA; `updateReputation` is
+  called only by the daily snapshot sweep + the immediate post-slash publish. The accuracy
+  EMA is NEVER seeded from the on-chain score (that's the composite — double-counting).
+  Rapid decline flags for MANUAL review only — no auto-slash. (Slice 4.)
 - **`matching` stays pure** (no chain IO) so it can move on-chain in Phase 4.
 - **The gateway DB is a thin cache/index, never the source of truth for value/trust.**
 - Keep changes **additive via the existing seams**: `Settlement`, `InferenceBackend`,
@@ -261,7 +294,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (109 TS + the 55-test contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 9 scenarios (~25s)
+pnpm test:e2e            # self-contained: fresh local chain → 10 scenarios (~35s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
@@ -327,7 +360,8 @@ optional — defaults in `HARDENING_DEFAULTS`, `gateway/src/config.ts`):
 `GATEWAY_MAX_MESSAGES`, `GATEWAY_MAX_PROMPT_CHARS`, `GATEWAY_MAX_TOKENS_CAP`,
 `GATEWAY_BANNED_PATTERNS` (regex CSV), `GATEWAY_WS_MAX_CONNECTIONS`,
 `GATEWAY_WS_MAX_PER_IP`, `GATEWAY_WS_HANDSHAKE_TIMEOUT_MS`,
-`GATEWAY_WS_MAX_MESSAGES_PER_SECOND`.
+`GATEWAY_WS_MAX_MESSAGES_PER_SECOND`. Slice 4 added `GATEWAY_WS_PING_INTERVAL_MS`
+(keepalive cadence) and `GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS` (daily epoch).
 
 ---
 
@@ -368,8 +402,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 
 ## 12. Loose ends / current runtime state
 
-- **Stage A is complete** — `main` is at #27 (Slice 3B-2 Slither). Next: **Stage B,
-  Slice 4 Reputation** (scope in §2). No slice PR is open.
+- **Stage A complete; Slice 4 Reputation complete** — `main` is at #29 (Slice 4B
+  snapshots). Next: **Stage B, Slice 5 Layer-A verification** (scope in §2). No slice PR
+  is open.
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have changed state since this file was written.
 - **Remote agents (no local files): what you can and cannot do.**
@@ -390,9 +425,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **9 scenarios**, gateway unit = **56**,
-  contracts = **55**, TS unit total = **109**, migrations = **4** (`MIGRATION_COUNT`
-  tracks automatically).
+- Counts that tests assert or reports cite: e2e = **10 scenarios**, gateway unit = **87**,
+  contracts = **56**, TS unit total = **140** (incl. 1 Ollama-gated node-daemon skip),
+  migrations = **5** (`MIGRATION_COUNT` tracks automatically).
 
 ---
 
@@ -401,8 +436,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 9 scenarios pass (self-contained, ~25s).
-5. Skim `dispatcher.ts`, `batched-settlement.ts`, `settlement.ts` (the EMA Slice 4
-   replaces), `CreditAccount.sol`, `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.
-6. Plan Slice 4 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
+4. `pnpm test:e2e` → 10 scenarios pass (self-contained, ~35s).
+5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
+   `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
+   `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.
+6. Plan Slice 5 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
    the rhythm in §2.

@@ -4,6 +4,8 @@ import type { ChainClient } from './chain-client.js';
 import type { JobStore } from './db/jobs.js';
 import type { NodeReputationStore } from './db/node-reputation.js';
 import type { NodeSessionStore, SessionInterval } from './db/node-sessions.js';
+import type { ReputationSnapshotStore } from './db/reputation-snapshots.js';
+import { metrics } from './metrics.js';
 
 /**
  * Slice 4 — the full 5-dimension reputation from querais_reputation_system.md §2:
@@ -43,6 +45,12 @@ export const TELEMETRY_WINDOW_MS = 30 * 86_400_000;
 
 /** Longevity only starts decaying after this many days of inactivity (spec: >30d). */
 export const INACTIVITY_GRACE_DAYS = 30;
+
+/** Rapid-decline detection (spec §2.2A safety rules): a composite drop bigger than
+ *  this, against any snapshot in the trailing window, flags the node for MANUAL
+ *  review — log + metric + DB flag only, deliberately no auto-slash or chain effect. */
+export const RAPID_DECLINE_DROP_BPS = 2000;
+export const RAPID_DECLINE_WINDOW_MS = 7 * 86_400_000;
 
 const DAY_MS = 86_400_000;
 
@@ -156,6 +164,8 @@ export function compositeBps(d: DimensionScores): number {
 interface NodeChainInfo {
   registeredAt: bigint;
   stakeAmount: bigint;
+  /** When present and false, the node is gone from the registry (publish would revert). */
+  exists?: boolean;
 }
 
 /**
@@ -170,6 +180,7 @@ export class ReputationService {
     private readonly accuracy: NodeReputationStore,
     private readonly sessions: NodeSessionStore,
     private readonly jobs: JobStore,
+    private readonly snapshots: ReputationSnapshotStore,
     private readonly logger: Logger,
   ) {}
 
@@ -215,5 +226,56 @@ export class ReputationService {
   /** The composite alone (what the pool feeds matching and the chain will publish). */
   async compositeFor(wallet: Address, node?: NodeChainInfo): Promise<number> {
     return (await this.dimensionsFor(wallet, node)).compositeBps;
+  }
+
+  /**
+   * Publish a node's composite on-chain NOW (receipt-checked by ChainClient) and
+   * record the snapshot row, running rapid-decline detection against the trailing
+   * window. Used by the daily snapshot sweep and the immediate post-slash publish.
+   * Returns undefined when the node is gone from the registry (publish would revert).
+   */
+  async publishNow(wallet: Address): Promise<ReputationDimensions | undefined> {
+    const info = await this.chain.getNode(wallet);
+    if (info.exists === false) {
+      this.logger.warn({ wallet }, 'skipping reputation publish: node not in registry');
+      return undefined;
+    }
+    const dims = await this.dimensionsFor(wallet, info);
+    const txHash = await this.chain.updateReputation(wallet, dims.compositeBps);
+
+    // Rapid decline (spec safety rule): drop > 2000 bps vs any snapshot in the last
+    // 7 days → flag for MANUAL review. Log + metric + DB flag; no auto-slash, no
+    // chain effect — a human decides.
+    const priorMax = this.snapshots.maxCompositeSince(wallet, Date.now() - RAPID_DECLINE_WINDOW_MS);
+    const flagged = priorMax !== undefined && priorMax - dims.compositeBps > RAPID_DECLINE_DROP_BPS;
+    if (flagged) {
+      metrics.reputationFlags += 1;
+      this.logger.warn(
+        { wallet, priorMax, compositeBps: dims.compositeBps },
+        'rapid reputation decline — node flagged for manual review',
+      );
+    }
+
+    this.snapshots.insert({ wallet, ...dims, txHash, flagged, createdAt: Date.now() });
+    metrics.reputationSnapshots += 1;
+    this.logger.info({ wallet, compositeBps: dims.compositeBps, txHash }, 'reputation published');
+    return dims;
+  }
+
+  /**
+   * The daily epoch sweep: publish every known node's composite. A node is "known" if
+   * it ever connected or has accuracy state. Per-node failures are isolated — one bad
+   * publish must not starve the rest of the sweep.
+   */
+  async snapshotAll(): Promise<void> {
+    const wallets = new Set<Address>([...this.sessions.wallets(), ...this.accuracy.wallets()]);
+    for (const wallet of wallets) {
+      try {
+        await this.publishNow(wallet);
+      } catch (err) {
+        metrics.reputationPublishFailures += 1;
+        this.logger.error({ err, wallet }, 'reputation snapshot publish failed');
+      }
+    }
   }
 }

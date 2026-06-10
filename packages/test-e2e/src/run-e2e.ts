@@ -17,6 +17,7 @@ import {
   runFaucetCase,
   runHardeningCase,
   runPauseDrillCase,
+  runReputationCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -60,6 +61,10 @@ async function main(): Promise<void> {
     console.log('▶  pause drill: real ops script pauses → chat fails → unpause restores…');
     await runPauseDrillCase();
     console.log('✅ pause drill passed');
+
+    console.log('▶  reputation case: slow node graded down → snapshot timer publishes on-chain…');
+    await runReputationCase();
+    console.log('✅ reputation case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');
