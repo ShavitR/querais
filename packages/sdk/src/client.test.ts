@@ -69,6 +69,38 @@ test('chatStream() yields content deltas from SSE frames', async () => {
   }
 });
 
+test('sessionStatus() returns the parsed session view', async () => {
+  setFetch(
+    async () =>
+      new Response(
+        JSON.stringify({
+          requester: '0xreq',
+          settler: '0xset',
+          session: {
+            nonce: '1',
+            maxSpendWei: '100',
+            deadline: '4000000000',
+            spentAgainstWei: '40',
+            capRemainingWei: '60',
+          },
+          credit: { balanceWei: '500' },
+          pendingDebits: { count: 2, totalWei: '10' },
+          headroomWei: '50',
+        }),
+        { status: 200 },
+      ),
+  );
+  try {
+    const c = new QueraisClient({ baseUrl: 'http://x', apiKey: 'k' });
+    const s = await c.sessionStatus();
+    assert.equal(s.session?.capRemainingWei, '60');
+    assert.equal(s.pendingDebits.count, 2);
+    assert.equal(s.headroomWei, '50');
+  } finally {
+    restore();
+  }
+});
+
 test('chat() throws on a non-ok response', async () => {
   setFetch(async () => new Response('nope', { status: 401 }));
   try {

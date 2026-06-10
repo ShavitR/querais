@@ -13,4 +13,5 @@ export {
   type ChatOptions,
   type ChatResult,
   type NodeInfo,
+  type SessionStatus,
 } from './client.js';

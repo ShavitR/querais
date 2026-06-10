@@ -26,6 +26,7 @@
     "test:e2e": "pnpm --filter @querais/test-e2e e2e",
     "live:sepolia": "pnpm --filter @querais/test-e2e live:sepolia",
     "gateway:sepolia": "pnpm --filter @querais/test-e2e gateway:sepolia",
+    "ops:pause": "pnpm --filter @querais/contracts pause",
     "prepare:vm-node": "pnpm --filter @querais/test-e2e prepare:vm-node",
     "demo": "pnpm --filter @querais/test-e2e demo"
   },

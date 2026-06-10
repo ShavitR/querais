@@ -34,7 +34,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
-                            ◐ 3 Harden surface (3A done — PR #25 open; 3B next)
+                            ◐ 3 Harden surface (3A merged #25; 3B-1 ops in PR; 3B-2 Slither next)
 Stage B — Protocol depth    ⬜ 4 Reputation   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
@@ -45,11 +45,12 @@ squash-merged to `main`. Pause for review at slice boundaries. **The user must a
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
 **Immediate next actions (in order):**
-1. **Merge PR #25** (Slice 3A — CI is green; needs the user's go-ahead).
-2. **Slice 3B — ops hardening**: key-management runbook + **pause drill** (the gateway holds
-   every privileged role + a gas wallet — document and rehearse "gateway key leaked";
-   contracts are already `Pausable`), a `GET /v1/sessions` status endpoint (session +
-   pending-debit visibility), revisit **Slither** (HH3 support was the blocker, see §3).
+1. **Merge the `slice-3b-ops` PR** (Slice 3B-1 — pause tooling/tests/drill, key runbook,
+   Sepolia admin/pauser key split, `GET /v1/sessions`; needs the user's go-ahead).
+2. **Slice 3B-2 — Slither revisit** on branch `slice-3b-slither`: timeboxed, non-gating CI
+   job (decision ladder: latest slither on HH3 artifacts → Foundry analysis profile →
+   `cp -rL` flatten → documented deferral). Any real-looking finding in money paths →
+   surface to the user before merging.
 3. Then **Stage B**. Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is money-moving
    contract work → **confirm the design with the user before building** (standing rule).
 
@@ -61,7 +62,7 @@ EXECUTION_PLAN.md remains the canonical roadmap.
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither deferred*: solc `--allow-paths` breaks under pnpm's symlinked store and Slither
@@ -96,7 +97,7 @@ EXECUTION_PLAN.md remains the canonical roadmap.
   - E2E batched scenario at the literal acceptance bar: **100 calls → 1 tx, 0 requester txs**.
 - **README rewrite** (#23) — accurate, detailed, dumb-proof (done by a parallel session).
 
-**Built, CI-green, awaiting user merge: PR #25 — Slice 3A (harden the open surface).**
+**Slice 3A (merged #25) — harden the open surface.**
 All gateway-side, additive via a new optional **`hardening`** config group
 (`HARDENING_DEFAULTS` in `gateway/src/config.ts`; every knob env-overridable):
 - **Faucet anti-drain** (durable/restart-proof; migration 4 adds `ip` to faucet_claims):
@@ -115,11 +116,33 @@ All gateway-side, additive via a new optional **`hardening`** config group
   deliberately 5000/s** — every streamed token is one WS message; a 500/s default killed
   the node mid-e2e. (Silver lining: the 2C recovery machinery handled it unprompted —
   reconnect + interval flush settled the stranded debits. Working as designed.)
-- New e2e **hardening scenario** (suite now **8 scenarios**, ~15s): prompt 400, quota 429
-  with headers, faucet per-IP 429 on fresh addresses.
+- New e2e **hardening scenario**: prompt 400, quota 429 with headers, faucet per-IP 429 on
+  fresh addresses.
+
+**Built, awaiting user merge: PR `slice-3b-ops` — Slice 3B-1 (ops hardening).**
+No contract changes, no new migrations. See `docs/RUNBOOK_KEYS.md` (the operational core):
+- **`scripts/pause.ts`** (contracts pkg; `pnpm ops:pause` from root) — tsx+viem incident
+  CLI, **no Hardhat runtime** (works when the toolchain is broken): `status|pause|unpause
+  --network <localhost|arbitrumSepolia>`, idempotent, receipt-checked, signs with
+  `PAUSER_PRIVATE_KEY`. Deliberately **NOT an HTTP endpoint** (must work when the gateway
+  is compromised/down — runbook §8).
+- **`test/Pausable.ts`** (7 tests) pins the pause table: pause freezes value inflows +
+  settlement; **every exit/refund path stays open while paused** (completeUnbonding,
+  failJob/cancelJob/timeoutJob, initiateWithdrawal/completeWithdrawal). Update the runbook
+  §5 table and these tests together.
+- **E2E pause drill** (9th scenario) spawns the REAL pause script against the e2e chain:
+  pause → chat 5xx while `/health` stays up → unpause → service restored.
+- **`GET /v1/sessions`** — requester session visibility (session + cap spend/remaining +
+  credit balance + pending debits + headroom; wei as decimal strings). Pure derivation in
+  `gateway/src/session-status.ts` (`buildSessionStatus`, mirrors `canAccrue` math exactly);
+  SDK `sessionStatus()`. Batched e2e scenario now asserts status at open/mid-run/post-flush.
+- **`scripts/split-admin.ts`** + **executed Sepolia key split**: cold admin EOA
+  `0x85cC...9dE8` now holds DEFAULT_ADMIN + PAUSER on all three contracts; the hot gateway
+  key holds **neither** (only operational roles). Live pause/unpause drill done
+  (time-to-pause 10.5s) — runbook §6 drill log entry #2.
 
 **Deferred (do NOT assume these exist):**
-- **Slice 3B** (runbook/pause-drill/sessions-status/Slither) and Slices 4–9.
+- **Slice 3B-2** (Slither CI revisit) and Slices 4–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -133,20 +156,23 @@ All gateway-side, additive via a new optional **`hardening`** config group
 packages/
   contracts/    Solidity 0.8.28 + Hardhat 3. QUAISToken, NodeRegistry, JobEscrow,
                 CreditAccount (+ reentrancy test mocks). deployments/addresses.<network>.json.
-                ~55 tests (conservation, guards, reentrancy, EIP-712 parity, gas benchmark).
+                scripts/{pause,split-admin}.ts ops CLIs (tsx+viem, no HH runtime).
+                55 tests (conservation, guards, reentrancy, EIP-712 parity, pausability, gas).
   shared/       @querais/shared — JobSpec/jobId, OpenAI schemas, wire protocol, pricing
                 (basis-point), EIP-712 spending-cap sign/recover, chain bindings. 21 tests.
   matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
   gateway/      @querais/gateway — Fastify OpenAI API. src/{server,dispatcher,node-pool,
-                settlement,batched-settlement,verify,chain-client,quota,key-store,faucet,
-                metrics,config,auth,http}.ts + routes/* + db/{index,migrations,jobs,
-                sessions,ledger}.ts. 50 tests.
+                settlement,batched-settlement,verify,chain-client,quota,session-status,
+                key-store,faucet,metrics,config,auth,http}.ts + routes/* + db/{index,
+                migrations,jobs,sessions,ledger}.ts. 56 tests.
   node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
                 auto-faucet, auto-reconnect. 19 tests.
-  sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`) + `querais` CLI. 5 tests.
-  test-e2e/     harness + 8-scenario acceptance gate + live/ops scripts.
+  sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
+                + `querais` CLI. 6 tests.
+  test-e2e/     harness + 9-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
+docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
 docs/SLICE1_PLAN.md      thin-DB principle + node:sqlite rationale
 docs/PHASE3_PLAN.md      broader workstream catalogue
 querais_*.md             the 7 original design/whitepaper docs — read for intent
@@ -197,6 +223,9 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
   fast node legitimately sustains ~1k msg/s. The cap blocks raw floods only. (3A.)
 - **Contracts**: CEI on every fund-moving fn, OZ ReentrancyGuard/SafeERC20/AccessControl/
   Pausable, custom errors, strict state machines.
+- **Pause freezes value inflows + settlement; every user exit/refund path stays open while
+  paused** (a pause can never trap funds). Pinned by `contracts/test/Pausable.ts` and the
+  `RUNBOOK_KEYS.md` §5 table — change them together. QUAISToken is NOT pausable. (3B-1.)
 - **`matching` stays pure** (no chain IO) so it can move on-chain in Phase 4.
 - **The gateway DB is a thin cache/index, never the source of truth for value/trust.**
 - Keep changes **additive via the existing seams**: `Settlement`, `InferenceBackend`,
@@ -216,7 +245,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (102 TS + the contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 8 scenarios (~15s)
+pnpm test:e2e            # self-contained: fresh local chain → 9 scenarios (~25s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia: `pnpm preflight:sepolia` → `pnpm deploy:sepolia` (full) or
@@ -260,10 +289,17 @@ Manifest: `packages/contracts/deployments/addresses.arbitrumSepolia.json` (commi
 - NodeRegistry `0x6d13d0f94ef912c6817a74c632a378997eacf776`
 - JobEscrow `0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0`
 - CreditAccount `0x1e44f2ce56d90f764121b82bc3571b08a1d15522`
-- Deployer = admin = gateway = treasury = `0xc80A8137E57D494b195EdA12f74d7Df324f5b9d6`
-  (single throwaway testnet wallet holding all roles, for the hybrid setup).
+- Hot gateway EOA `0xc80A8137E57D494b195EdA12f74d7Df324f5b9d6` = deployer = gateway =
+  treasury, holding only the **operational** roles (ORACLE/MATCHING/SLASHER/SETTLER).
+- **Cold admin EOA `0x85cC469CBB1197480Dc399F5B2AC731102119dE8`** holds DEFAULT_ADMIN +
+  PAUSER on all three pausable contracts (key split executed 2026-06-10 via
+  `scripts/split-admin.ts`; see `docs/RUNBOOK_KEYS.md` §7). Its key is `ADMIN_PRIVATE_KEY`
+  / `PAUSER_PRIVATE_KEY` in the repo-root `.env` (gitignored) + an operator offline copy.
+  **A gateway-key leak no longer surrenders pause/rotation authority.**
 
-Secrets in `.env` (gitignored); see `.env.example`. Gateway env knobs added in 2C/3A (all
+Secrets in `.env` (gitignored); see `.env.example`. Key envs: `DEPLOYER_PRIVATE_KEY` /
+`GATEWAY_PRIVATE_KEY` (hot), `ADMIN_PRIVATE_KEY` + `PAUSER_PRIVATE_KEY` (cold, 3B-1).
+Gateway env knobs added in 2C/3A (all
 optional — defaults in `HARDENING_DEFAULTS`, `gateway/src/config.ts`):
 `GATEWAY_BATCH_FLUSH_INTERVAL_SECONDS`, `GATEWAY_SESSION_DEADLINE_MARGIN_SECONDS`,
 `GATEWAY_FAUCET_IP_DAILY_LIMIT`, `GATEWAY_FAUCET_DAILY_CAP`, `GATEWAY_QUOTA_TIERS` (JSON),
@@ -281,8 +317,10 @@ distributor. Worst case if compromised is bounded — it can only settle at sign
 prices (the CreditAccount cap + signature are enforced on-chain); no theft of deposited
 principal. Removing it is Phase 4. Live deterrents: slashing (1% on Layer-B failure),
 reputation EMA, staking. Slice 3A added the adversarial-surface layers (quotas, throttles,
-flood caps); 3B adds the operational layers (runbook, pause drill). NOT yet built: full
-disputes, Layer-A verification, GPU attestation, prompt privacy.
+flood caps); Slice 3B-1 added the operational layers — **`docs/RUNBOOK_KEYS.md`** is the
+canonical blast-radius + incident-response doc (key inventory, pause drill log, rotation,
+the executed admin/pauser key split). NOT yet built: full disputes, Layer-A verification,
+GPU attestation, prompt privacy.
 
 ---
 
@@ -307,25 +345,31 @@ Persistent memories: `~/.claude/projects/C--Users-mynew-Desktop-querais/memory/`
 
 ## 12. Loose ends / current runtime state
 
-- **PR #25 (Slice 3A) is OPEN with CI green — merging needs the user's go-ahead.** Local
-  branch `slice-3a-harden-surface` (pushed). `main` is at #24 (Slice 2C).
+- **The `slice-3b-ops` PR (Slice 3B-1) is OPEN — merging needs the user's go-ahead.**
+  `main` is at #25 (Slice 3A).
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have merged it already.
-- After #25 merges: **Slice 3B** (scope in §2), then Stage B.
+- After 3B-1 merges: **Slice 3B-2** (Slither, scope in §2), then Stage B.
+- The **Sepolia key split is already executed on-chain** (it's an on-chain fact, not tied
+  to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the repo-root `.env`.
+  Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) — the
+  supply-chain age policy working as designed; leave it until the package ages in.
 - **No hosted gateway/VM node is running** — restart with `pnpm gateway:sepolia` + the node
   scripts if needed (the VM at 172.22.52.24 has a restart recipe in project memory).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **8 scenarios**, gateway unit = **50**,
-  TS unit total = **102**, migrations = **4** (`MIGRATION_COUNT` tracks automatically).
+- Counts that tests assert or reports cite: e2e = **9 scenarios**, gateway unit = **56**,
+  contracts = **55**, TS unit total = **109**, migrations = **4** (`MIGRATION_COUNT`
+  tracks automatically).
 
 ---
 
 ## 13. Your first 5 minutes (suggested)
 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
-2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm whether #25 merged.
+2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. `Set-Location C:\Users\mynew\Desktop\querais; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 8 scenarios pass (self-contained, ~15s).
-5. Skim `dispatcher.ts`, `batched-settlement.ts`, `quota.ts`, `CreditAccount.sol`, `e2e.ts`.
+4. `pnpm test:e2e` → 9 scenarios pass (self-contained, ~25s).
+5. Skim `dispatcher.ts`, `batched-settlement.ts`, `quota.ts`, `CreditAccount.sol`, `e2e.ts`,
+   and `docs/RUNBOOK_KEYS.md`.
 6. Confirm the Slice 3B scope with the user, then follow the rhythm in §2.

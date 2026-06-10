@@ -9,11 +9,13 @@ import {
 import type { GatewayDeps } from '../deps.js';
 import { resolveRequester } from '../auth.js';
 import { openAiError, sendError } from '../http.js';
+import { buildSessionStatus } from '../session-status.js';
 
 /**
  * Slice 2 credit sessions.
  *  - GET  /v1/credit/info  → the data a client needs to build + sign a spending cap.
  *  - POST /v1/sessions     → register a signed cap so this key's jobs batch-settle.
+ *  - GET  /v1/sessions     → the requester's live session/credit/headroom view (Slice 3B).
  */
 export function registerSessions(app: FastifyInstance, deps: GatewayDeps): void {
   const { deployment } = deps.chain;
@@ -24,6 +26,39 @@ export function registerSessions(app: FastifyInstance, deps: GatewayDeps): void 
     token: deployment.contracts.token,
     settler: deps.settler,
   }));
+
+  app.get('/v1/sessions', async (request, reply) => {
+    let requester: Address;
+    try {
+      requester = resolveRequester(deps.keyStore, request.headers.authorization);
+    } catch (err) {
+      return sendError(reply, err);
+    }
+    if (!deps.sessions || !deps.ledger) {
+      return reply.code(404).send(openAiError('credit sessions not enabled', 'not_found'));
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const session = deps.sessions.getActive(requester, nowSeconds);
+    const pending = deps.ledger.pending(requester);
+    const pendingTotalWei = pending.reduce((sum, d) => sum + d.amountWei, 0n);
+    const [spentAgainstWei, creditBalanceWei] = await Promise.all([
+      session ? deps.chain.spentAgainst(requester, session.nonce) : Promise.resolve(0n),
+      deps.chain.creditBalance(requester),
+    ]);
+
+    return reply.send(
+      buildSessionStatus({
+        requester,
+        settler: deps.settler,
+        session,
+        spentAgainstWei,
+        creditBalanceWei,
+        pendingCount: pending.length,
+        pendingTotalWei,
+      }),
+    );
+  });
 
   app.post('/v1/sessions', async (request, reply) => {
     let requester: Address;
