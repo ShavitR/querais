@@ -8,6 +8,7 @@ import {
   type GatewayToNode,
   type JobAssignment,
   type JobErrorMessage,
+  type ModelManifestEntry,
   type NodeHello,
   type NodeModelOffer,
   type TokenChunk,
@@ -46,6 +47,10 @@ export interface NodePoolServices {
   reputation?: ReputationService;
   /** Records connect/disconnect session intervals (the Uptime dimension's input). */
   sessions?: NodeSessionStore;
+  /** Slice 9: the operator's pinned model digests. When set, an offered model with a
+   *  manifest entry must arrive with a matching digest in the hello or it is dropped
+   *  (exclusion, not punishment). Unset = no enforcement (Slice 8 behavior). */
+  manifestModels?: Record<string, ModelManifestEntry>;
 }
 
 const POOL_DEFAULTS: NodePoolOptions = {
@@ -196,6 +201,40 @@ export class NodePool {
       return;
     }
 
+    // Slice 9 manifest enforcement — exclusion, not punishment. A model the operator
+    // pinned must arrive with a matching digest; mismatch or no digest reported drops
+    // that one offer (unpinned models pass through untouched). A node left with zero
+    // offers can't serve anything and is refused outright.
+    let offeredModels = hello.models;
+    const manifest = this.services.manifestModels;
+    if (manifest) {
+      const dropped: Array<{ model: string; reason: string }> = [];
+      offeredModels = hello.models.filter((offer) => {
+        const entry = manifest[offer.model];
+        if (!entry) return true;
+        const digest = hello.modelDigests?.[offer.model];
+        if (!digest) {
+          dropped.push({ model: offer.model, reason: 'no digest reported' });
+          return false;
+        }
+        if (digest !== entry.digest) {
+          dropped.push({ model: offer.model, reason: 'digest mismatch' });
+          return false;
+        }
+        return true;
+      });
+      if (dropped.length > 0) {
+        this.logger.warn(
+          { wallet: hello.wallet, dropped },
+          'manifest enforcement dropped model offers',
+        );
+      }
+      if (offeredModels.length === 0) {
+        this.reject(socket, 'no offered model passed manifest verification');
+        return;
+      }
+    }
+
     // Slice 4: open the uptime session BEFORE computing the composite (so the Uptime
     // dimension sees this connection), then feed matching the composite rather than
     // the raw on-chain score. Falls back to the chain score without the services.
@@ -208,7 +247,7 @@ export class NodePool {
       socket,
       wallet: hello.wallet,
       nodeId: hello.nodeId,
-      models: hello.models,
+      models: offeredModels,
       reputation,
     };
     this.nodes.set(hello.wallet, pooled);
@@ -216,7 +255,7 @@ export class NodePool {
     this.startPinging(socket, hello.wallet);
     this.sendTo(socket, { type: 'hello_ack', ok: true });
     this.logger.info(
-      { wallet: hello.wallet, models: hello.models.map((m) => m.model), reputation },
+      { wallet: hello.wallet, models: offeredModels.map((m) => m.model), reputation },
       'node joined pool',
     );
   }

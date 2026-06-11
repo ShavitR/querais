@@ -120,3 +120,54 @@ test('uptime telemetry: a completed handshake opens a session; socket close clos
   const closed = sessions.intervalsSince(account.address, 0);
   assert.notEqual(closed[0]!.end, null, 'socket close closes the session');
 });
+
+test('manifest enforcement: pinned models need a matching digest; zero survivors refused', async () => {
+  const { privateKeyToAccount, generatePrivateKey } = await import('viem/accounts');
+  const DIGEST_GOOD = `sha256:${'a'.repeat(64)}`;
+  const DIGEST_BAD = `sha256:${'b'.repeat(64)}`;
+  // The operator pins exactly one model; 'free-model' is deliberately unpinned.
+  const manifestModels = { 'pinned-model': { digest: DIGEST_GOOD } };
+
+  const offer = (model: string) => ({ model, pricePerTokenWei: '1', tokensPerSecond: 1 });
+
+  async function handshake(
+    models: Array<ReturnType<typeof offer>>,
+    modelDigests?: Record<string, string>,
+  ) {
+    const pool = new NodePool(chain, logger, {}, { manifestModels });
+    const s = new FakeSocket();
+    pool.handleConnection(asWs(s), '203.0.113.1');
+    const challenge = JSON.parse(s.sent[0]!) as { nonce: string };
+    const account = privateKeyToAccount(generatePrivateKey());
+    const signature = await account.signMessage({ message: challenge.nonce });
+    s.inject({
+      type: 'hello',
+      wallet: account.address,
+      nodeId: 'test-node',
+      nonce: challenge.nonce,
+      signature,
+      models,
+      ...(modelDigests ? { modelDigests } : {}),
+    });
+    for (let i = 0; i < 50 && s.sent.length < 2; i++) await delay(10);
+    const ack = JSON.parse(s.sent[1]!) as { ok: boolean; reason?: string };
+    return { pool, ack };
+  }
+
+  // Matching digest → the pinned model serves.
+  const good = await handshake([offer('pinned-model')], { 'pinned-model': DIGEST_GOOD });
+  assert.equal(good.ack.ok, true);
+  assert.deepEqual(good.pool.availableModels(), ['pinned-model']);
+
+  // Wrong digest on the only offer → nothing left to serve, handshake refused.
+  const bad = await handshake([offer('pinned-model')], { 'pinned-model': DIGEST_BAD });
+  assert.equal(bad.ack.ok, false);
+  assert.match(bad.ack.reason ?? '', /manifest/);
+  assert.equal(bad.pool.size(), 0);
+
+  // Pre-Slice-9 daemon (no digests at all): the pinned offer is dropped, the
+  // unpinned one passes through — exclusion, not punishment.
+  const mixed = await handshake([offer('pinned-model'), offer('free-model')]);
+  assert.equal(mixed.ack.ok, true);
+  assert.deepEqual(mixed.pool.availableModels(), ['free-model']);
+});

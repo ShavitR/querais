@@ -131,6 +131,21 @@ export async function buildGateway(
     logger,
     alerts,
   );
+  // Slice 9: signed model manifest — loaded + validated (fail fast: a typo'd
+  // manifest must kill the boot, not silently enforce nothing) and signed once
+  // with the gateway key (signer == settler, which daemons already learn from
+  // /v1/credit/info). Served at GET /v1/models/manifest, enforced by the pool
+  // at node handshake. Unset = bit-identical to Slice 8 (no enforcement).
+  let modelManifest: SignedModelManifest | undefined;
+  if (opts.config.modelManifestPath) {
+    const manifest = loadModelManifest(opts.config.modelManifestPath);
+    modelManifest = await signModelManifest(walletClient, settler, manifest.models);
+    logger.info(
+      { models: Object.keys(manifest.models), signer: settler },
+      'model manifest loaded — digest enforcement armed',
+    );
+  }
+
   const pool = new NodePool(
     chain,
     logger,
@@ -141,7 +156,11 @@ export async function buildGateway(
       maxMessagesPerSecond: hardening.wsMaxMessagesPerSecond,
       pingIntervalMs: hardening.wsPingIntervalMs,
     },
-    { reputation, sessions: nodeSessions },
+    {
+      reputation,
+      sessions: nodeSessions,
+      ...(modelManifest ? { manifestModels: modelManifest.models } : {}),
+    },
   );
   // Slice 2: durable signed-cap sessions + the batched-settlement venue. Dormant until a
   // requester opens a session via POST /v1/sessions; otherwise the per-job escrow path runs.
@@ -267,20 +286,6 @@ export async function buildGateway(
   // Slice 8 keeper liveness: every background timer registers + beats here; the
   // `keeper-stale` sweep rule pages when one stops succeeding.
   const keepers = new KeeperHealth();
-
-  // Slice 9: signed model manifest — loaded + validated (fail fast: a typo'd
-  // manifest must kill the boot, not silently enforce nothing) and signed once
-  // with the gateway key. Served at GET /v1/models/manifest, enforced at node
-  // handshake. Unset = bit-identical to Slice 8 (no digest enforcement).
-  let modelManifest: SignedModelManifest | undefined;
-  if (opts.config.modelManifestPath) {
-    const manifest = loadModelManifest(opts.config.modelManifestPath);
-    modelManifest = await signModelManifest(walletClient, settler, manifest.models);
-    logger.info(
-      { models: Object.keys(manifest.models), signer: settler },
-      'model manifest loaded — digest enforcement armed',
-    );
-  }
 
   const deps: GatewayDeps = {
     config: opts.config,

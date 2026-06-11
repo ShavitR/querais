@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MockBackend } from './mock.js';
+import { MockBackend, mockModelDigest } from './mock.js';
 
 test('MockBackend echoes deterministically with exact token counts', async () => {
   const backend = new MockBackend();
@@ -44,4 +44,14 @@ test('MockBackend reports availability and models', async () => {
   const backend = new MockBackend(['m1', 'm2']);
   assert.equal(await backend.isAvailable(), true);
   assert.deepEqual(await backend.listModels(), ['m1', 'm2']);
+});
+
+test('MockBackend digests are deterministic, manifest-shaped, and per-model', async () => {
+  const digests = await new MockBackend(['m1', 'm2']).modelDigests();
+  assert.deepEqual(Object.keys(digests).sort(), ['m1', 'm2']);
+  assert.equal(digests['m1'], mockModelDigest('m1'));
+  assert.match(digests['m1']!, /^sha256:[0-9a-f]{64}$/);
+  assert.notEqual(digests['m1'], digests['m2'], 'distinct models get distinct digests');
+  // Stable across instances — tests/e2e can precompute the expected value.
+  assert.deepEqual(await new MockBackend(['m1', 'm2']).modelDigests(), digests);
 });

@@ -5,6 +5,7 @@ import {
   decimalStringSchema,
   identifiedJobSpecSchema,
 } from './jobspec.js';
+import { MODEL_DIGEST_REGEX } from './model-manifest.js';
 
 /**
  * Gateway ↔ node wire protocol (JSON over WebSocket). Two discriminated unions:
@@ -57,6 +58,10 @@ export const nodeHelloSchema = z.object({
   nonce: z.string().min(1),
   signature: z.string().min(1),
   models: z.array(nodeModelOfferSchema).min(1),
+  /** Slice 9 (additive): model → blob digest, so a manifest-enforcing gateway can
+   *  verify offers at handshake. Absent on pre-Slice-9 daemons — those still join,
+   *  but any model the manifest pins is dropped from their offers. */
+  modelDigests: z.record(z.string().min(1), z.string().regex(MODEL_DIGEST_REGEX)).optional(),
 });
 
 export const tokenChunkSchema = z.object({

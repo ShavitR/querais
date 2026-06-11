@@ -64,6 +64,23 @@ export async function startDaemon(
     tokensPerSecond: 0,
   }));
 
+  // Slice 9: collect blob digests for the served models so a manifest-enforcing
+  // gateway can verify them at handshake. Best-effort — a backend without digests
+  // still serves, but manifest-pinned models would be dropped by such a gateway.
+  let modelDigests: Record<string, string> | undefined;
+  if (infer.modelDigests) {
+    try {
+      const all = await infer.modelDigests();
+      const entries = served.filter((m) => all[m]).map((m) => [m, all[m]!] as const);
+      if (entries.length) modelDigests = Object.fromEntries(entries);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'could not read model digests — a manifest-enforcing gateway may drop our models',
+      );
+    }
+  }
+
   const deployment = loadAddresses(config.network);
   const rpcUrl = deployment.rpcUrl || config.rpcUrl;
   const publicClient = makePublicClient(rpcUrl, deployment.chainId);
@@ -99,6 +116,7 @@ export async function startDaemon(
     walletClient,
     nodeId: config.nodeId,
     models,
+    ...(modelDigests ? { modelDigests } : {}),
     backend: infer,
     logger,
   });
