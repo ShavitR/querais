@@ -17,9 +17,11 @@ export const metrics = {
   layerAFailures: 0,
   layerADisputes: 0,
   patternFlags: 0,
-  // Slice 6A: treasury epoch sweeps.
+  // Slice 6A/6B: treasury epoch sweeps + staking-rewards epoch credits.
   treasuryDistributions: 0,
   treasuryDistributeFailures: 0,
+  rewardsEpochs: 0,
+  rewardsEpochFailures: 0,
 };
 
 /** Render the Prometheus exposition, plus a live gauge for connected nodes. */
@@ -67,6 +69,12 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_treasury_distribute_failures_total Failed treasury sweeps.',
     '# TYPE querais_treasury_distribute_failures_total counter',
     `querais_treasury_distribute_failures_total ${metrics.treasuryDistributeFailures}`,
+    '# HELP querais_rewards_epochs_total Staking-rewards epoch credits executed.',
+    '# TYPE querais_rewards_epochs_total counter',
+    `querais_rewards_epochs_total ${metrics.rewardsEpochs}`,
+    '# HELP querais_rewards_epoch_failures_total Failed staking-rewards epoch credits.',
+    '# TYPE querais_rewards_epoch_failures_total counter',
+    `querais_rewards_epoch_failures_total ${metrics.rewardsEpochFailures}`,
     '# HELP querais_nodes Connected nodes in the pool.',
     '# TYPE querais_nodes gauge',
     `querais_nodes ${nodes}`,

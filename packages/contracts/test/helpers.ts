@@ -83,6 +83,14 @@ export async function deploy(viem: Viem) {
     treasuryAddr,
     deployer.account.address,
   ]);
+  // Slice 6B. Unlike deploy.ts, the fixture does NOT call treasury.setStakerPool —
+  // the treasury unit tests need the parked-earmark semantics; tests that want the
+  // full production wiring call setStakerPool themselves.
+  const rewards = await viem.deployContract('StakingRewards', [
+    token.address,
+    registry.address,
+    deployer.account.address,
+  ]);
 
   // Grant gateway the operational roles.
   const REG_ORACLE = await registry.read.ORACLE_ROLE();
@@ -100,6 +108,8 @@ export async function deploy(viem: Viem) {
   await registry.write.grantRole([REG_SLASHER, dispute.address]);
   const TREASURY_KEEPER = await treasuryContract.read.KEEPER_ROLE();
   await treasuryContract.write.grantRole([TREASURY_KEEPER, gateway.account.address]);
+  const REWARDS_KEEPER = await rewards.read.KEEPER_ROLE();
+  await rewards.write.grantRole([REWARDS_KEEPER, gateway.account.address]);
 
   // Fund the requester (to pay for jobs) and node (to stake).
   await token.write.transfer([requester.account.address, parseEther('1000')]);
@@ -121,6 +131,7 @@ export async function deploy(viem: Viem) {
     dispute,
     treasuryContract,
     treasuryAddr,
+    rewards,
     roles: {
       REG_ORACLE,
       REG_SLASHER,
@@ -129,6 +140,7 @@ export async function deploy(viem: Viem) {
       CREDIT_SETTLER,
       DISPUTE_ORACLE,
       TREASURY_KEEPER,
+      REWARDS_KEEPER,
     },
   };
 }
@@ -141,7 +153,8 @@ export async function as<
     | 'JobEscrow'
     | 'CreditAccount'
     | 'DisputeResolution'
-    | 'ProtocolTreasury',
+    | 'ProtocolTreasury'
+    | 'StakingRewards',
 >(
   viem: Viem,
   name: N,

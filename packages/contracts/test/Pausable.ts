@@ -7,7 +7,7 @@ import { as, deploy, jobId, signCap, creditDomain, JOB, TEST_PRIVATE_KEYS } from
 const REQUESTER_PK = TEST_PRIVATE_KEYS[3];
 
 /**
- * Pins the exact pause surface of the five Pausable contracts. The runbook
+ * Pins the exact pause surface of the six Pausable contracts. The runbook
  * (docs/RUNBOOK_KEYS.md) table of "what pause does / does not stop" must match
  * these tests — if a gate changes, change both. QUAISToken is NOT pausable.
  */
@@ -22,7 +22,7 @@ describe('Pausable — emergency pause surface', async () => {
 
   // ─── Access control ──────────────────────────────────────────────────────────
 
-  it('pause/unpause require PAUSER_ROLE on all five contracts', async () => {
+  it('pause/unpause require PAUSER_ROLE on all six contracts', async () => {
     const ctx = await deploy(viem);
     for (const [name, contract] of [
       ['NodeRegistry', ctx.registry],
@@ -30,6 +30,7 @@ describe('Pausable — emergency pause surface', async () => {
       ['CreditAccount', ctx.credit],
       ['DisputeResolution', ctx.dispute],
       ['ProtocolTreasury', ctx.treasuryContract],
+      ['StakingRewards', ctx.rewards],
     ] as const) {
       const asOutsider = (await as(
         viem,
@@ -298,6 +299,35 @@ describe('Pausable — emergency pause surface', async () => {
 
     await ctx.treasuryContract.write.unpause();
     await keeper.write.distribute(); // sweeps normally again
+  });
+
+  it('StakingRewards: pause blocks epoch crediting; claim (user exit) stays open', async () => {
+    const ctx = await deploy(viem);
+    // One staked node with credited rewards, then more funds arrive.
+    const tokenNode = await as(viem, 'QUAISToken', ctx.token.address, ctx.node);
+    await tokenNode.write.approve([ctx.registry.address, parseEther('100')]);
+    const regNode = await as(viem, 'NodeRegistry', ctx.registry.address, ctx.node);
+    await regNode.write.registerNode([jobId('p-staker'), parseEther('100')]);
+    await ctx.token.write.transfer([ctx.rewards.address, parseEther('10')]);
+    const keeper = await as(viem, 'StakingRewards', ctx.rewards.address, ctx.gateway);
+    await keeper.write.distributeEpoch();
+    await ctx.token.write.transfer([ctx.rewards.address, parseEther('5')]);
+
+    await ctx.rewards.write.pause();
+    await viem.assertions.revertWithCustomError(
+      keeper.write.distributeEpoch(),
+      ctx.rewards,
+      'EnforcedPause',
+    );
+    // The earned-rewards exit stays open under pause.
+    const asNode = await as(viem, 'StakingRewards', ctx.rewards.address, ctx.node);
+    const before = await ctx.token.read.balanceOf([ctx.node.account.address]);
+    await asNode.write.claim();
+    const after = await ctx.token.read.balanceOf([ctx.node.account.address]);
+    assert.equal(after - before, parseEther('10'));
+
+    await ctx.rewards.write.unpause();
+    await keeper.write.distributeEpoch(); // credits normally again
   });
 
   it('CreditAccount: withdrawal exit stays open while paused', async () => {

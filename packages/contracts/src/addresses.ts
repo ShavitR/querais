@@ -21,6 +21,8 @@ export interface Deployment {
     disputeResolution?: Address;
     /** Absent on deployments that predate Slice 6A (fees go to the treasury EOA). */
     protocolTreasury?: Address;
+    /** Absent on deployments that predate Slice 6B (staker share parks in the treasury). */
+    stakingRewards?: Address;
   };
   treasury: Address;
   accounts: {

@@ -130,6 +130,7 @@ Pinned by `packages/contracts/test/Pausable.ts` — update both together.
 | CreditAccount | `deposit`, `batchSettle` | `initiateWithdrawal`, `completeWithdrawal` (principal exit), all reads |
 | DisputeResolution (5B) | `raiseDispute` (bond inflow), `autoResolve` (settlement) | `submitCounterEvidence` (a pause must never silence a defense), `reclaimBond` (bond exit after 30d), all reads |
 | ProtocolTreasury (6A) | `distribute()` (the 60/20/20 sweep), `allocate()` (ops spending) | all reads. The treasury holds PROTOCOL funds only — there is deliberately no user exit path to keep open |
+| StakingRewards (6B) | `distributeEpoch()` (pro-rata crediting) | `claim()` (earned rewards are a user exit — never pausable), all reads |
 | QUAISToken | — (not pausable) | everything, always |
 
 Design intent: pause freezes **value inflows and settlement** (nothing new gets

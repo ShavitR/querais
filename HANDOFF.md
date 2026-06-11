@@ -35,7 +35,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
-Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ◐ 6 Tokenomics (6A #33 · 6B/6C next)
+Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ◐ 6 Tokenomics (6A #33 · 6B #34 · 6C next)
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
 
@@ -44,17 +44,15 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Stage A COMPLETE; Slices 4 + 5 COMPLETE; Slice 6A (treasury + burn) COMPLETE.
+**Stage A COMPLETE; Slices 4 + 5 COMPLETE; Slices 6A + 6B COMPLETE.
 Immediate next actions:**
-1. **Slice 6B — staking rewards** (decision TAKEN: Option 1 — node-operator stakes in
-   `NodeRegistry` are the stakers, rewards pro-rata to active staked nodes; the
-   treasury's `setStakerPool` + parked earmark are waiting for it). Money-moving →
-   confirm the concrete design with the user before building (standing rule).
-2. **Slice 6C — node incentive programs** (ops, not protocol: `allocate()` payouts
-   computed gateway-side from Slice-4 telemetry).
-3. Then Stage C (Slice 7 deploy → 8 observability → 9 DX/growth). The Sepolia
-   deployment predates 5B/6A — live activation needs the operator redeploy (runbook
-   §7b) or the reversible treasury migration (§7c).
+1. **Slice 6C — node incentive programs** (ops, not protocol: bootstrap multiplier,
+   uptime pool, first-model bonus — `allocate()` payouts computed gateway-side from
+   Slice-4 telemetry; formulas in docs; surfaced on `/v1/nodes` + dashboard. No new
+   contract logic).
+2. Then Stage C (Slice 7 deploy → 8 observability → 9 DX/growth). The Sepolia
+   deployment predates 5B/6A/6B — live activation needs the operator redeploy
+   (runbook §7b) or the reversible treasury migration (§7c).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -63,7 +61,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33 → #34):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -243,8 +241,25 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
 - 13th e2e scenario: fees accrue → the keeper timer sweeps unprompted → supply shrinks
   by exactly the burn; earmark/ops split conserves to the wei.
 
+**Slice 6B (merged #34) — StakingRewards (Option 1: node-operator stakes).**
+- **`StakingRewards.sol`**: the treasury's 20% staker share flows here
+  (`treasury.setStakerPool`, wired at deploy); a keeper `distributeEpoch()` walks the
+  ACTIVE node set fully on-chain and credits `claimable` pro-rata to stake; operators
+  pull with **`claim()` — deliberately NOT pausable** (earned rewards are a user exit
+  and survive later slashes/unbonding: a token debt, not stake). Division dust rolls
+  to the next epoch; credited amounts conserve exactly. Documented trade-offs:
+  staked-at-sweep-time membership (no intra-epoch time-weighting; fine at daily
+  epochs) and O(n) registry reads per epoch (Merkle-epoch distributor is the deferred
+  scale-out). The gateway keeper tick runs treasury sweep → epoch credit in order
+  (same interval knob); `/v1/nodes` exposes `claimableRewardsWei`.
+- Test-fixture nuance: `helpers.deploy()` does NOT call `setStakerPool` (the treasury
+  unit tests need parked-earmark semantics); `deploy.ts` DOES — production wiring is
+  fee → sweep → epoch credit → claim from day one on fresh chains.
+- 14th e2e scenario: fees → sweep → pro-rata credit lands unprompted → the node
+  operator claims; balance grows by exactly the credited amount.
+
 **Deferred (do NOT assume these exist):**
-- Slices 6B/6C, 7–9.
+- Slice 6C, Slices 7–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -274,7 +289,7 @@ packages/
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 13-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 14-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
@@ -368,7 +383,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (109 TS + the 55-test contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 13 scenarios (~50s)
+pnpm test:e2e            # self-contained: fresh local chain → 14 scenarios (~55s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
@@ -504,8 +519,8 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **13 scenarios**, gateway unit = **98**,
-  contracts = **73**, TS unit total = **151** (incl. 1 Ollama-gated node-daemon skip),
+- Counts that tests assert or reports cite: e2e = **14 scenarios**, gateway unit = **98**,
+  contracts = **81**, TS unit total = **151** (incl. 1 Ollama-gated node-daemon skip),
   migrations = **6** (`MIGRATION_COUNT` tracks automatically).
 
 ---
@@ -515,7 +530,7 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 13 scenarios pass (self-contained, ~50s).
+4. `pnpm test:e2e` → 14 scenarios pass (self-contained, ~55s).
 5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
    `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
    `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.

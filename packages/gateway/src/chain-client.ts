@@ -4,6 +4,7 @@ import {
   jobEscrowAbi,
   nodeRegistryAbi,
   protocolTreasuryAbi,
+  stakingRewardsAbi,
   quaisTokenAbi,
   type Deployment,
   type QueraisPublicClient,
@@ -314,6 +315,50 @@ export class ChainClient {
     const address = this.deployment.contracts.protocolTreasury;
     if (!address) {
       throw new Error('this deployment has no ProtocolTreasury contract (pre-6A manifest)');
+    }
+    return address;
+  }
+
+  // ── StakingRewards (Slice 6B keeper) ─────────────────────────────────────────
+
+  /** The staking-rewards contract's address, or undefined on pre-6B deployments. */
+  stakingRewardsContract(): Address | undefined {
+    return this.deployment.contracts.stakingRewards;
+  }
+
+  /** Staker-share funds awaiting the pro-rata epoch credit. */
+  rewardsPending(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.requireRewards(),
+      abi: stakingRewardsAbi,
+      functionName: 'pendingRewards',
+    });
+  }
+
+  /** Credit pending rewards pro-rata to the active staked nodes (receipt-checked). */
+  async distributeRewardsEpoch(): Promise<Hex> {
+    const hash = await this.walletClient.writeContract({
+      address: this.requireRewards(),
+      abi: stakingRewardsAbi,
+      functionName: 'distributeEpoch',
+    });
+    return this.waitForSuccess(hash, 'distributeEpoch');
+  }
+
+  /** A node operator's earned, unclaimed rewards. */
+  claimableRewards(wallet: Address): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.requireRewards(),
+      abi: stakingRewardsAbi,
+      functionName: 'claimable',
+      args: [wallet],
+    });
+  }
+
+  private requireRewards(): Address {
+    const address = this.deployment.contracts.stakingRewards;
+    if (!address) {
+      throw new Error('this deployment has no StakingRewards contract (pre-6B manifest)');
     }
     return address;
   }
