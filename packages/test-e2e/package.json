@@ -21,6 +21,7 @@
     "@querais/node-daemon": "workspace:*",
     "@querais/sdk": "workspace:*",
     "@querais/shared": "workspace:*",
+    "pino": "^9.6.0",
     "viem": "^2.52.2"
   },
   "devDependencies": {

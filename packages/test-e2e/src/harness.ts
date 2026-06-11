@@ -1,4 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseEther, type Address, type Hex } from 'viem';
 import {
   loadAddresses,
@@ -69,6 +72,12 @@ export interface HarnessOptions {
   hardening?: Partial<HardeningConfig>;
   /** Slice 8: alerting overrides (webhook URL/format, cooldown, sweep + thresholds). */
   alerts?: Partial<AlertsConfig>;
+  /** Slice 9: pin model digests — written to a temp manifest file and fed to the
+   *  gateway via modelManifestPath (signed at boot, enforced at handshake). */
+  modelManifest?: Record<string, { digest: string; note?: string }>;
+  /** Slice 9: boot the gateway only (no daemon) — for scenarios that bring their
+   *  own (possibly adversarial) node client. */
+  noDaemon?: boolean;
 }
 
 /**
@@ -91,6 +100,18 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
+  // Slice 9: materialize the manifest option as the JSON file the gateway loads.
+  let manifestDir: string | undefined;
+  let modelManifestPath: string | undefined;
+  if (opts.modelManifest) {
+    manifestDir = mkdtempSync(join(tmpdir(), 'querais-e2e-manifest-'));
+    modelManifestPath = join(manifestDir, 'manifest.json');
+    writeFileSync(modelManifestPath, JSON.stringify({ models: opts.modelManifest }), 'utf8');
+  }
+  const cleanupManifest = (): void => {
+    if (manifestDir) rmSync(manifestDir, { recursive: true, force: true });
+  };
+
   // 2. Gateway.
   const gatewayConfig: GatewayConfig = {
     port: 0,
@@ -112,6 +133,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     ...(opts.incentives ? { incentives: opts.incentives } : {}),
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
     ...(opts.alerts ? { alerts: opts.alerts } : {}),
+    ...(modelManifestPath ? { modelManifestPath } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
     faucetEthWei: 0n, // nodes are pre-funded in tests; no ETH drip needed
@@ -128,6 +150,20 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
   if (!address || typeof address === 'string') throw new Error('failed to bind gateway port');
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
+  // Slice 9: gateway-only mode for scenarios that bring their own node client.
+  if (opts.noDaemon) {
+    return {
+      baseUrl,
+      deployment,
+      requester: deployment.accounts.requester,
+      apiKey: API_KEY,
+      stop: async () => {
+        await app.close();
+        cleanupManifest();
+      },
+    };
+  }
+
   // 3. Node daemon.
   const daemonConfig: DaemonConfig = {
     network: 'localhost',
@@ -143,10 +179,17 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     autoFaucet: false, // nodes are pre-funded in tests
   };
   const backend = opts.backend ?? new MockBackend([model]);
-  const daemon = await startDaemon(daemonConfig, backend);
-
-  // 4. Wait for the node to complete the handshake and join the pool.
-  await waitForNodes(baseUrl, 1, 10_000);
+  let daemon;
+  try {
+    daemon = await startDaemon(daemonConfig, backend);
+    // 4. Wait for the node to complete the handshake and join the pool.
+    await waitForNodes(baseUrl, 1, 10_000);
+  } catch (err) {
+    // A daemon that refuses to boot (e.g. manifest self-check) must not leak the gateway.
+    await app.close();
+    cleanupManifest();
+    throw err;
+  }
 
   return {
     baseUrl,
@@ -156,6 +199,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     stop: async () => {
       daemon.stop();
       await app.close();
+      cleanupManifest();
     },
   };
 }
