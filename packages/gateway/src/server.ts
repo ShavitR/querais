@@ -29,6 +29,7 @@ import { registerDashboard } from './routes/dashboard.js';
 import { registerKeys } from './routes/keys.js';
 import { registerFlags } from './routes/flags.js';
 import { registerStatus } from './routes/status.js';
+import { registerAlertsAdmin } from './routes/alerts-admin.js';
 import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
@@ -465,6 +466,7 @@ export async function buildGateway(
   registerDashboard(app, deps);
   registerKeys(app, deps);
   registerFlags(app, deps);
+  registerAlertsAdmin(app, deps);
   registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);
 
