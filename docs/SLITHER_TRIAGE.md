@@ -3,7 +3,7 @@
 How Solidity static analysis runs in CI, and the rationale for every triaged finding.
 Config: `packages/contracts/slither.config.json`. CI job: `slither` in
 `.github/workflows/ci.yml` (non-gating; fails-but-allowed only when findings exceed the
-baseline of **1**).
+baseline of **3**).
 
 ## Why the scratch-copy approach
 
@@ -23,11 +23,12 @@ Tried in order (Slice 0 deferral revisited 2026-06-10, slither-analyzer 0.11.5):
 (A Foundry analysis profile would also work but drags in a second toolchain purely for
 analysis; the scratch copy needs nothing beyond solc + slither.)
 
-## Acknowledged finding (the baseline of 1)
+## Acknowledged findings (the baseline of 3)
 
 | Detector | Where | Verdict |
 |---|---|---|
 | `arbitrary-send-erc20` | `JobEscrow.createJob` — `safeTransferFrom(requester, address(this), locked)` with `requester` as a parameter | **Acknowledged, by design.** `createJob` is `MATCHING_ENGINE_ROLE`-gated (only the trusted gateway), and the pull is bounded by the allowance each requester granted JobEscrow. A compromised gateway key can drain *up to that allowance* into escrow/settlement — this is the documented trusted-gateway blast radius (`docs/RUNBOOK_KEYS.md` §2). Removing the trusted gateway is Phase 4. Deliberately **left visible** in every run (it's the highest-impact detector class; excluding it would also hide future genuine bugs). |
+| `divide-before-multiply` ×2 | `DisputeResolution.autoResolve` — `burnAmount` and `challengerCut` are computed from `slashAmount`, which is itself `(stake * SLASH_BPS) / 10000` (Slice 5B) | **Acknowledged, by design.** The split MUST be computed from the actually-slashed (already-rounded) amount, not from `stake`, so that `burn + challengerCut + treasuryCut == slashAmount` exactly — `treasuryCut` is the remainder and absorbs all rounding (conservation pinned to the wei by `test/DisputeResolution.ts`). Worst-case precision effect: ≤1 wei shifts from burn/challenger to the treasury. The detector stays visible (precision math matters — Slice 6 adds more bps splits). |
 
 ## Excluded detectors (slither.config.json) and why
 

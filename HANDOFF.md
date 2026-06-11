@@ -145,7 +145,8 @@ The Slice 0 Slither deferral, closed. Non-gating `slither` CI job: slither-analy
 + solc 0.8.28 on a **symlink-free scratch copy** of the contracts (crytic-compile can't
 parse HH3 build-info; `--allow-paths` rejects pnpm's store — both documented). Triage in
 `packages/contracts/slither.config.json`; full per-detector rationale in
-**`docs/SLITHER_TRIAGE.md`**. Baseline = exactly **1 acknowledged finding**
+**`docs/SLITHER_TRIAGE.md`**. Baseline at 3B-2 was exactly **1 acknowledged finding**
+(now **3** — Slice 5B acknowledged 2× `divide-before-multiply` in the dispute split)
 (`arbitrary-send-erc20` in `JobEscrow.createJob` — MATCHING_ENGINE-gated, bounded by each
 requester's allowance; the documented trusted-gateway model, runbook §2). The job goes
 red-but-allowed only when findings exceed the baseline — i.e. red == new finding to triage.
