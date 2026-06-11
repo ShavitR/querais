@@ -1,5 +1,6 @@
 import type { AlertService } from './alerts.js';
 import type { KeeperStatus } from './keeper-health.js';
+import { metrics } from './metrics.js';
 
 /** Sweep-rule thresholds (env-overridable via GATEWAY_ALERT_*, resolved in config). */
 export interface SweepThresholds {
@@ -18,6 +19,8 @@ export interface SweepThresholds {
 export interface SweepReads {
   /** Gateway hot-wallet ETH — every settle/snapshot/keeper tx dies without gas. */
   gasBalanceWei(): Promise<bigint>;
+  /** Gauge-only read (no rule): the hot wallet's QAIS for `querais_hot_wallet_qais`. */
+  hotWalletQaisWei?(): Promise<bigint>;
   oldestPendingDebitAt(): number | undefined;
   consecutiveFlushFailures(): number;
   connectedNodes(): number;
@@ -83,6 +86,7 @@ export class AlertSweeper {
     if (rpcUp) {
       try {
         const gas = await this.reads.gasBalanceWei();
+        metrics.gasBalanceWei = Number(gas); // the sweep doubles as the gauge refresher
         if (gas < this.thresholds.gasMinWei) {
           this.alerts.raise({
             key: 'gas-low',
@@ -94,6 +98,13 @@ export class AlertSweeper {
         }
       } catch {
         /* balance read failed — the probe above owns RPC health */
+      }
+      if (this.reads.hotWalletQaisWei) {
+        try {
+          metrics.hotWalletQais = Number(await this.reads.hotWalletQaisWei()) / 1e18;
+        } catch {
+          /* gauge-only read — nothing to page about */
+        }
       }
     }
 
@@ -161,6 +172,8 @@ export class AlertSweeper {
       try {
         const f = this.reads.faucet;
         const [qais, fEth] = await Promise.all([f.qaisBalance(), f.ethBalance()]);
+        metrics.faucetQais = Number(qais) / 1e18;
+        metrics.faucetEthWei = Number(fEth);
         const lowQais = qais < 10n * f.claimQaisWei;
         const lowEth = f.claimEthWei > 0n && fEth < 10n * f.claimEthWei;
         if (lowQais || lowEth) {

@@ -70,6 +70,14 @@ export class DebitLedgerStore {
     return row.t ?? undefined;
   }
 
+  /** Unflushed debit rows network-wide — the `querais_pending_debits` gauge. */
+  pendingCount(): number {
+    const row = this.db.conn
+      .prepare('SELECT COUNT(*) AS n FROM debit_entries WHERE batch_id IS NULL')
+      .get() as { n: number };
+    return row.n;
+  }
+
   /** Total wei of all unflushed debits — the gateway's outstanding liability gauge. */
   pendingValueWei(): bigint {
     const rows = this.db.conn

@@ -365,6 +365,7 @@ export async function buildGateway(
     alerts,
     {
       gasBalanceWei: () => chain.ethBalance(settler),
+      hotWalletQaisWei: () => chain.tokenBalance(settler),
       oldestPendingDebitAt: () => credit.oldestPendingDebitAt(),
       consecutiveFlushFailures: () => credit.consecutiveFlushFailures(),
       connectedNodes: () => pool.size(),
@@ -436,7 +437,20 @@ export async function buildGateway(
   });
   app.get('/metrics', noLimit, async (_req, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4');
-    return reply.send(renderMetrics(pool.size()));
+    // Scrape-time gauges are cheap sync reads (SQLite/pool); the RPC-priced ones
+    // (gas, balances) come from the metrics object, refreshed by the alert sweep.
+    const oldestDebit = credit.oldestPendingDebitAt();
+    return reply.send(
+      renderMetrics({
+        nodes: pool.size(),
+        pendingDebits: ledger.pendingCount(),
+        pendingDebitValueQais: Number(ledger.pendingValueWei()) / 1e18,
+        oldestPendingDebitAgeSeconds:
+          oldestDebit === undefined ? 0 : Math.floor((Date.now() - oldestDebit) / 1000),
+        openFlags: nodeFlags.openCount(),
+        keepers: keepers.list(),
+      }),
+    );
   });
 
   registerChatCompletions(app, deps);
