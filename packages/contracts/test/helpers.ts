@@ -71,6 +71,12 @@ export async function deploy(viem: Viem) {
     treasury.account.address,
     deployer.account.address,
   ]);
+  const dispute = await viem.deployContract('DisputeResolution', [
+    token.address,
+    registry.address,
+    treasury.account.address,
+    deployer.account.address,
+  ]);
 
   // Grant gateway the operational roles.
   const REG_ORACLE = await registry.read.ORACLE_ROLE();
@@ -83,6 +89,9 @@ export async function deploy(viem: Viem) {
   await escrow.write.grantRole([ESC_ORACLE, gateway.account.address]);
   await escrow.write.grantRole([ESC_MATCHING, gateway.account.address]);
   await credit.write.grantRole([CREDIT_SETTLER, gateway.account.address]);
+  const DISPUTE_ORACLE = await dispute.read.ORACLE_ROLE();
+  await dispute.write.grantRole([DISPUTE_ORACLE, gateway.account.address]);
+  await registry.write.grantRole([REG_SLASHER, dispute.address]);
 
   // Fund the requester (to pay for jobs) and node (to stake).
   await token.write.transfer([requester.account.address, parseEther('1000')]);
@@ -101,12 +110,15 @@ export async function deploy(viem: Viem) {
     registry,
     escrow,
     credit,
-    roles: { REG_ORACLE, REG_SLASHER, ESC_ORACLE, ESC_MATCHING, CREDIT_SETTLER },
+    dispute,
+    roles: { REG_ORACLE, REG_SLASHER, ESC_ORACLE, ESC_MATCHING, CREDIT_SETTLER, DISPUTE_ORACLE },
   };
 }
 
 /** Re-bind a deployed contract to a specific signer (to test role-gated calls). */
-export async function as<N extends 'QUAISToken' | 'NodeRegistry' | 'JobEscrow' | 'CreditAccount'>(
+export async function as<
+  N extends 'QUAISToken' | 'NodeRegistry' | 'JobEscrow' | 'CreditAccount' | 'DisputeResolution',
+>(
   viem: Viem,
   name: N,
   address: Address,

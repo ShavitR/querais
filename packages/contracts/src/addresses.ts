@@ -17,6 +17,8 @@ export interface Deployment {
     nodeRegistry: Address;
     jobEscrow: Address;
     creditAccount: Address;
+    /** Absent on deployments that predate Slice 5B (disputes disabled there). */
+    disputeResolution?: Address;
   };
   treasury: Address;
   accounts: {

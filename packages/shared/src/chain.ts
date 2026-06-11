@@ -41,6 +41,7 @@ export {
   nodeRegistryAbi,
   jobEscrowAbi,
   creditAccountAbi,
+  disputeResolutionAbi,
   loadAddresses,
 } from '@querais/contracts';
 export type { Deployment } from '@querais/contracts';

@@ -53,6 +53,7 @@ export {
   type OracleInference,
   type LayerAOptions,
   type SampleContext,
+  type DisputeRaiser,
 } from './oracle/layer-a.js';
 export { cosineSimilarity, OllamaEmbeddings, type EmbeddingProvider } from './oracle/embeddings.js';
 export {

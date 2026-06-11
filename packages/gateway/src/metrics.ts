@@ -15,6 +15,7 @@ export const metrics = {
   layerASamples: 0,
   layerAAnomalies: 0,
   layerAFailures: 0,
+  layerADisputes: 0,
   patternFlags: 0,
 };
 
@@ -51,6 +52,9 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_layer_a_failures_total Layer-A sampling attempts that errored.',
     '# TYPE querais_layer_a_failures_total counter',
     `querais_layer_a_failures_total ${metrics.layerAFailures}`,
+    '# HELP querais_layer_a_disputes_total On-chain disputes raised + auto-resolved (5B).',
+    '# TYPE querais_layer_a_disputes_total counter',
+    `querais_layer_a_disputes_total ${metrics.layerADisputes}`,
     '# HELP querais_pattern_flags_total Output-pattern cheater flags (manual review).',
     '# TYPE querais_pattern_flags_total counter',
     `querais_pattern_flags_total ${metrics.patternFlags}`,

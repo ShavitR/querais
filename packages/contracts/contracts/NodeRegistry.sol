@@ -201,6 +201,25 @@ contract NodeRegistry is AccessControl, Pausable, ReentrancyGuard {
         onlyRole(SLASHER_ROLE)
         nonReentrant
     {
+        _slash(wallet, amount, reason);
+        // Slashed tokens remain in the contract balance (conceptually the treasury's);
+        // the per-incident gateway slash keeps this legacy routing.
+    }
+
+    /// @notice Slash a node's stake and route the proceeds to `recipient` — the
+    ///         DisputeResolution contract distributes them per the spec's
+    ///         50% burn / 30% challenger / 20% treasury split (Slice 5B).
+    function slashTo(address wallet, uint256 amount, address recipient, string calldata reason)
+        external
+        onlyRole(SLASHER_ROLE)
+        nonReentrant
+    {
+        if (recipient == address(0)) revert ZeroAddress();
+        _slash(wallet, amount, reason);
+        token.safeTransfer(recipient, amount);
+    }
+
+    function _slash(address wallet, uint256 amount, string calldata reason) internal {
         if (amount == 0) revert ZeroAmount();
         NodeInfo storage n = _nodes[wallet];
         if (!n.exists) revert NotRegistered();
@@ -218,8 +237,6 @@ contract NodeRegistry is AccessControl, Pausable, ReentrancyGuard {
         }
 
         emit NodeSlashed(wallet, amount, reason, n.stakeAmount);
-        // Slashed tokens remain in the contract balance (conceptually the treasury's);
-        // routing/burn of slashed funds is part of the deferred DisputeResolution work.
     }
 
     // ─── Admin ───────────────────────────────────────────────────────────────────

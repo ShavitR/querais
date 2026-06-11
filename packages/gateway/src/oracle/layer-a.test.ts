@@ -160,6 +160,30 @@ test('the best oracle run decides (2-of-N redundancy: one agreeing run clears th
   assert.equal(verdict, 'pass', 'max similarity across runs is used');
 });
 
+test('anomaly + dispute hook: raises and auto-resolves; a chain failure never loses the flag', async () => {
+  const disputesBefore = metrics.layerADisputes;
+  const raised: Array<{ jobId: Hex; defendant: Address }> = [];
+  const f = fixture('The capital of France is Paris.');
+  (f.sampler as unknown as { disputes: unknown }).disputes = {
+    raiseAndAutoResolve: async (jobId: Hex, defendant: Address) =>
+      void raised.push({ jobId, defendant }),
+  };
+  await f.sampler.run(ctx('Buy cheap pills online now!!! Click here.'));
+  assert.deepEqual(raised, [{ jobId: JOB, defendant: NODE }], 'dispute raised for the anomaly');
+  assert.equal(metrics.layerADisputes, disputesBefore + 1);
+
+  // A failing chain hook must not throw out of run() nor remove the durable flag.
+  const g = fixture('The capital of France is Paris.');
+  (g.sampler as unknown as { disputes: unknown }).disputes = {
+    raiseAndAutoResolve: async () => {
+      throw new Error('rpc down');
+    },
+  };
+  const verdict = await g.sampler.run(ctx('Completely unrelated spam output here.'));
+  assert.equal(verdict, 'anomaly');
+  assert.equal(g.flags.countFor(NODE), 1, 'the manual-review flag survives the chain failure');
+});
+
 test('maybeSample respects the sample rate and never throws on oracle failure', async () => {
   const f = fixture('whatever', { sampleRate: 0 });
   f.sampler.maybeSample(ctx('anything'));

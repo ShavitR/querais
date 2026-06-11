@@ -125,9 +125,10 @@ Pinned by `packages/contracts/test/Pausable.ts` — update both together.
 
 | Contract | Frozen while paused (`EnforcedPause`) | Still works while paused |
 |---|---|---|
-| NodeRegistry | `registerNode`, `addStake`, `initiateUnbonding` | `completeUnbonding` (stake exit), `updateReputation`, `slash`, all reads |
+| NodeRegistry | `registerNode`, `addStake`, `initiateUnbonding` | `completeUnbonding` (stake exit), `updateReputation`, `slash`, `slashTo`, all reads |
 | JobEscrow | `createJob`, `assignJob`, `completeJob`, `verifyAndRelease` | `failJob`, `cancelJob`, `timeoutJob` (all refund paths), all reads |
 | CreditAccount | `deposit`, `batchSettle` | `initiateWithdrawal`, `completeWithdrawal` (principal exit), all reads |
+| DisputeResolution (5B) | `raiseDispute` (bond inflow), `autoResolve` (settlement) | `submitCounterEvidence` (a pause must never silence a defense), `reclaimBond` (bond exit after 30d), all reads |
 | QUAISToken | — (not pausable) | everything, always |
 
 Design intent: pause freezes **value inflows and settlement** (nothing new gets
@@ -170,6 +171,32 @@ script that ran it is committed: `packages/contracts/scripts/split-admin.ts`
 `0x85cC469CBB1197480Dc399F5B2AC731102119dE8` holds ADMIN+PAUSER on all three
 contracts; the hot gateway key holds neither, keeping only its operational
 roles.
+
+## 7b. Activating disputes on Sepolia (Slice 5B — operator action, copy-pasteable)
+
+The 5B contracts (`DisputeResolution` + `NodeRegistry.slashTo`) are live in the repo and
+on every localhost/e2e deploy, but the existing Sepolia deployment predates them. The
+gateway runs fine against the old manifest (dispute hook auto-disabled). To activate
+disputes on Sepolia, from the repo root with the operator `.env`:
+
+```bash
+# 1. Full redeploy (NodeRegistry changed — slashTo). This is a NEW contract set;
+#    existing Sepolia nodes must re-register/re-stake against the new registry.
+pnpm preflight:sepolia
+pnpm deploy:sepolia          # writes deployments/addresses.arbitrumSepolia.json + verify cmds
+
+# 2. Re-run the §7 admin/pauser key split against the new contracts (now four):
+pnpm exec tsx packages/contracts/scripts/split-admin.ts --network arbitrumSepolia
+
+# 3. Fund the gateway with QAIS for challenger bonds (50 QAIS per dispute):
+#    transfer >= 500 QAIS to the hot gateway EOA from the treasury/deployer.
+
+# 4. Enable the hook and restart the hosted gateway:
+#    GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY=true  (+ GATEWAY_ORACLE_OLLAMA_URL for sampling)
+```
+
+Until step 1 happens, `pnpm ops:pause` skips the dispute contract on Sepolia with a
+notice (the manifest has no address for it) — expected, not an error.
 
 ## 8. Why there is no `/v1/admin/pause` HTTP endpoint
 

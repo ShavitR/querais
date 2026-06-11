@@ -1,5 +1,6 @@
 import {
   creditAccountAbi,
+  disputeResolutionAbi,
   jobEscrowAbi,
   nodeRegistryAbi,
   quaisTokenAbi,
@@ -7,7 +8,7 @@ import {
   type QueraisPublicClient,
   type QueraisWalletClient,
 } from '@querais/shared';
-import type { Address, Hex } from 'viem';
+import { maxUint256, type Address, type Hex } from 'viem';
 
 /** A single payment in a batched settlement (gross; the contract splits 95/5). */
 export interface BatchDebit {
@@ -215,5 +216,70 @@ export class ChainClient {
       functionName: 'spentAgainst',
       args: [requester, nonce],
     });
+  }
+
+  // ── DisputeResolution (Slice 5B challenge hook) ──────────────────────────────
+
+  /** The dispute contract's address, or undefined on pre-5B deployments. */
+  disputeContract(): Address | undefined {
+    return this.deployment.contracts.disputeResolution;
+  }
+
+  /** Make sure the dispute contract can pull the challenger bond from the gateway
+   *  wallet (one max-approval, lazily). */
+  async ensureDisputeAllowance(): Promise<void> {
+    const dispute = this.requireDispute();
+    const owner = this.walletClient.account.address;
+    const [allowance, bond] = await Promise.all([
+      this.publicClient.readContract({
+        address: this.deployment.contracts.token,
+        abi: quaisTokenAbi,
+        functionName: 'allowance',
+        args: [owner, dispute],
+      }),
+      this.publicClient.readContract({
+        address: dispute,
+        abi: disputeResolutionAbi,
+        functionName: 'CHALLENGER_BOND',
+      }),
+    ]);
+    if (allowance >= bond) return;
+    const hash = await this.walletClient.writeContract({
+      address: this.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'approve',
+      args: [dispute, maxUint256],
+    });
+    await this.waitForSuccess(hash, 'approve(dispute bond)');
+  }
+
+  /** Raise a dispute against a provider, posting the challenger bond. */
+  async raiseDispute(jobId: Hex, defendant: Address, evidenceHash: Hex): Promise<Hex> {
+    const hash = await this.walletClient.writeContract({
+      address: this.requireDispute(),
+      abi: disputeResolutionAbi,
+      functionName: 'raiseDispute',
+      args: [jobId, defendant, evidenceHash],
+    });
+    return this.waitForSuccess(hash, 'raiseDispute');
+  }
+
+  /** FAST-track oracle resolution (the oracle's re-run confirmed the outcome). */
+  async autoResolveDispute(jobId: Hex, challengerWins: boolean): Promise<Hex> {
+    const hash = await this.walletClient.writeContract({
+      address: this.requireDispute(),
+      abi: disputeResolutionAbi,
+      functionName: 'autoResolve',
+      args: [jobId, challengerWins],
+    });
+    return this.waitForSuccess(hash, 'autoResolve');
+  }
+
+  private requireDispute(): Address {
+    const address = this.deployment.contracts.disputeResolution;
+    if (!address) {
+      throw new Error('this deployment has no DisputeResolution contract (pre-5B manifest)');
+    }
+    return address;
   }
 }

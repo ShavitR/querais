@@ -16,6 +16,11 @@ const CONTRACTS: Array<{ exportName: string; sol: string; contract: string }> = 
   { exportName: 'nodeRegistryAbi', sol: 'NodeRegistry.sol', contract: 'NodeRegistry' },
   { exportName: 'jobEscrowAbi', sol: 'JobEscrow.sol', contract: 'JobEscrow' },
   { exportName: 'creditAccountAbi', sol: 'CreditAccount.sol', contract: 'CreditAccount' },
+  {
+    exportName: 'disputeResolutionAbi',
+    sol: 'DisputeResolution.sol',
+    contract: 'DisputeResolution',
+  },
 ];
 
 function loadAbi(sol: string, contract: string): unknown {

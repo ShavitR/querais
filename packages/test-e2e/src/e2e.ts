@@ -775,6 +775,105 @@ export async function runLayerACase(): Promise<void> {
   }
 }
 
+/**
+ * Dispute hook (Slice 5B): with disputes enabled, a Layer-A anomaly raises an on-chain
+ * FAST-track dispute that the oracle auto-resolves — the cheater's stake is slashed 20%
+ * and split exactly 50% burn / 30% challenger / 20% treasury, with the challenger's
+ * bond returned. The full arbitration panel stays Phase 5; this is the spec's
+ * clear-cut-case path, end-to-end on-chain.
+ */
+export async function runDisputeCase(): Promise<void> {
+  const h = await startHarness({
+    backend: new CannedBackend(),
+    layerAConfig: {
+      sampleRate: 1,
+      oracleRuns: 2,
+      patternScanIntervalSeconds: 3600, // patterns aren't under test here
+      disputeOnAnomaly: true,
+    },
+    layerA: {
+      inference: {
+        generate: async (_model, messages) =>
+          `You said: ${messages[messages.length - 1]?.content ?? ''}`,
+      },
+      embeddings: trigramEmbeddings(),
+    },
+  });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const provider = h.deployment.accounts.node;
+    const gateway = h.deployment.accounts.gateway; // the oracle/challenger
+    const treasury = h.deployment.treasury;
+
+    const stakeOf = (): Promise<bigint> =>
+      pub
+        .readContract({
+          address: h.deployment.contracts.nodeRegistry,
+          abi: nodeRegistryAbi,
+          functionName: 'getNode',
+          args: [provider],
+        })
+        .then((n) => n.stakeAmount);
+    const supplyOf = (): Promise<bigint> =>
+      pub.readContract({
+        address: h.deployment.contracts.token,
+        abi: quaisTokenAbi,
+        functionName: 'totalSupply',
+      });
+
+    const [s0, gw0, t0, supply0] = await Promise.all([
+      stakeOf(),
+      balanceOf(pub, h.deployment, gateway),
+      balanceOf(pub, h.deployment, treasury),
+      supplyOf(),
+    ]);
+
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'a question the canned node will not answer' }],
+      max_tokens: 50,
+    });
+    assert.equal(res.status, 200, 'the cheater still passes Layer-B');
+    // The triggering job itself settles 95/5 through the escrow — its fee also reaches
+    // the treasury and its pay reaches the provider; net both out of the dispute math.
+    const jobView = (await (
+      await fetch(`${h.baseUrl}/v1/jobs/${res.headers.get('x-querais-job-id')}`)
+    ).json()) as { protocolFee: string | null };
+    const jobFee = BigInt(jobView.protocolFee ?? '0');
+
+    // The dispute is fire-and-forget after the response — poll for the slash to land.
+    const deadline = Date.now() + 20_000;
+    let s1 = s0;
+    for (;;) {
+      s1 = await stakeOf();
+      if (s1 < s0) break;
+      assert.ok(Date.now() < deadline, 'timed out waiting for the on-chain dispute slash');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    const slash = (s0 * 2000n) / 10000n;
+    const burn = (slash * 5000n) / 10000n;
+    const challengerCut = (slash * 3000n) / 10000n;
+    const treasuryCut = slash - burn - challengerCut;
+    assert.equal(s0 - s1, slash, 'defendant slashed exactly 20% of stake');
+
+    const [gw1, t1, supply1] = await Promise.all([
+      balanceOf(pub, h.deployment, gateway),
+      balanceOf(pub, h.deployment, treasury),
+      supplyOf(),
+    ]);
+    // Bond out + bond back nets to zero, leaving exactly the 30% challenger cut.
+    assert.equal(gw1 - gw0, challengerCut, 'challenger nets the 30% cut (bond returned)');
+    assert.equal(t1 - t0, treasuryCut + jobFee, 'treasury receives 20% of the slash (+ job fee)');
+    assert.equal(supply0 - supply1, burn, '50% of the slash is burned (supply shrinks)');
+
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(metricsText, /querais_layer_a_disputes_total [1-9]/, 'dispute counted');
+  } finally {
+    await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';

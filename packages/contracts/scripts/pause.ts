@@ -1,9 +1,10 @@
 /** Emergency pause/unpause for the Pausable contracts (NodeRegistry, JobEscrow,
- * CreditAccount). Incident tooling — deliberately tsx + viem with NO Hardhat runtime,
- * so it works even when the dev toolchain doesn't. See docs/RUNBOOK_KEYS.md.
+ * CreditAccount, DisputeResolution). Incident tooling — deliberately tsx + viem with NO
+ * Hardhat runtime, so it works even when the dev toolchain doesn't. See
+ * docs/RUNBOOK_KEYS.md.
  *
  *   tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia>
- *                        [--contracts registry,escrow,credit]
+ *                        [--contracts registry,escrow,credit,dispute]
  *
  * `status` is read-only (no key). `pause`/`unpause` sign with PAUSER_PRIVATE_KEY
  * (fallback DEPLOYER_PRIVATE_KEY) from the process env or the repo-root .env.
@@ -39,6 +40,7 @@ const CONTRACT_KEYS = {
   registry: 'nodeRegistry',
   escrow: 'jobEscrow',
   credit: 'creditAccount',
+  dispute: 'disputeResolution',
 } as const;
 type ContractAlias = keyof typeof CONTRACT_KEYS;
 
@@ -63,19 +65,19 @@ function parseArgs(argv: string[]) {
   const [action] = argv;
   if (action !== 'status' && action !== 'pause' && action !== 'unpause') {
     console.error(
-      'Usage: tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia> [--contracts registry,escrow,credit]',
+      'Usage: tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia> [--contracts registry,escrow,credit,dispute]',
     );
     process.exit(2);
   }
   let network = '';
-  let contracts: ContractAlias[] = ['registry', 'escrow', 'credit'];
+  let contracts: ContractAlias[] = ['registry', 'escrow', 'credit', 'dispute'];
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === '--network') network = argv[++i] ?? '';
     else if (argv[i] === '--contracts') {
       contracts = (argv[++i] ?? '').split(',').filter(Boolean) as ContractAlias[];
       for (const c of contracts) {
         if (!(c in CONTRACT_KEYS)) {
-          console.error(`Unknown contract alias '${c}' (use registry,escrow,credit)`);
+          console.error(`Unknown contract alias '${c}' (use registry,escrow,credit,dispute)`);
           process.exit(2);
         }
       }
@@ -106,13 +108,18 @@ const rpcUrl =
 
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 
-const targets = contracts.map((alias) => {
+const targets = contracts.flatMap((alias) => {
   const address = deployment.contracts[CONTRACT_KEYS[alias]];
   if (!address) {
+    if (alias === 'dispute') {
+      // Pre-5B deployments have no DisputeResolution — skip rather than fail the drill.
+      console.log('dispute  (not in this deployment manifest — skipped)');
+      return [];
+    }
     console.error(`Deployment manifest has no address for '${CONTRACT_KEYS[alias]}'`);
     process.exit(1);
   }
-  return { alias, address };
+  return [{ alias, address }];
 });
 
 const chainId = await publicClient.getChainId();

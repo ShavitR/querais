@@ -1,6 +1,6 @@
 import type { Address, Hex } from 'viem';
 import type { Logger } from 'pino';
-import type { ChatMessage } from '@querais/shared';
+import { hashText, type ChatMessage } from '@querais/shared';
 import type { ReputationService } from '../reputation.js';
 import type { NodePool } from '../node-pool.js';
 import type { LayerACheckStore, LayerAVerdict } from '../db/layer-a-checks.js';
@@ -38,6 +38,15 @@ export class OllamaOracle implements OracleInference {
     if (content.length === 0) throw new Error('oracle re-run returned empty output');
     return content;
   }
+}
+
+/**
+ * The Slice-5B on-chain challenge hook: raise a FAST-track dispute for an anomaly and
+ * let the oracle auto-resolve it (its own re-runs ARE the clear-cut evidence). Wired in
+ * server.ts from ChainClient; absent (default) → flags stay off-chain-only.
+ */
+export interface DisputeRaiser {
+  raiseAndAutoResolve(jobId: Hex, defendant: Address, evidenceHash: Hex): Promise<void>;
 }
 
 /** Spec §6.2 grade thresholds (similarity in bps of [0,1]). */
@@ -88,6 +97,8 @@ export class LayerASampler {
     private readonly opts: LayerAOptions,
     /** Injectable randomness so tests pin the sampling decision. */
     private readonly random: () => number = Math.random,
+    /** Slice 5B: when present, anomalies also raise + auto-resolve an on-chain dispute. */
+    private readonly disputes?: DisputeRaiser,
   ) {}
 
   /** The dispatcher's fire-and-forget hook: decides the sample and runs the check.
@@ -135,6 +146,25 @@ export class LayerASampler {
         'layer-A anomaly — flagged for manual review',
       );
       await this.pool.refreshReputation(ctx.provider).catch(() => {});
+      // Slice 5B challenge hook (clear-cut FAST track): the oracle's own re-runs are
+      // the evidence, so it raises AND auto-resolves. Non-fatal — the flag above is
+      // already durable, and a chain hiccup must not lose the review signal.
+      if (this.disputes) {
+        const evidenceHash = hashText(
+          `layer-a anomaly job=${ctx.jobId} similarity_bps=${String(similarityBps)} runs=${String(this.opts.oracleRuns)}`,
+        );
+        try {
+          await this.disputes.raiseAndAutoResolve(ctx.jobId, ctx.provider, evidenceHash);
+          metrics.layerADisputes += 1;
+          this.logger.warn(
+            { jobId: ctx.jobId, provider: ctx.provider },
+            'layer-A dispute raised + auto-resolved on-chain',
+          );
+          await this.pool.refreshReputation(ctx.provider).catch(() => {});
+        } catch (err) {
+          this.logger.error({ err, jobId: ctx.jobId }, 'on-chain dispute failed (flag stands)');
+        }
+      }
     } else if (verdict === 'soft') {
       this.reputation.recordOutcome(ctx.provider, 'oracle-soft');
       this.logger.info(

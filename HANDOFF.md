@@ -35,7 +35,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
-Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ◐ 5 Layer-A (5A #30 · 5B hook pending)   ⬜ 6 Tokenomics
+Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
 
@@ -44,15 +44,14 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Stage A COMPLETE; Slice 4 COMPLETE; Slice 5A (gateway Layer-A oracle) COMPLETE.
-Immediate next actions:**
-1. **Slice 5B — the on-chain challenge hook** (design sketch in `docs/EXECUTION_PLAN.md`
-   Slice 5): minimal `DisputeResolution.sol` (raiseDispute + bond, counter-evidence,
-   oracle-only FAST-track autoResolve, 50/30/20 slash split) + JobEscrow wiring. This is
-   **money-moving contract work → confirm the design with the user before building**
-   (standing rule). The full arbitration panel stays Phase 5.
-2. Then Slice 6 (Tokenomics): `ProtocolTreasury.sol`, 60/20/20 split — same standing
-   rule, confirm before building.
+**Stage A COMPLETE; Slices 4 + 5 COMPLETE. Immediate next actions:**
+1. **Slice 6 — Tokenomics activation** (scope in `docs/EXECUTION_PLAN.md` Slice 6):
+   `ProtocolTreasury.sol` with the 60/20/20 ops/staker/burn split + `receiveFee`,
+   staking rewards, node incentives. **Money-moving contract work → confirm the design
+   with the user before building** (standing rule). Note: the Sepolia deployment
+   predates the 5B contracts — activating disputes (and later Slice 6) live needs an
+   operator redeploy (runbook §7b).
+2. Then Stage C (Slice 7 deploy → 8 observability → 9 DX/growth).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -61,7 +60,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -177,7 +176,8 @@ no contract changes, no redeploy; the chain keeps the single uint16 composite:
   timer lands the composite on-chain, and the registry score equals the recomputed
   weighted dimension sum.
 
-**Slice 5A (merged #30) — Layer-A semantic verification (gateway oracle).**
+**Slice 5 (5A #30 · 5B #31) — Layer-A verification + the on-chain challenge hook.**
+5A — the gateway oracle:
 All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
 - **Semantic sampling** of settled jobs (default 5%, `GATEWAY_LAYER_A_SAMPLE_RATE`;
   fire-and-forget from the dispatcher — never blocks or fails a request): re-run the
@@ -200,8 +200,26 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
   accuracy EMA + flags it, the pattern sweep catches the duplicate hashes, and the node
   keeps serving (manual review, not eviction).
 
+5B — the challenge hook (the first NEW contract since 2A; design signed off):
+- **`DisputeResolution.sol`** (FAST track only; panel/commit-reveal stay Phase 5):
+  `raiseDispute` (50-QAIS bond; evidence = content hash, never text on-chain),
+  `submitCounterEvidence` (24h window, NOT pausable — a pause can't silence a defense),
+  oracle-only `autoResolve` — challenger wins → **20%-of-stake slash split 50% burn /
+  30% challenger / 20% treasury** via the new `NodeRegistry.slashTo` (SLASHER-gated
+  proceeds routing) + bond returned; provider wins → bond burned. `reclaimBond` after
+  30d unresolved (pause never traps funds). Disputes act on STAKE, not escrow —
+  Layer-A is post-settlement, so JobEscrow is unchanged.
+- Gateway hook: `GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY` (default off) makes every anomaly
+  raise + auto-resolve on-chain (lazy max-approval for bonds; non-fatal — the
+  manual-review flag stands if the chain write fails). Auto-disabled on manifests
+  without the contract. `ops:pause` covers the 4th contract (skips pre-5B manifests).
+- **The Sepolia deployment predates 5B** — disputes are OFF there until the operator
+  redeploys (NodeRegistry gained `slashTo`); copy-pasteable steps in runbook §7b.
+- 12th e2e scenario: anomaly → on-chain dispute → the slash lands and splits exactly
+  (burn/challenger/treasury verified to the wei; total supply shrinks).
+
 **Deferred (do NOT assume these exist):**
-- Slice 5B (DisputeResolution challenge hook — awaiting design sign-off), Slices 6–9.
+- Slices 6–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -214,9 +232,10 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
 ```
 packages/
   contracts/    Solidity 0.8.28 + Hardhat 3. QUAISToken, NodeRegistry, JobEscrow,
-                CreditAccount (+ reentrancy test mocks). deployments/addresses.<network>.json.
-                scripts/{pause,split-admin}.ts ops CLIs (tsx+viem, no HH runtime).
-                55 tests (conservation, guards, reentrancy, EIP-712 parity, pausability, gas).
+                CreditAccount, DisputeResolution (+ reentrancy test mocks).
+                deployments/addresses.<network>.json. scripts/{pause,split-admin}.ts ops
+                CLIs (tsx+viem, no HH runtime). 65 tests (conservation, guards,
+                reentrancy, EIP-712 parity, pausability, dispute economics, gas).
   shared/       @querais/shared — JobSpec/jobId, OpenAI schemas, wire protocol, pricing
                 (basis-point), EIP-712 spending-cap sign/recover, chain bindings. 21 tests.
   matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
@@ -225,12 +244,12 @@ packages/
                 session-status,key-store,faucet,metrics,config,auth,http}.ts
                 + oracle/{layer-a,embeddings,patterns}.ts + routes/* + db/{index,
                 migrations,jobs,sessions,ledger,node-sessions,node-reputation,
-                reputation-snapshots,layer-a-checks,node-flags}.ts. 97 tests.
+                reputation-snapshots,layer-a-checks,node-flags}.ts. 98 tests.
   node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 11-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 12-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
@@ -324,7 +343,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (109 TS + the 55-test contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 11 scenarios (~40s)
+pnpm test:e2e            # self-contained: fresh local chain → 12 scenarios (~45s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
@@ -394,7 +413,8 @@ optional — defaults in `HARDENING_DEFAULTS`, `gateway/src/config.ts`):
 (keepalive cadence) and `GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS` (daily epoch).
 Slice 5A added `GATEWAY_LAYER_A_SAMPLE_RATE`, `GATEWAY_LAYER_A_ORACLE_RUNS`,
 `GATEWAY_PATTERN_SCAN_INTERVAL_SECONDS`, `GATEWAY_ORACLE_OLLAMA_URL` (unset ⇒ sampling
-off), `GATEWAY_ORACLE_EMBED_MODEL`.
+off), `GATEWAY_ORACLE_EMBED_MODEL`. Slice 5B added `GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY`
+(default off; needs a 5B deployment + gateway QAIS for bonds).
 
 ---
 
@@ -458,8 +478,8 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **11 scenarios**, gateway unit = **97**,
-  contracts = **56**, TS unit total = **150** (incl. 1 Ollama-gated node-daemon skip),
+- Counts that tests assert or reports cite: e2e = **12 scenarios**, gateway unit = **98**,
+  contracts = **65**, TS unit total = **151** (incl. 1 Ollama-gated node-daemon skip),
   migrations = **6** (`MIGRATION_COUNT` tracks automatically).
 
 ---
@@ -469,7 +489,7 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 11 scenarios pass (self-contained, ~40s).
+4. `pnpm test:e2e` → 12 scenarios pass (self-contained, ~45s).
 5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
    `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
    `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.
