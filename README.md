@@ -12,6 +12,9 @@ settled on-chain end-to-end across two machines.
 > **Testnet only — no real value.** Everything runs on Arbitrum Sepolia (chainId `421614`).
 > The current architecture is **hybrid hub-and-spoke** (a trusted gateway does matching and
 > settlement); the fully decentralized mesh is a later phase. See the design docs below.
+> By using the network you accept the [Terms of Service](docs/TERMS.md) — and read the
+> [Privacy Notice](docs/PRIVACY.md) first: ~5% of prompts are re-run on verification
+> infrastructure, and your prompts execute on independent operators' machines.
 
 ---
 
@@ -416,6 +419,9 @@ deferred — Hardhat 3 framework support is pending), and the Phase-2 decentrali
 Read these for the full picture (in the repo root and `docs/`):
 
 - **`HANDOFF.md`** — current status, what's built, how to run/verify, and the next milestone.
+- **`docs/TERMS.md`**, **`docs/PRIVACY.md`** — terms of service and the privacy notice
+  (what gets sampled for verification, what's hashed vs. stored). **`SECURITY.md`** — how to
+  report vulnerabilities.
 - **`docs/EXECUTION_PLAN.md`** — the live, slice-by-slice roadmap.
 - **`docs/SLICE1_PLAN.md`**, **`docs/SLICE2_PLAN.md`** — detail on the persistence and
   batched-settlement work.

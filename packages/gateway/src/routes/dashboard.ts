@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../deps.js';
+import { TERMS_URL, PRIVACY_URL } from './keys.js';
 
 /**
  * GET / — a self-contained, read-only dashboard (no build step). Polls /v1/stats and
@@ -43,6 +44,8 @@ function html(apiKey: string): string {
   .row { display:flex; gap:8px; align-items:center; margin-top:8px; }
   #out { white-space:pre-wrap; background:#0b0f17; border:1px solid #1d2738; border-radius:8px; padding:12px; min-height:60px; margin-top:12px; }
   .muted { color:#7d8aa3; }
+  footer { padding:12px 24px; border-top:1px solid #1d2738; font-size:12px; }
+  footer a { color:#7d8aa3; }
 </style>
 </head>
 <body>
@@ -72,6 +75,7 @@ function html(apiKey: string): string {
     <div id="out"></div>
   </section>
 </main>
+<footer class="muted">testnet — tokens have no value · <a href="${TERMS_URL}">terms</a> · <a href="${PRIVACY_URL}">privacy</a></footer>
 <script>
 const API_KEY = ${JSON.stringify(apiKey)};
 async function refresh() {

@@ -3,6 +3,13 @@ import type { GatewayDeps } from '../deps.js';
 import { openAiError } from '../http.js';
 
 /**
+ * Slice 9: disclosures ride with every issued key — no key without terms attached.
+ * Canonical home is the repo until the docs site (10E) gives them a domain.
+ */
+export const TERMS_URL = 'https://github.com/ShavitR/querais/blob/main/docs/TERMS.md';
+export const PRIVACY_URL = 'https://github.com/ShavitR/querais/blob/main/docs/PRIVACY.md';
+
+/**
  * POST /v1/keys — admin-gated self-serve API-key issuance. Body: { wallet }. Returns a
  * new API key bound to that wallet. Gated by the `x-admin-token` header (the onboarding
  * service holds the admin token).
@@ -26,6 +33,13 @@ export function registerKeys(app: FastifyInstance, deps: GatewayDeps): void {
       return reply.code(400).send(openAiError(`unknown tier "${tier}"`, 'invalid_request'));
     }
     const apiKey = deps.keyStore.issue(wallet as `0x${string}`, tier);
-    return reply.code(200).send({ api_key: apiKey, wallet: wallet.toLowerCase(), tier });
+    // Disclosures travel with the key: using the key is accepting the terms.
+    return reply.code(200).send({
+      api_key: apiKey,
+      wallet: wallet.toLowerCase(),
+      tier,
+      terms: TERMS_URL,
+      privacy: PRIVACY_URL,
+    });
   });
 }
