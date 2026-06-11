@@ -46,6 +46,8 @@ interface NodeView {
   wallet: string;
   reputation: number;
   jobsServed: number;
+  /** Open manual-review flags (Slice 5: Layer-A anomalies + output patterns). */
+  flags: number;
   dimensions: {
     accuracy: number;
     uptime: number;
@@ -648,6 +650,126 @@ export async function runReputationCase(): Promise<void> {
       /querais_reputation_snapshots_total [1-9]/,
       'snapshot publishes are counted',
     );
+  } finally {
+    await h.stop();
+  }
+}
+
+/** A backend that returns the SAME canned reply to every prompt — Layer-B passes it
+ *  (well-formed, hash-consistent), but it is exactly what Layer-A exists to catch. */
+class CannedBackend implements InferenceBackend {
+  readonly name = 'canned';
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+  async listModels(): Promise<string[]> {
+    return ['mock-model'];
+  }
+  async generate(
+    _req: InferenceRequest,
+    onChunk: (chunk: InferenceChunk) => void,
+  ): Promise<InferenceResult> {
+    const words = 'Thank you for your question, the answer is certainly 42.'.split(' ');
+    let content = '';
+    words.forEach((word, i) => {
+      const piece = (i === 0 ? '' : ' ') + word;
+      content += piece;
+      onChunk({ content: piece });
+    });
+    return { content, promptTokens: 1, completionTokens: words.length, finishReason: 'stop' };
+  }
+}
+
+/** Deterministic embeddings for e2e: character-trigram counts. Identical text → 1.0
+ *  cosine, unrelated text → near 0 — real similarity behavior without a model. */
+function trigramEmbeddings() {
+  return {
+    async embed(text: string): Promise<number[]> {
+      const v = new Array<number>(64).fill(0);
+      const s = text.toLowerCase();
+      for (let i = 0; i + 3 <= s.length; i++) {
+        let h = 0;
+        for (let j = i; j < i + 3; j++) h = (h * 31 + s.charCodeAt(j)) >>> 0;
+        v[h % 64]! += 1;
+      }
+      return v;
+    },
+  };
+}
+
+/**
+ * Layer-A verification (Slice 5): a canned-output cheater passes Layer-B but the
+ * semantic-sampling oracle (honest re-runs + embedding cosine similarity) catches it —
+ * anomaly flags + an accuracy-EMA collapse — and the pattern sweep independently spots
+ * the identical result hash across distinct prompts. Flags are manual-review only:
+ * the node keeps serving (no auto-slash).
+ */
+export async function runLayerACase(): Promise<void> {
+  const h = await startHarness({
+    backend: new CannedBackend(),
+    layerAConfig: { sampleRate: 1, oracleRuns: 2, patternScanIntervalSeconds: 1 },
+    layerA: {
+      // The oracle "re-runs" honestly echo the prompt (MockBackend semantics) — so the
+      // cheater's canned reply lands far from every oracle output.
+      inference: {
+        generate: async (_model, messages) =>
+          `You said: ${messages[messages.length - 1]?.content ?? ''}`,
+      },
+      embeddings: trigramEmbeddings(),
+    },
+  });
+  try {
+    const prompts = [
+      'what is the capital of France?',
+      'write a haiku about the sea',
+      'explain how staking works',
+    ];
+    for (const prompt of prompts) {
+      const res = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 50,
+      });
+      assert.equal(res.status, 200, 'the canned cheater still passes Layer-B');
+    }
+
+    // Sampling is async (fire-and-forget) and the pattern sweep runs on a 1s timer —
+    // poll until all three anomaly flags + the duplicate-output pattern flag land.
+    const deadline = Date.now() + 15_000;
+    let view: NodeView | undefined;
+    for (;;) {
+      [view] = await fetchNodes(h.baseUrl);
+      if ((view?.flags ?? 0) >= 4) break;
+      assert.ok(
+        Date.now() < deadline,
+        `timed out waiting for layer-A + pattern flags (got ${String(view?.flags ?? 0)})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    // Three oracle anomalies (α=0.05 each) collapse accuracy well below the 0.70 seed.
+    assert.ok(
+      view!.dimensions.accuracy < 0.65,
+      `anomalies collapse the accuracy EMA (got ${view!.dimensions.accuracy})`,
+    );
+    assert.equal(
+      view!.reputation,
+      recomputeComposite(view!.dimensions),
+      'composite still equals the weighted dimension sum',
+    );
+
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(metricsText, /querais_layer_a_samples_total [1-9]/, 'samples counted');
+    assert.match(metricsText, /querais_layer_a_anomalies_total [1-9]/, 'anomalies counted');
+    assert.match(metricsText, /querais_pattern_flags_total [1-9]/, 'pattern flag counted');
+
+    // Manual review only: the flagged node is NOT slashed and keeps serving.
+    const again = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'still serving?' }],
+      max_tokens: 50,
+    });
+    assert.equal(again.status, 200, 'flags never auto-slash or evict the node');
   } finally {
     await h.stop();
   }

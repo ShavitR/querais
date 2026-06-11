@@ -107,6 +107,31 @@ const MIGRATIONS: readonly string[] = [
      created_at    INTEGER NOT NULL,
      PRIMARY KEY (wallet, created_at)
    );`,
+
+  // 6 — Slice 5 Layer-A verification. Pattern detection derives from job rows (per the
+  // no-counter-tables rule), so jobs gain the node's result hash + finish reason —
+  // hashes only, NEVER prompt/output text (prompt privacy; sampled prompts live only in
+  // the in-memory queue). layer_a_checks records each semantic-sampling verdict;
+  // node_flags is the generic manual-review ledger (Layer-A anomalies, pattern hits).
+  `ALTER TABLE jobs ADD COLUMN result_hash TEXT;
+   ALTER TABLE jobs ADD COLUMN finish_reason TEXT;
+   CREATE TABLE layer_a_checks (
+     job_id         TEXT PRIMARY KEY,
+     provider       TEXT NOT NULL,
+     similarity_bps INTEGER NOT NULL,
+     verdict        TEXT NOT NULL,
+     oracle_runs    INTEGER NOT NULL,
+     created_at     INTEGER NOT NULL
+   );
+   CREATE INDEX idx_layer_a_provider ON layer_a_checks(provider, created_at);
+   CREATE TABLE node_flags (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     wallet     TEXT NOT NULL,
+     kind       TEXT NOT NULL,
+     detail     TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX idx_node_flags_wallet ON node_flags(wallet, created_at);`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */

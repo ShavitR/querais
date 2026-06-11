@@ -19,6 +19,8 @@ export function registerNodes(app: FastifyInstance, deps: GatewayDeps): void {
             longevity: d.longevityBps / 10000,
             stake: d.stakeBps / 10000,
           },
+          // Slice 5: open manual-review flags (Layer-A anomalies, output patterns).
+          flags: deps.nodeFlags.countFor(n.wallet),
           jobsServed: n.jobsServed,
           models: n.models.map((m) => ({
             model: m.model,

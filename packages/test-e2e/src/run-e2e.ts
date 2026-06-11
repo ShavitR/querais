@@ -18,6 +18,7 @@ import {
   runHardeningCase,
   runPauseDrillCase,
   runReputationCase,
+  runLayerACase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -65,6 +66,10 @@ async function main(): Promise<void> {
     console.log('▶  reputation case: slow node graded down → snapshot timer publishes on-chain…');
     await runReputationCase();
     console.log('✅ reputation case passed');
+
+    console.log('▶  layer-A case: canned-output cheater caught by semantic sampling + patterns…');
+    await runLayerACase();
+    console.log('✅ layer-A case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

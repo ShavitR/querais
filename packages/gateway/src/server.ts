@@ -5,7 +5,7 @@ import type { WebSocket } from 'ws';
 import pino, { type Logger } from 'pino';
 import { renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
-import { resolveHardening, type GatewayConfig } from './config.js';
+import { resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
 import { QuotaEnforcer } from './quota.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';
@@ -30,6 +30,11 @@ import { NodeSessionStore } from './db/node-sessions.js';
 import { NodeReputationStore } from './db/node-reputation.js';
 import { ReputationSnapshotStore } from './db/reputation-snapshots.js';
 import { ReputationService } from './reputation.js';
+import { LayerACheckStore } from './db/layer-a-checks.js';
+import { NodeFlagStore } from './db/node-flags.js';
+import { LayerASampler, OllamaOracle, type OracleInference } from './oracle/layer-a.js';
+import { OllamaEmbeddings, type EmbeddingProvider } from './oracle/embeddings.js';
+import { PatternDetector } from './oracle/patterns.js';
 import { BatchedSettlement } from './batched-settlement.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
@@ -38,6 +43,9 @@ export interface BuildOptions {
   config: GatewayConfig;
   /** M5 injects a chain-backed Settlement; defaults to a no-op for M4. */
   settlement?: Settlement;
+  /** Slice 5: inject oracle inference/embeddings (tests/e2e); production builds them
+   *  from `config.layerA.ollamaUrl`. Sampling is disabled when neither exists. */
+  layerA?: { inference?: OracleInference; embeddings?: EmbeddingProvider };
   logger?: Logger;
 }
 
@@ -97,6 +105,34 @@ export async function buildGateway(
     flushThreshold: opts.config.batchFlushThreshold,
     deadlineMarginSeconds: opts.config.sessionDeadlineMarginSeconds,
   });
+  // Slice 5 Layer-A oracle: semantic sampling needs oracle inference + embeddings —
+  // injected seams (tests/e2e) or an Ollama endpoint from config; otherwise disabled.
+  const layerACfg = resolveLayerA(opts.config.layerA);
+  const layerAChecks = new LayerACheckStore(db);
+  const nodeFlags = new NodeFlagStore(db);
+  const oracleInference =
+    opts.layerA?.inference ??
+    (layerACfg.ollamaUrl ? new OllamaOracle(layerACfg.ollamaUrl) : undefined);
+  const oracleEmbeddings =
+    opts.layerA?.embeddings ??
+    (layerACfg.ollamaUrl
+      ? new OllamaEmbeddings(layerACfg.ollamaUrl, layerACfg.embedModel)
+      : undefined);
+  const layerA =
+    oracleInference && oracleEmbeddings
+      ? new LayerASampler(
+          oracleInference,
+          oracleEmbeddings,
+          layerAChecks,
+          nodeFlags,
+          reputation,
+          pool,
+          logger,
+          { sampleRate: layerACfg.sampleRate, oracleRuns: layerACfg.oracleRuns },
+        )
+      : undefined;
+  const patterns = new PatternDetector(db, nodeFlags, logger);
+
   const dispatcher = new Dispatcher(
     opts.config,
     chain,
@@ -107,6 +143,7 @@ export async function buildGateway(
     sessions,
     credit,
     reputation,
+    layerA,
   );
   const keyStore = new ApiKeyStore(db, opts.config.apiKeys);
   const quota = new QuotaEnforcer(jobs, keyStore, hardening.quotaTiers);
@@ -161,6 +198,8 @@ export async function buildGateway(
     ledger,
     credit,
     reputation,
+    nodeFlags,
+    layerAChecks,
     hardening,
     quota,
     logger,
@@ -183,11 +222,21 @@ export async function buildGateway(
       .catch((err: unknown) => logger.error({ err }, 'reputation snapshot sweep failed'));
   }, opts.config.reputationSnapshotIntervalSeconds * 1000);
   snapshotTimer.unref();
+  // Output-pattern sweep (Slice 5): rolling 7-day cheater signals from job rows.
+  const patternTimer = setInterval(() => {
+    try {
+      patterns.scanAll();
+    } catch (err) {
+      logger.error({ err }, 'pattern scan failed');
+    }
+  }, layerACfg.patternScanIntervalSeconds * 1000);
+  patternTimer.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
     clearInterval(flushTimer);
     clearInterval(snapshotTimer);
+    clearInterval(patternTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
   });

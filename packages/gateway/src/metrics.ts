@@ -11,6 +11,11 @@ export const metrics = {
   reputationSnapshots: 0,
   reputationPublishFailures: 0,
   reputationFlags: 0,
+  // Slice 5: Layer-A semantic sampling + pattern detection.
+  layerASamples: 0,
+  layerAAnomalies: 0,
+  layerAFailures: 0,
+  patternFlags: 0,
 };
 
 /** Render the Prometheus exposition, plus a live gauge for connected nodes. */
@@ -37,6 +42,18 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_reputation_flags_total Nodes flagged for manual review (rapid decline).',
     '# TYPE querais_reputation_flags_total counter',
     `querais_reputation_flags_total ${metrics.reputationFlags}`,
+    '# HELP querais_layer_a_samples_total Jobs semantically sampled by the Layer-A oracle.',
+    '# TYPE querais_layer_a_samples_total counter',
+    `querais_layer_a_samples_total ${metrics.layerASamples}`,
+    '# HELP querais_layer_a_anomalies_total Layer-A similarity anomalies (<0.70).',
+    '# TYPE querais_layer_a_anomalies_total counter',
+    `querais_layer_a_anomalies_total ${metrics.layerAAnomalies}`,
+    '# HELP querais_layer_a_failures_total Layer-A sampling attempts that errored.',
+    '# TYPE querais_layer_a_failures_total counter',
+    `querais_layer_a_failures_total ${metrics.layerAFailures}`,
+    '# HELP querais_pattern_flags_total Output-pattern cheater flags (manual review).',
+    '# TYPE querais_pattern_flags_total counter',
+    `querais_pattern_flags_total ${metrics.patternFlags}`,
     '# HELP querais_nodes Connected nodes in the pool.',
     '# TYPE querais_nodes gauge',
     `querais_nodes ${nodes}`,

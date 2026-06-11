@@ -22,6 +22,7 @@ import { metrics } from './metrics.js';
 // Accuracy EMA tuning (moved from settlement.ts; mirrors the spec's accuracy EMA).
 export const PASS_ALPHA = 0.005; // slow-moving on a verified pass (~200-job half-life)
 export const FAIL_ALPHA = 0.05; // 10× faster on an anomaly/failure
+export const SOFT_FAIL_ALPHA = 0.005; // Layer-A soft signal (standard-fail speed, spec §2.2A)
 
 /** Accuracy a node starts from (the spec's onboarding baseline; NodeRegistry's
  *  INITIAL_REPUTATION). Never seeded from the on-chain score — after 4B that score is
@@ -185,19 +186,24 @@ export class ReputationService {
   ) {}
 
   /**
-   * Fold a verified job outcome into the provider's accuracy EMA (the dispatcher is
-   * the single caller — it knows provider + verdict for both settlement venues).
-   * Returns the new accuracy in bps.
+   * Fold a verified job outcome into the provider's accuracy EMA. The dispatcher
+   * records pass/fail (it knows provider + verdict for both settlement venues);
+   * the Layer-A sampler records the oracle outcomes (Slice 5, spec §2.2A alphas:
+   * oracle-flagged anomaly moves 10× faster than a soft signal). Returns the new
+   * accuracy in bps.
    */
-  recordOutcome(provider: Address, outcome: 'pass' | 'fail'): number {
+  recordOutcome(
+    provider: Address,
+    outcome: 'pass' | 'fail' | 'oracle-anomaly' | 'oracle-soft',
+  ): number {
     const current = this.accuracy.get(provider)?.accuracyBps ?? INITIAL_ACCURACY_BPS;
     const next =
       outcome === 'pass'
         ? emaReputationBps(current, 1, PASS_ALPHA)
-        : emaReputationBps(current, 0, FAIL_ALPHA);
+        : emaReputationBps(current, 0, outcome === 'oracle-soft' ? SOFT_FAIL_ALPHA : FAIL_ALPHA);
     this.accuracy.set(provider, next);
-    if (outcome === 'fail') {
-      this.logger.warn({ provider, accuracyBps: next }, 'accuracy EMA penalized');
+    if (outcome !== 'pass') {
+      this.logger.warn({ provider, outcome, accuracyBps: next }, 'accuracy EMA penalized');
     }
     return next;
   }

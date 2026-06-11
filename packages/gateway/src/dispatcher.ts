@@ -23,6 +23,7 @@ import type { JobStore } from './db/jobs.js';
 import type { SessionStore } from './db/sessions.js';
 import type { BatchedSettlement } from './batched-settlement.js';
 import type { ReputationService } from './reputation.js';
+import type { LayerASampler } from './oracle/layer-a.js';
 import { layerBVerify } from './verify.js';
 import { metrics } from './metrics.js';
 
@@ -65,6 +66,9 @@ export class Dispatcher {
     /** Slice 4: the dispatcher is the single point that knows provider + verdict for
      *  BOTH venues, so it (not Settlement) records pass/fail into the accuracy EMA. */
     private readonly reputation?: ReputationService,
+    /** Slice 5: Layer-A semantic sampling — fire-and-forget after a verified settle
+     *  (the prompt/output only exist here, in memory; they never touch the DB). */
+    private readonly layerA?: LayerASampler,
   ) {}
 
   /**
@@ -254,12 +258,23 @@ export class Dispatcher {
         paymentWei: payment,
         providerPayWei: providerPay,
         feeWei: fee,
+        resultHash: streamed.report.resultHash,
+        finishReason: streamed.report.finishReason,
       }),
     );
     // Fold the verified pass into the accuracy EMA, then reflect the new composite in
     // the pool cache (for /v1/nodes + matching).
     this.persist(() => this.reputation?.recordOutcome(provider, 'pass'));
     await this.pool.refreshReputation(provider).catch(() => {});
+    // Layer-A semantic sampling (Slice 5): fire-and-forget — never blocks the response.
+    this.layerA?.maybeSample({
+      jobId: spec.jobId,
+      provider,
+      model: spec.model,
+      messages,
+      maxTokens,
+      output: streamed.content,
+    });
 
     return {
       jobId: spec.jobId,

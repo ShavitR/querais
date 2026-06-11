@@ -149,16 +149,27 @@ protocol credible as a complete design rather than a demo.
   scenarios); scores snapshot on-chain on the daily epoch timer; matching uses the composite.
 - **Maps to:** P3.7.
 
-### Slice 5 — Verification depth (Layer-A) · Effort L · Risk H
+### Slice 5 — Verification depth (Layer-A) · Effort L · Risk H · ◐ 5A DONE (#30) · 5B pending
 - **Goal:** catch cheating beyond Layer-B, since strangers run nodes.
-- **Build:** **Layer-A semantic sampling** — re-run ~5% of jobs on 2–3 gateway-controlled
-  oracle nodes and compare **embedding cosine similarity** (NOT cross-node hash matching —
-  temp=0 isn't deterministic across hardware; that rule is load-bearing, see HANDOFF §6);
-  thresholds → reputation signal / dispute flag; **pattern detection** (identical outputs,
-  always-truncated, fingerprint reuse); **oracle redundancy** (2-of-N); wire the on-chain
-  **challenge hook** to `DisputeResolution.sol` (full arbitration panel stays Phase 5).
-- **Acceptance:** a plausible-but-wrong node is flagged by sampling; a pattern-cheater is
-  caught; a dispute can be raised and auto-resolved for clear cases.
+- **Built — 5A (gateway oracle, no contract changes):** **Layer-A semantic sampling**
+  (`gateway/src/oracle/`) — re-run ~5% of settled jobs (`GATEWAY_LAYER_A_SAMPLE_RATE`) on
+  oracle-controlled inference (N=2 runs; the MAX similarity decides, so every run must
+  disagree to flag — 2-of-N redundancy) and compare **embedding cosine similarity** (NOT
+  cross-node hash matching — temp=0 isn't deterministic across hardware; load-bearing,
+  HANDOFF §6). Spec thresholds: ≥0.85 pass · 0.70–0.85 soft (EMA α=0.005) · <0.70 anomaly
+  (EMA α=0.05 + manual-review flag — never an auto-slash). **Pattern detection** from job
+  rows on a sweep timer: identical `result_hash` across ≥3 distinct prompts (caching
+  cheater), (near-)always-`length` truncation. Verdicts in `layer_a_checks`; flags in
+  `node_flags` (surfaced as a count on `/v1/nodes`); prompts/outputs never persisted
+  (privacy) — hashes only. Ollama-backed `OracleInference`/`EmbeddingProvider` impls for
+  production; injectable seams for tests/e2e. Migration 6. 11th e2e scenario: a
+  canned-output cheater passes Layer-B, sampling + patterns catch it.
+- **Pending — 5B (challenge hook, NEEDS DESIGN SIGN-OFF — money-moving contract work):**
+  minimal `DisputeResolution.sol` (`raiseDispute` + bond, `submitCounterEvidence`,
+  oracle-only FAST-track `autoResolve` with the 50/30/20 slash split) + `JobEscrow`
+  dispute wiring. Full arbitration panel stays Phase 5.
+- **Acceptance:** a plausible-but-wrong node is flagged by sampling ✅; a pattern-cheater
+  is caught ✅; a dispute can be raised and auto-resolved for clear cases (5B).
 - **Maps to:** P3.8.
 
 ### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M
