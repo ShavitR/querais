@@ -1,0 +1,25 @@
+# Litestream continuous backup for the gateway SQLite DB (Slice 7).
+#
+# The gateway DB holds unsettled-debit liability and operational state — losing it
+# without reconciliation loses money owed to nodes. Litestream streams the WAL off-box
+# so the recovery point is seconds, not "last manual backup". The restore path is pinned
+# by packages/gateway/src/db/backup.test.ts; the live procedure is RUNBOOK_KEYS.md §7d.
+#
+#   litestream replicate -config packages/gateway/litestream.yml
+#   litestream restore  -config packages/gateway/litestream.yml "$GATEWAY_DB_PATH"
+#
+# Set GATEWAY_DB_PATH to the file on the mounted volume, and the replica URL + creds to
+# your object store (S3 / GCS / Backblaze). One instance only writes this DB, so there is
+# never a second replicator competing.
+
+dbs:
+  - path: ${GATEWAY_DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: querais-gateway
+        endpoint: ${LITESTREAM_ENDPOINT} # omit for AWS S3; set for GCS/Backblaze/MinIO
+        # Credentials via env: LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY.
+        retention: 72h # keep 3 days of generations
+        snapshot-interval: 1h # full snapshot cadence (WAL ships continuously between)
+        sync-interval: 10s # RPO target: <= ~10s of writes

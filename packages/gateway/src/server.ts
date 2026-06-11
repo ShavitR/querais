@@ -320,8 +320,22 @@ export async function buildGateway(
   app.get('/node', { websocket: true, ...noLimit }, (socket: WebSocket, request) => {
     pool.handleConnection(socket, (request as FastifyRequest).ip);
   });
+  // Liveness: the process is up and serving. Cheap, never touches the chain — a
+  // platform restarts the container only when THIS fails.
   app.get('/health', noLimit, async () => ({ status: 'ok', nodes: pool.size() }));
-  app.get('/ready', noLimit, async () => ({ ready: true, nodes: pool.size() }));
+  // Readiness: the gateway can actually do work — the RPC is reachable AND the DB is
+  // open. Returns 503 otherwise so a load balancer drains this instance instead of
+  // routing jobs that would fail at the first chain call. (Slice 7A.)
+  app.get('/ready', noLimit, async (_req, reply) => {
+    try {
+      await chain.latestBlockTimestamp();
+      db.conn.prepare('PRAGMA user_version').get();
+    } catch (err) {
+      logger.warn({ err }, 'readiness probe failed');
+      return reply.code(503).send({ ready: false, nodes: pool.size() });
+    }
+    return reply.send({ ready: true, nodes: pool.size() });
+  });
   app.get('/metrics', noLimit, async (_req, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4');
     return reply.send(renderMetrics(pool.size()));

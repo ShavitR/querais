@@ -239,10 +239,18 @@ protocol credible as a complete design rather than a demo.
 
 Now there's something worth hosting. Stand up the real service and bring the world to it.
 
-### Slice 7 — Production deploy & infra · Effort L · Risk M
+### Slice 7 — Production deploy & infra · Effort L · Risk M · ◐ DONE code-side (#37: 7A hardening + Fly pipeline) · live execution = operator
 - **Framing that drives every choice here: the gateway DB is now money.** The pending-debit
   ledger is unsettled liabilities owed to nodes; bond/gas wallets fund disputes and
   settlement. Hosting is not "run the Docker image somewhere" — it's custody of that state.
+- **7A (BUILT #37, code-side — what a remote agent can ship + test):** signal-driven graceful drain (SIGTERM → `app.close()` flushes pending debits; `GATEWAY_SHUTDOWN_GRACE_MS`), a real **`/ready`** probe (RPC + DB, 503 when down) vs liveness `/health`, Docker hardening (non-root, HEALTHCHECK, single-instance constraint documented), the **`VACUUM INTO` backup primitive** + an automated **restore drill** (`db/backup.test.ts`) + a Litestream config, and the operator runbook (§7d). 16th e2e scenario proves pending debits drain to one on-chain `batchSettle` on graceful shutdown.
+- **Fly.io pipeline (BUILT #37, code-side):** `packages/gateway/fly.toml` (single
+  machine on a single-writer volume, /health + /ready checks, immediate strategy,
+  kill_timeout above the drain window), `.github/workflows/deploy.yml` (deploy after the
+  CI green bar on main; opt-in via `DEPLOY_ENABLED` + `FLY_API_TOKEN`; secrets live on
+  Fly, never in CI), and `docs/DEPLOY.md` (operator setup + drills). Chosen: Fly.io + a
+  CI pipeline so the hot keys never enter the build environment.
+- **7B (operator-only — the live EXECUTION, needs keys + a Fly account):** the actual hosted deploy (Fly.io/Railway/VPS, TLS, secrets, volume + continuous backup), the full-protocol Sepolia redeploy, the live restore + pause drills. A remote agent cannot perform these; the command lists are copy-pasteable.
 - **Build:**
   - Host the gateway 24/7 (Fly.io / Railway / VPS) from `packages/gateway/Dockerfile`;
     TLS + domain; `/ready`/`/health` wired to the platform.

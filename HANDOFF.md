@@ -36,7 +36,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
 Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ✅ 6 Tokenomics (6A #33 · 6B #34 · 6C #35)
-Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
+Stage C — Operate           ◐ 7 Deploy (7A #37 code · 7B operator)   ⬜ 8 Observability   ⬜ 9 DX/growth
 ```
 
 **Working rhythm (established, stick to it):** one **branch + PR per slice** (big slices
@@ -44,16 +44,20 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**STAGES A AND B ARE COMPLETE.** The protocol is mechanically whole: durable state,
-batched settlement, hardened surface, 5-dimension reputation, Layer-A verification +
-disputes, and the full token economy (treasury/burn/staking-rewards/incentives).
+**STAGES A AND B COMPLETE; Slice 7A (deploy-ready hardening, code-side) COMPLETE.**
 Immediate next actions:
-1. **Stage C, Slice 7 — production deploy & infra** (scope in `docs/EXECUTION_PLAN.md`:
-   single-instance hosting — the gateway DB is now money — TLS, secrets custody, gas
-   alerting). Plan before building (§11).
-2. Then Slice 8 (observability) → Slice 9 (DX/node-polish/growth) → Stage D.
-   The Sepolia deployment predates 5B/6A/6B — going live with the full Stage-B protocol
-   needs the operator redeploy (runbook §7b) or the reversible treasury migration (§7c).
+1. **Slice 7B — the live EXECUTION only (OPERATOR action).** The Fly.io config + CI
+   deploy pipeline are BUILT (#37); what remains needs keys + a Fly account: `fly apps
+   create` + volume + `fly secrets set` (hot keys), add `FLY_API_TOKEN` + set
+   `DEPLOY_ENABLED=true`, the full-protocol Sepolia redeploy (runbook §7b), and the live
+   restore/pause drills. Step-by-step in **`docs/DEPLOY.md`**. A remote agent can't do
+   these; hand to the maintainer.
+2. **Slice 8 — observability & SRE.** Highest-value item: close the manual-review loop —
+   `node_flags` + rapid-decline + Layer-A anomalies are computed but **nobody is paged**;
+   wire a notification channel + a minimal review queue. Then Prometheus/Grafana, alert
+   rules (oldest-unflushed-debit age, gas/bond gauges), status page. Mostly code-side —
+   plan before building (§11).
+3. Then Slice 9 (DX/node-polish/growth) → Stage D (web app, arbitration, scale, mainnet).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -62,7 +66,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33 → #34 → #35):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33 → #34 → #35 → #37):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -277,8 +281,32 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
 - 15th e2e scenario: job → recommendation appears → the REAL `ops:allocate` script pays
   it (cold key) → balance grows exactly → the purpose dedups it out of the next query.
 
+**Slice 7A (merged #37) — deploy-ready gateway (code-side; live hosting is 7B/operator).**
+- **Graceful drain**: `main.ts` traps SIGTERM/SIGINT → `app.close()`, whose onClose hook
+  already flushes pending batched debits (money owed to nodes) in one `batchSettle`, then
+  releases SQLite. `GATEWAY_SHUTDOWN_GRACE_MS` (default 25s) force-exits if drain overruns;
+  size the platform's SIGTERM grace window above it (runbook §7d). 16th e2e scenario:
+  accrue debits below the flush threshold → graceful close → exactly one on-chain
+  `batchSettle` drains them.
+- **Readiness vs liveness**: `/ready` now actually probes the RPC (`latestBlockTimestamp`)
+  + DB and returns **503** when either is down (load balancers drain the instance);
+  `/health` stays a cheap liveness check.
+- **Backup/restore**: `GatewayDb.backupTo()` uses `VACUUM INTO` (atomic, WAL-safe);
+  `db/backup.test.ts` is the automated restore drill (committed state survives crash +
+  restore; the post-backup RPO window is the 2C reconcile path's job). `litestream.yml`
+  for continuous off-box shipping (RPO ≤ ~10s).
+- **Docker hardening**: non-root `USER node`, HEALTHCHECK, and the **single-instance**
+  constraint documented (node:sqlite is single-writer; all timers assume one owner).
+- **Fly.io deploy pipeline (code-side):** `packages/gateway/fly.toml` (one machine /
+  one volume, /health + /ready checks, `kill_timeout` above the drain), opt-in
+  `.github/workflows/deploy.yml` (deploys after CI green on main; gated by repo var
+  `DEPLOY_ENABLED` + secret `FLY_API_TOKEN`; app secrets live on Fly, never in CI), and
+  **`docs/DEPLOY.md`** (operator setup + drills). The maintainer chose Fly.io + the CI
+  pipeline so the hot keys never enter a build environment.
+- Runbook **§7d** is the operator deploy + custody procedure (points at `docs/DEPLOY.md`).
+
 **Deferred (do NOT assume these exist):**
-- Slices 7–9, Stage D.
+- Slice 7B (live hosting — operator), Slices 8–9, Stage D.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -308,7 +336,7 @@ packages/
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 15-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 16-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
@@ -402,7 +430,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (109 TS + the 55-test contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 15 scenarios (~60s)
+pnpm test:e2e            # self-contained: fresh local chain → 16 scenarios (~65s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
@@ -539,8 +567,8 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **15 scenarios**, gateway unit = **105**,
-  contracts = **81**, TS unit total = **158** (incl. 1 Ollama-gated node-daemon skip),
+- Counts that tests assert or reports cite: e2e = **16 scenarios**, gateway unit = **107**,
+  contracts = **81**, TS unit total = **160** (incl. 1 Ollama-gated node-daemon skip),
   migrations = **6** (`MIGRATION_COUNT` tracks automatically).
 
 ---
@@ -550,7 +578,7 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 15 scenarios pass (self-contained, ~60s).
+4. `pnpm test:e2e` → 16 scenarios pass (self-contained, ~65s).
 5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
    `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
    `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.

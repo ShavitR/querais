@@ -1,0 +1,46 @@
+name: Deploy (Fly.io)
+
+# Deploys the gateway to Fly.io AFTER the CI green bar passes on `main` (Slice 7).
+#
+# OPT-IN: this is a no-op until the operator (1) creates the Fly app + volume + sets the
+# app secrets on the platform, (2) adds the repo secret FLY_API_TOKEN, and (3) sets the
+# repo VARIABLE DEPLOY_ENABLED=true. Until then the job is skipped (green), so the
+# workflow never blocks anyone before hosting exists. Setup: docs/DEPLOY.md.
+#
+# Secrets custody: the gateway's hot keys live in Fly's secret store (set once via
+# `fly secrets set`), never in GitHub or these logs. GitHub holds only a deploy token.
+# The COLD admin/pauser keys never touch CI or the host (runbook §2/§7).
+
+on:
+  workflow_run:
+    workflows: ['CI'] # only after the green bar
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # manual redeploy / rollback
+
+concurrency:
+  group: deploy-gateway
+  cancel-in-progress: false # never interrupt an in-flight deploy of a stateful service
+
+jobs:
+  deploy:
+    name: fly deploy (single instance)
+    runs-on: ubuntu-latest
+    # Run only when explicitly enabled AND (on the auto path) CI actually succeeded.
+    if: >
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # Build context = repo root (the Dockerfile COPYs the whole monorepo); immediate
+      # strategy keeps exactly one machine on the single-writer volume.
+      - name: fly deploy
+        run: >
+          flyctl deploy .
+          --config packages/gateway/fly.toml
+          --strategy immediate
+          --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
