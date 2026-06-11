@@ -2,6 +2,7 @@
   "name": "querais",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "QueraIS — decentralized P2P AI inference marketplace (MVP vertical slice)",
   "type": "module",
   "engines": {
