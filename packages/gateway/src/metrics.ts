@@ -22,6 +22,12 @@ export const metrics = {
   treasuryDistributeFailures: 0,
   rewardsEpochs: 0,
   rewardsEpochFailures: 0,
+  // Slice 8: the alert pipeline (raise → floor/cooldown → sink delivery).
+  alertsRaised: 0,
+  alertsDelivered: 0,
+  alertsFailed: 0,
+  alertsSuppressed: 0,
+  alertsRaisedBySeverity: { info: 0, warn: 0, critical: 0 },
 };
 
 /** Render the Prometheus exposition, plus a live gauge for connected nodes. */
@@ -75,6 +81,20 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_rewards_epoch_failures_total Failed staking-rewards epoch credits.',
     '# TYPE querais_rewards_epoch_failures_total counter',
     `querais_rewards_epoch_failures_total ${metrics.rewardsEpochFailures}`,
+    '# HELP querais_alerts_raised_total Alerts raised, before the severity floor/cooldown.',
+    '# TYPE querais_alerts_raised_total counter',
+    `querais_alerts_raised_total{severity="info"} ${metrics.alertsRaisedBySeverity.info}`,
+    `querais_alerts_raised_total{severity="warn"} ${metrics.alertsRaisedBySeverity.warn}`,
+    `querais_alerts_raised_total{severity="critical"} ${metrics.alertsRaisedBySeverity.critical}`,
+    '# HELP querais_alerts_delivered_total Alerts successfully delivered to the sink.',
+    '# TYPE querais_alerts_delivered_total counter',
+    `querais_alerts_delivered_total ${metrics.alertsDelivered}`,
+    '# HELP querais_alerts_failed_total Alert deliveries that errored.',
+    '# TYPE querais_alerts_failed_total counter',
+    `querais_alerts_failed_total ${metrics.alertsFailed}`,
+    '# HELP querais_alerts_suppressed_total Alerts dropped by the severity floor or cooldown.',
+    '# TYPE querais_alerts_suppressed_total counter',
+    `querais_alerts_suppressed_total ${metrics.alertsSuppressed}`,
     '# HELP querais_nodes Connected nodes in the pool.',
     '# TYPE querais_nodes gauge',
     `querais_nodes ${nodes}`,
