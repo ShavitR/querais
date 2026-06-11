@@ -157,6 +157,22 @@ export class JobStore {
     return rows.map((r) => r.first_token_ms);
   }
 
+  /** The provider that settled the FIRST verified job per model (Slice 6C
+   *  first-model bonus attribution; ties broken by job_id for determinism). */
+  firstProviderByModel(): Map<string, Address> {
+    const rows = this.db.conn
+      .prepare(
+        `SELECT model, provider FROM jobs j
+         WHERE status='verified' AND (created_at, job_id) = (
+           SELECT j2.created_at, j2.job_id FROM jobs j2
+           WHERE j2.model = j.model AND j2.status='verified'
+           ORDER BY j2.created_at ASC, j2.job_id ASC LIMIT 1
+         )`,
+      )
+      .all() as { model: string; provider: string }[];
+    return new Map(rows.map((r) => [r.model, r.provider as Address]));
+  }
+
   markFailed(jobId: Hex, reason: string): void {
     this.db.conn
       .prepare(`UPDATE jobs SET status='failed', reason=?, updated_at=? WHERE job_id=?`)

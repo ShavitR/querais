@@ -64,6 +64,19 @@ export {
 export { LayerACheckStore, type LayerACheck, type LayerAVerdict } from './db/layer-a-checks.js';
 export { NodeFlagStore, type NodeFlag, type NodeFlagKind } from './db/node-flags.js';
 export { resolveLayerA, LAYER_A_DEFAULTS, type LayerAConfig } from './config.js';
+export {
+  IncentiveService,
+  resolveIncentives,
+  INCENTIVE_DEFAULTS,
+  tenureMultiplierBps,
+  splitUptimePool,
+  firstModelPurpose,
+  bootstrapPurpose,
+  uptimePurpose,
+  type IncentiveConfig,
+  type IncentiveRecommendation,
+  type PayoutLine,
+} from './incentives.js';
 export { BatchedSettlement, type BatchedSettlementOptions } from './batched-settlement.js';
 export { SessionStore, type CreditSession } from './db/sessions.js';
 export { DebitLedgerStore, type DebitEntry } from './db/ledger.js';
