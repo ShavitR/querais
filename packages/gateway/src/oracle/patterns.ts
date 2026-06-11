@@ -2,6 +2,7 @@ import type { Address } from 'viem';
 import type { Logger } from 'pino';
 import type { GatewayDb } from '../db/index.js';
 import type { NodeFlagStore } from '../db/node-flags.js';
+import type { AlertService } from '../alerts.js';
 import { metrics } from '../metrics.js';
 
 /**
@@ -64,6 +65,8 @@ export class PatternDetector {
     private readonly db: GatewayDb,
     private readonly flags: NodeFlagStore,
     private readonly logger: Logger,
+    /** Slice 8: cheater flags page a human (absent in older tests → log only). */
+    private readonly alerts?: AlertService,
   ) {}
 
   scanAll(): void {
@@ -113,5 +116,14 @@ export class PatternDetector {
       { wallet, kind, detail },
       'output-pattern cheater signal — flagged for manual review',
     );
+    // Slice 8 push alert: one page per ongoing pattern (the re-flag guard above also
+    // bounds the alert rate; the alert-key cooldown backstops it).
+    this.alerts?.raise({
+      key: `pattern-cheater:${kind}:${wallet.toLowerCase()}`,
+      rule: 'pattern-cheater',
+      severity: 'critical',
+      title: 'Output-pattern cheater — node flagged for review',
+      detail: `node ${wallet}: ${kind} — ${detail}`,
+    });
   }
 }

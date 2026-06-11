@@ -5,6 +5,7 @@ import pino from 'pino';
 import { GatewayDb } from '../db/index.js';
 import { JobStore } from '../db/jobs.js';
 import { NodeFlagStore } from '../db/node-flags.js';
+import { AlertService, MemorySink } from '../alerts.js';
 import {
   detectDuplicateOutputs,
   detectTruncationPattern,
@@ -82,7 +83,7 @@ test('detectTruncationPattern: needs history AND a (near-)total length ratio', (
   );
 });
 
-test('PatternDetector.scanAll flags a duplicate-output cheater once per ongoing window', () => {
+test('PatternDetector.scanAll flags a duplicate-output cheater once per ongoing window', async () => {
   const db = new GatewayDb();
   const jobs = new JobStore(db);
   const flags = new NodeFlagStore(db);
@@ -108,11 +109,20 @@ test('PatternDetector.scanAll flags a duplicate-output cheater once per ongoing 
     });
   }
 
-  const detector = new PatternDetector(db, flags, logger);
+  // Slice 8: a cheater flag must page — captured by a MemorySink.
+  const sink = new MemorySink();
+  const alerts = new AlertService(sink, logger, { cooldownSeconds: 0, minSeverity: 'warn' });
+  const detector = new PatternDetector(db, flags, logger, alerts);
   detector.scanAll();
   assert.equal(flags.countFor(NODE), 1, 'caching cheater flagged');
   assert.equal(flags.forWallet(NODE)[0]?.kind, 'pattern:duplicate-output');
 
   detector.scanAll();
   assert.equal(flags.countFor(NODE), 1, 're-scan does not duplicate the open flag');
+
+  await new Promise((r) => setImmediate(r));
+  assert.equal(sink.alerts.length, 1, 'one page per ongoing pattern, even across re-scans');
+  assert.equal(sink.alerts[0]?.rule, 'pattern-cheater');
+  assert.equal(sink.alerts[0]?.severity, 'critical');
+  assert.equal(sink.alerts[0]?.key, `pattern-cheater:pattern:duplicate-output:${NODE.toLowerCase()}`);
 });

@@ -16,6 +16,7 @@ import type { ReputationService } from './reputation.js';
 import type { NodeFlagStore } from './db/node-flags.js';
 import type { IncentiveService } from './incentives.js';
 import type { LayerACheckStore } from './db/layer-a-checks.js';
+import type { AlertService } from './alerts.js';
 
 /** Everything the route handlers need, assembled once at startup. */
 export interface GatewayDeps {
@@ -43,5 +44,7 @@ export interface GatewayDeps {
   /** Slice 3 surface hardening: resolved limits + the per-key quota enforcer. */
   hardening: HardeningConfig;
   quota: QuotaEnforcer;
+  /** Slice 8: the paging loop — push + sweep alerts flow through this seam. */
+  alerts: AlertService;
   logger: Logger;
 }

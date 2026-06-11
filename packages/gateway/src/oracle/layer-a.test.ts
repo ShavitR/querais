@@ -10,6 +10,7 @@ import { ReputationSnapshotStore } from '../db/reputation-snapshots.js';
 import { LayerACheckStore } from '../db/layer-a-checks.js';
 import { NodeFlagStore } from '../db/node-flags.js';
 import { ReputationService } from '../reputation.js';
+import { AlertService, MemorySink } from '../alerts.js';
 import { metrics } from '../metrics.js';
 import type { ChainClient } from '../chain-client.js';
 import type { NodePool } from '../node-pool.js';
@@ -88,6 +89,9 @@ function fixture(oracleOutput: string, opts?: { sampleRate?: number; oracleRuns?
   };
   let refreshed = 0;
   const pool = { refreshReputation: async () => void (refreshed += 1) } as unknown as NodePool;
+  // Slice 8: anomalies must page — captured by a MemorySink.
+  const alertSink = new MemorySink();
+  const alerts = new AlertService(alertSink, logger, { cooldownSeconds: 0, minSeverity: 'warn' });
   const sampler = new LayerASampler(
     inference,
     trigramEmbeddings(),
@@ -98,12 +102,15 @@ function fixture(oracleOutput: string, opts?: { sampleRate?: number; oracleRuns?
     logger,
     { sampleRate: opts?.sampleRate ?? 1, oracleRuns: opts?.oracleRuns ?? 2 },
     () => 0, // deterministic: always inside the sample
+    undefined,
+    alerts,
   );
   return {
     sampler,
     checks,
     flags,
     accuracy,
+    alerts: alertSink.alerts,
     oracleCalls: () => oracleCalls,
     refreshed: () => refreshed,
   };
@@ -146,6 +153,21 @@ test('unrelated output is an anomaly: EMA hit at 0.05, manual-review flag, pool 
   assert.equal(f.flags.forWallet(NODE)[0]?.kind, 'layer-a:anomaly');
   assert.equal(f.refreshed(), 1, 'matching sees the new composite');
   assert.equal(metrics.layerAAnomalies, failsBefore + 1);
+  // Slice 8: the anomaly pages a human at flag time.
+  await new Promise((r) => setImmediate(r));
+  assert.equal(f.alerts.length, 1, 'anomaly raised a push alert');
+  assert.equal(f.alerts[0]?.rule, 'layer-a-anomaly');
+  assert.equal(f.alerts[0]?.severity, 'critical');
+  assert.equal(f.alerts[0]?.key, `layer-a-anomaly:${NODE.toLowerCase()}`);
+  assert.match(f.alerts[0]?.detail ?? '', new RegExp(JOB));
+});
+
+test('pass and soft verdicts never page', async () => {
+  const honest = 'The capital of France is Paris, of course.';
+  const f = fixture(honest);
+  await f.sampler.run(ctx(honest));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(f.alerts.length, 0, 'a passing sample must not alert');
 });
 
 test('the best oracle run decides (2-of-N redundancy: one agreeing run clears the node)', async () => {

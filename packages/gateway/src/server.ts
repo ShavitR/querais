@@ -6,7 +6,14 @@ import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
 import { metrics, renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
-import { resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
+import { resolveAlerts, resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
+import {
+  AlertService,
+  NoopSink,
+  WebhookSink,
+  redactWebhookUrl,
+  type AlertSink,
+} from './alerts.js';
 import { QuotaEnforcer } from './quota.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';
@@ -49,6 +56,9 @@ export interface BuildOptions {
   /** Slice 5: inject oracle inference/embeddings (tests/e2e); production builds them
    *  from `config.layerA.ollamaUrl`. Sampling is disabled when neither exists. */
   layerA?: { inference?: OracleInference; embeddings?: EmbeddingProvider };
+  /** Slice 8: inject an alert sink (tests use MemorySink); production builds a
+   *  WebhookSink from `config.alerts.webhookUrl`, or NoopSink when unset. */
+  alertSink?: AlertSink;
   logger?: Logger;
 }
 
@@ -70,6 +80,31 @@ export async function buildGateway(
   const settler = walletClient.account.address;
   // Slice 3 surface hardening: resolved once, shared by routes, faucet, and the WS pool.
   const hardening = resolveHardening(opts.config.hardening);
+  // Slice 8 paging loop: push sites (Layer-A, patterns, reputation) and the sweep keeper
+  // all raise through this one seam. No webhook configured → noop sink, gateway runs fine.
+  const alertsCfg = resolveAlerts(opts.config.alerts);
+  const alertSink =
+    opts.alertSink ??
+    (alertsCfg.webhookUrl
+      ? new WebhookSink(alertsCfg.webhookUrl, alertsCfg.webhookFormat)
+      : new NoopSink());
+  const alerts = new AlertService(alertSink, logger, {
+    cooldownSeconds: alertsCfg.cooldownSeconds,
+    minSeverity: alertsCfg.minSeverity,
+  });
+  if (alertsCfg.webhookUrl) {
+    // Redaction discipline: the URL embeds a channel token — log the host only.
+    logger.info(
+      {
+        webhookHost: redactWebhookUrl(alertsCfg.webhookUrl),
+        format: alertsCfg.webhookFormat,
+        minSeverity: alertsCfg.minSeverity,
+      },
+      'alerting armed',
+    );
+  } else if (!opts.alertSink) {
+    logger.warn('alerting disabled — GATEWAY_ALERT_WEBHOOK_URL not set');
+  }
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const db = new GatewayDb(opts.config.dbPath);
   const jobs = new JobStore(db);
@@ -87,6 +122,7 @@ export async function buildGateway(
     jobs,
     snapshots,
     logger,
+    alerts,
   );
   const pool = new NodePool(
     chain,
@@ -149,9 +185,10 @@ export async function buildGateway(
           { sampleRate: layerACfg.sampleRate, oracleRuns: layerACfg.oracleRuns },
           undefined,
           disputeRaiser,
+          alerts,
         )
       : undefined;
-  const patterns = new PatternDetector(db, nodeFlags, logger);
+  const patterns = new PatternDetector(db, nodeFlags, logger, alerts);
   // Slice 6C: read-only incentive recommendations (the operator pays via ops:allocate).
   const incentives = new IncentiveService(
     chain,
@@ -231,6 +268,7 @@ export async function buildGateway(
     incentives,
     hardening,
     quota,
+    alerts,
     logger,
   };
 
