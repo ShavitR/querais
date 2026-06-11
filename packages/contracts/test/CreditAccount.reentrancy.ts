@@ -13,12 +13,15 @@ describe('CreditAccount — reentrancy', async () => {
     const [deployer, gateway, node, requester, treasury] = wallets;
     if (!deployer || !gateway || !node || !requester || !treasury) throw new Error('accounts');
     const publicClient = await viem.getPublicClient();
+    // These suites use a malicious mock token (not QAIS), so a plain EOA fee
+    // recipient is correct here — the real ProtocolTreasury is out of scope.
+    const treasuryAddr = treasury.account.address;
 
     // Credit account backed by a malicious ERC-20 that re-enters on transfer.
     const token = await viem.deployContract('ReentrantBatchToken', []);
     const credit = await viem.deployContract('CreditAccount', [
       token.address,
-      treasury.account.address,
+      treasuryAddr,
       deployer.account.address,
     ]);
 
@@ -82,7 +85,7 @@ describe('CreditAccount — reentrancy', async () => {
     // Invariant: nothing moved — deposit intact, no payout, neither job recorded as settled.
     assert.equal(await credit.read.balanceOf([requester.account.address]), parseEther('100'));
     assert.equal(await token.read.balanceOf([node.account.address]), 0n);
-    assert.equal(await token.read.balanceOf([treasury.account.address]), 0n);
+    assert.equal(await token.read.balanceOf([treasuryAddr]), 0n);
     assert.equal(await credit.read.settledJob([jobId('re-outer')]), false);
     assert.equal(await credit.read.settledJob([jobId('re-inner')]), false);
     assert.equal(await credit.read.spentAgainst([requester.account.address, 1n]), 0n);

@@ -40,6 +40,8 @@ const CONTRACTS = [
   { alias: 'registry', key: 'nodeRegistry' },
   { alias: 'escrow', key: 'jobEscrow' },
   { alias: 'credit', key: 'creditAccount' },
+  { alias: 'dispute', key: 'disputeResolution' },
+  { alias: 'treasury', key: 'protocolTreasury' },
 ] as const;
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -97,7 +99,15 @@ const cold = privateKeyToAccount(coldPk);
 console.log(`hot  (gateway/deployer): ${hot.address}`);
 console.log(`cold (admin/pauser):     ${cold.address}\n`);
 
-const targets = CONTRACTS.map((c) => ({ ...c, address: deployment.contracts[c.key]! }));
+const targets = CONTRACTS.flatMap((c) => {
+  const address = deployment.contracts[c.key];
+  if (!address) {
+    // Pre-5B/6A manifests lack the newer contracts — note and continue.
+    console.log(`${c.alias.padEnd(8)} (not in this deployment manifest — skipped)`);
+    return [];
+  }
+  return [{ ...c, address }];
+});
 
 async function roles(address: Address): Promise<{ ADMIN: Hex; PAUSER: Hex }> {
   const [ADMIN, PAUSER] = await Promise.all([

@@ -10,12 +10,15 @@ describe('JobEscrow — reentrancy', async () => {
     const wallets = await viem.getWalletClients();
     const [deployer, gateway, node, requester, treasury] = wallets;
     if (!deployer || !gateway || !node || !requester || !treasury) throw new Error('accounts');
+    // These suites use a malicious mock token (not QAIS), so a plain EOA fee
+    // recipient is correct here — the real ProtocolTreasury is out of scope.
+    const treasuryAddr = treasury.account.address;
 
     // Deploy escrow backed by a malicious ERC-20 that re-enters on transfer.
     const token = await viem.deployContract('ReentrantToken', []);
     const escrow = await viem.deployContract('JobEscrow', [
       token.address,
-      treasury.account.address,
+      treasuryAddr,
       deployer.account.address,
     ]);
 

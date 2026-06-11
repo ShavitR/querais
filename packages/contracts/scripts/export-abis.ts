@@ -21,6 +21,11 @@ const CONTRACTS: Array<{ exportName: string; sol: string; contract: string }> = 
     sol: 'DisputeResolution.sol',
     contract: 'DisputeResolution',
   },
+  {
+    exportName: 'protocolTreasuryAbi',
+    sol: 'ProtocolTreasury.sol',
+    contract: 'ProtocolTreasury',
+  },
 ];
 
 function loadAbi(sol: string, contract: string): unknown {

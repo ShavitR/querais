@@ -129,6 +129,7 @@ Pinned by `packages/contracts/test/Pausable.ts` — update both together.
 | JobEscrow | `createJob`, `assignJob`, `completeJob`, `verifyAndRelease` | `failJob`, `cancelJob`, `timeoutJob` (all refund paths), all reads |
 | CreditAccount | `deposit`, `batchSettle` | `initiateWithdrawal`, `completeWithdrawal` (principal exit), all reads |
 | DisputeResolution (5B) | `raiseDispute` (bond inflow), `autoResolve` (settlement) | `submitCounterEvidence` (a pause must never silence a defense), `reclaimBond` (bond exit after 30d), all reads |
+| ProtocolTreasury (6A) | `distribute()` (the 60/20/20 sweep), `allocate()` (ops spending) | all reads. The treasury holds PROTOCOL funds only — there is deliberately no user exit path to keep open |
 | QUAISToken | — (not pausable) | everything, always |
 
 Design intent: pause freezes **value inflows and settlement** (nothing new gets
@@ -197,6 +198,23 @@ pnpm exec tsx packages/contracts/scripts/split-admin.ts --network arbitrumSepoli
 
 Until step 1 happens, `pnpm ops:pause` skips the dispute contract on Sepolia with a
 notice (the manifest has no address for it) — expected, not an error.
+
+## 7c. Activating the ProtocolTreasury on a live chain (Slice 6A — operator action)
+
+Fresh deploys (localhost/e2e and any §7b redeploy) already point every fee-payer at the
+treasury CONTRACT. To migrate an older live deployment from the treasury EOA without
+redeploying the fee-payers — reversible at any time:
+
+```bash
+# 1. Deploy ProtocolTreasury(token, coldAdmin) and grant the gateway KEEPER_ROLE.
+# 2. Signed by the COLD admin key, on each fee-payer:
+#      JobEscrow.setTreasury(<treasury contract>)
+#      CreditAccount.setTreasury(<treasury contract>)
+#    (DisputeResolution's treasury is constructor-set — its share moves at the next §7b redeploy.)
+# 3. Update deployments/addresses.<network>.json: contracts.protocolTreasury + treasury fields.
+# 4. Restart the gateway — the daily distribute() keeper timer arms automatically.
+# Rollback: setTreasury(<old EOA>) on both fee-payers; the contract keeps its balance safe.
+```
 
 ## 8. Why there is no `/v1/admin/pause` HTTP endpoint
 

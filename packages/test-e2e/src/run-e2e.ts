@@ -20,6 +20,7 @@ import {
   runReputationCase,
   runLayerACase,
   runDisputeCase,
+  runTreasuryCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -75,6 +76,10 @@ async function main(): Promise<void> {
     console.log('▶  dispute case: anomaly → on-chain dispute → 20% slash split 50/30/20…');
     await runDisputeCase();
     console.log('✅ dispute case passed');
+
+    console.log('▶  treasury case: fees accrue → keeper sweep → 20/20/60 burn/stakers/ops…');
+    await runTreasuryCase();
+    console.log('✅ treasury case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

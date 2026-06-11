@@ -74,7 +74,7 @@ describe('CreditAccount — deposit, batched settlement & withdrawal', async () 
 
     const provider1 = ctx.node.account.address;
     const provider2 = ctx.outsider.account.address;
-    const treasury = ctx.treasury.account.address;
+    const treasury = ctx.treasuryAddr;
     const debits = [
       { jobId: jobId('b-1'), provider: provider1, amountWei: parseEther('1') },
       { jobId: jobId('b-2'), provider: provider2, amountWei: parseEther('2') },

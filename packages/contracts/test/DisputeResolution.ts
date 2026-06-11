@@ -106,7 +106,7 @@ describe('DisputeResolution', async () => {
 
     const [gw0, t0, supply0] = await Promise.all([
       bal(ctx, ctx.gateway.account.address),
-      bal(ctx, ctx.treasury.account.address),
+      bal(ctx, ctx.treasuryAddr),
       ctx.token.read.totalSupply(),
     ]);
 
@@ -119,11 +119,7 @@ describe('DisputeResolution', async () => {
       BOND + challengerCut,
       'challenger: bond returned + 30% of the slash',
     );
-    assert.equal(
-      (await bal(ctx, ctx.treasury.account.address)) - t0,
-      treasuryCut,
-      'treasury receives 20%',
-    );
+    assert.equal((await bal(ctx, ctx.treasuryAddr)) - t0, treasuryCut, 'treasury receives 20%');
     assert.equal(supply0 - (await ctx.token.read.totalSupply()), burn, '50% burned');
     // Conservation: every slashed wei is burned, paid, or banked.
     assert.equal(burn + challengerCut + treasuryCut, slash);

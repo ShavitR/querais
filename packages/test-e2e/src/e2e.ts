@@ -9,6 +9,7 @@ import {
   makePublicClient,
   makeWalletClient,
   nodeRegistryAbi,
+  protocolTreasuryAbi,
   quaisTokenAbi,
   splitPayment,
   type Deployment,
@@ -869,6 +870,83 @@ export async function runDisputeCase(): Promise<void> {
 
     const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
     assert.match(metricsText, /querais_layer_a_disputes_total [1-9]/, 'dispute counted');
+  } finally {
+    await h.stop();
+  }
+}
+
+/**
+ * Treasury tokenomics (Slice 6A): settlement fees accrue at the ProtocolTreasury
+ * CONTRACT (it replaced the treasury EOA as fee recipient), and the gateway's keeper
+ * timer sweeps them with distribute() — 20% burned (total supply shrinks), 20%
+ * earmarked for stakers (parked until 6B), 60% retained for ops — conserving to the
+ * wei, with zero changes to settlement code.
+ */
+export async function runTreasuryCase(): Promise<void> {
+  const h = await startHarness({ treasuryDistributeIntervalSeconds: 2 });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const treasury = h.deployment.contracts.protocolTreasury;
+    assert.ok(treasury, 'the deployment has a ProtocolTreasury contract');
+
+    const treasuryRead = (
+      fn: 'totalBurned' | 'stakerEarmarkWei' | 'opsRetainedWei' | 'pendingDistribution',
+    ): Promise<bigint> =>
+      pub.readContract({ address: treasury!, abi: protocolTreasuryAbi, functionName: fn });
+    const supplyOf = (): Promise<bigint> =>
+      pub.readContract({
+        address: h.deployment.contracts.token,
+        abi: quaisTokenAbi,
+        functionName: 'totalSupply',
+      });
+
+    // Baselines BEFORE this scenario's jobs (earlier scenarios already accrued fees).
+    const [burned0, earmark0, ops0, supply0] = await Promise.all([
+      treasuryRead('totalBurned'),
+      treasuryRead('stakerEarmarkWei'),
+      treasuryRead('opsRetainedWei'),
+      supplyOf(),
+    ]);
+
+    // A couple of jobs whose 5% fees land at the treasury contract.
+    for (let i = 0; i < 2; i++) {
+      const res = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `fees for the treasury ${i}` }],
+        max_tokens: 30,
+      });
+      assert.equal(res.status, 200, `fee-generating job ${i} succeeds`);
+    }
+    const pendingBefore = await treasuryRead('pendingDistribution');
+    assert.ok(pendingBefore > 0n, 'settlement fees accrued as pending distribution');
+
+    // The keeper timer (2s here, daily in production) must sweep on its own.
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      if ((await treasuryRead('pendingDistribution')) === 0n) break;
+      assert.ok(Date.now() < deadline, 'timed out waiting for the treasury sweep timer');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    const [burned1, earmark1, ops1, supply1] = await Promise.all([
+      treasuryRead('totalBurned'),
+      treasuryRead('stakerEarmarkWei'),
+      treasuryRead('opsRetainedWei'),
+      supplyOf(),
+    ]);
+    const swept = burned1 - burned0 + (earmark1 - earmark0) + (ops1 - ops0);
+    assert.ok(swept >= pendingBefore, 'everything pending was swept');
+    assert.equal(burned1 - burned0, (swept * 2000n) / 10000n, '20% burned');
+    assert.equal(earmark1 - earmark0, (swept * 2000n) / 10000n, '20% earmarked for stakers (6B)');
+    assert.equal(
+      ops1 - ops0,
+      swept - (burned1 - burned0) - (earmark1 - earmark0),
+      '60% ops = exact remainder (conservation to the wei)',
+    );
+    assert.equal(supply0 - supply1, burned1 - burned0, 'the burn shrinks total supply');
+
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(metricsText, /querais_treasury_distributions_total [1-9]/, 'sweep counted');
   } finally {
     await h.stop();
   }

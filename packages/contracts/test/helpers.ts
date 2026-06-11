@@ -57,24 +57,30 @@ export async function deploy(viem: Viem) {
   const publicClient = await viem.getPublicClient();
 
   const token = await viem.deployContract('QUAISToken', [deployer.account.address]);
+  // Slice 6A: the ProtocolTreasury CONTRACT is the fee recipient, like production deploys.
+  const treasuryContract = await viem.deployContract('ProtocolTreasury', [
+    token.address,
+    deployer.account.address,
+  ]);
+  const treasuryAddr = treasuryContract.address;
   const registry = await viem.deployContract('NodeRegistry', [
     token.address,
     deployer.account.address,
   ]);
   const escrow = await viem.deployContract('JobEscrow', [
     token.address,
-    treasury.account.address,
+    treasuryAddr,
     deployer.account.address,
   ]);
   const credit = await viem.deployContract('CreditAccount', [
     token.address,
-    treasury.account.address,
+    treasuryAddr,
     deployer.account.address,
   ]);
   const dispute = await viem.deployContract('DisputeResolution', [
     token.address,
     registry.address,
-    treasury.account.address,
+    treasuryAddr,
     deployer.account.address,
   ]);
 
@@ -92,6 +98,8 @@ export async function deploy(viem: Viem) {
   const DISPUTE_ORACLE = await dispute.read.ORACLE_ROLE();
   await dispute.write.grantRole([DISPUTE_ORACLE, gateway.account.address]);
   await registry.write.grantRole([REG_SLASHER, dispute.address]);
+  const TREASURY_KEEPER = await treasuryContract.read.KEEPER_ROLE();
+  await treasuryContract.write.grantRole([TREASURY_KEEPER, gateway.account.address]);
 
   // Fund the requester (to pay for jobs) and node (to stake).
   await token.write.transfer([requester.account.address, parseEther('1000')]);
@@ -111,13 +119,29 @@ export async function deploy(viem: Viem) {
     escrow,
     credit,
     dispute,
-    roles: { REG_ORACLE, REG_SLASHER, ESC_ORACLE, ESC_MATCHING, CREDIT_SETTLER, DISPUTE_ORACLE },
+    treasuryContract,
+    treasuryAddr,
+    roles: {
+      REG_ORACLE,
+      REG_SLASHER,
+      ESC_ORACLE,
+      ESC_MATCHING,
+      CREDIT_SETTLER,
+      DISPUTE_ORACLE,
+      TREASURY_KEEPER,
+    },
   };
 }
 
 /** Re-bind a deployed contract to a specific signer (to test role-gated calls). */
 export async function as<
-  N extends 'QUAISToken' | 'NodeRegistry' | 'JobEscrow' | 'CreditAccount' | 'DisputeResolution',
+  N extends
+    | 'QUAISToken'
+    | 'NodeRegistry'
+    | 'JobEscrow'
+    | 'CreditAccount'
+    | 'DisputeResolution'
+    | 'ProtocolTreasury',
 >(
   viem: Viem,
   name: N,
