@@ -47,6 +47,7 @@ import { PatternDetector } from './oracle/patterns.js';
 import { IncentiveService, resolveIncentives } from './incentives.js';
 import { registerIncentives } from './routes/incentives.js';
 import { BatchedSettlement } from './batched-settlement.js';
+import { KeeperHealth } from './keeper-health.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
 
@@ -250,6 +251,10 @@ export async function buildGateway(
     });
   }
 
+  // Slice 8 keeper liveness: every background timer registers + beats here; the
+  // `keeper-stale` sweep rule pages when one stops succeeding.
+  const keepers = new KeeperHealth();
+
   const deps: GatewayDeps = {
     config: opts.config,
     chain,
@@ -270,30 +275,37 @@ export async function buildGateway(
     hardening,
     quota,
     alerts,
+    keepers,
     logger,
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   // Interval flush ("flush every N sec / M jobs"): a low-traffic requester's debits never
   // wait unboundedly for the threshold. unref() so the timer can't hold the process open.
+  keepers.register('flush', opts.config.batchFlushIntervalSeconds * 1000);
   const flushTimer = setInterval(() => {
     void credit
       .flushAll()
+      .then(() => keepers.beat('flush'))
       .catch((err: unknown) => logger.error({ err }, 'interval flushAll failed'));
   }, opts.config.batchFlushIntervalSeconds * 1000);
   flushTimer.unref();
   // Daily reputation epoch (Slice 4B): publish every known node's composite on-chain.
   // Same lifecycle pattern as the flush timer; the interval shrinks to seconds in e2e.
+  keepers.register('snapshot', opts.config.reputationSnapshotIntervalSeconds * 1000);
   const snapshotTimer = setInterval(() => {
     void reputation
       .snapshotAll()
+      .then(() => keepers.beat('snapshot'))
       .catch((err: unknown) => logger.error({ err }, 'reputation snapshot sweep failed'));
   }, opts.config.reputationSnapshotIntervalSeconds * 1000);
   snapshotTimer.unref();
   // Output-pattern sweep (Slice 5): rolling 7-day cheater signals from job rows.
+  keepers.register('patterns', layerACfg.patternScanIntervalSeconds * 1000);
   const patternTimer = setInterval(() => {
     try {
       patterns.scanAll();
+      keepers.beat('patterns');
     } catch (err) {
       logger.error({ err }, 'pattern scan failed');
     }
@@ -303,6 +315,9 @@ export async function buildGateway(
   // tick runs both in order, so the staker share a sweep just paid out is credited to
   // operators in the same tick. Reads pending first so empty epochs are quiet no-ops.
   // Each step is auto-disabled on manifests that predate its contract.
+  if (chain.treasuryContract() || chain.stakingRewardsContract()) {
+    keepers.register('treasury', opts.config.treasuryDistributeIntervalSeconds * 1000);
+  }
   const treasuryTimer =
     chain.treasuryContract() || chain.stakingRewardsContract()
       ? setInterval(() => {
@@ -327,6 +342,9 @@ export async function buildGateway(
               metrics.rewardsEpochFailures += 1;
               logger.error({ err }, 'rewards epoch credit failed');
             }
+            // The beat means "the timer ticked to completion" — individual tx failures
+            // have their own metrics; keeper-stale is about the timer dying silently.
+            keepers.beat('treasury');
           })();
         }, opts.config.treasuryDistributeIntervalSeconds * 1000)
       : undefined;
