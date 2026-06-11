@@ -90,21 +90,18 @@ contract ProtocolTreasury is AccessControl, Pausable, ReentrancyGuard {
         uint256 burnAmount = (pending * burnRateBps) / 10000;
         uint256 stakerAmount = (pending * stakerRateBps) / 10000;
         uint256 opsRetained = pending - burnAmount - stakerAmount;
+        bool payPool = stakerPool != address(0) && stakerAmount > 0;
 
+        // Effects — ALL state before any external call (CEI, the pinned design rule).
         totalDistributed += pending;
         totalBurned += burnAmount;
         totalToStakers += stakerAmount;
         opsRetainedWei += opsRetained;
+        if (!payPool && stakerAmount > 0) stakerEarmarkWei += stakerAmount; // parks until 6B
 
+        // Interactions. opsRetained simply stays in the balance, spendable via allocate().
         if (burnAmount > 0) token.burn(burnAmount);
-        if (stakerAmount > 0) {
-            if (stakerPool != address(0)) {
-                IERC20(address(token)).safeTransfer(stakerPool, stakerAmount);
-            } else {
-                stakerEarmarkWei += stakerAmount; // parks until 6B
-            }
-        }
-        // opsRetained simply stays in the balance, spendable via allocate().
+        if (payPool) IERC20(address(token)).safeTransfer(stakerPool, stakerAmount);
 
         emit Distributed(pending, burnAmount, stakerAmount, opsRetained);
     }
