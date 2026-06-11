@@ -1,0 +1,21 @@
+# Example Prometheus scrape config for the QueraIS gateway (Slice 8).
+# Run from anywhere that can reach the gateway:
+#   prometheus --config.file=ops/prometheus.yml
+# Docs: docs/OBSERVABILITY.md
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: querais-gateway
+    metrics_path: /metrics
+    scheme: https
+    static_configs:
+      - targets:
+          - querais-gateway.fly.dev
+        labels:
+          network: arbitrum-sepolia
+    # Self-hosted gateway instead? Swap in:
+    #   scheme: http
+    #   targets: ['localhost:8080']
