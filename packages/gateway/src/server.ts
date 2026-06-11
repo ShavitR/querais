@@ -48,6 +48,7 @@ import { IncentiveService, resolveIncentives } from './incentives.js';
 import { registerIncentives } from './routes/incentives.js';
 import { BatchedSettlement } from './batched-settlement.js';
 import { KeeperHealth } from './keeper-health.js';
+import { AlertSweeper, type SweepReads } from './alert-rules.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
 
@@ -217,9 +218,10 @@ export async function buildGateway(
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
   let faucet: Faucet | undefined;
+  let faucetSweepReads: SweepReads['faucet'];
   if (opts.config.faucetPrivateKey) {
     const distWallet = makeWalletClient(rpcUrl, opts.config.faucetPrivateKey, deployment.chainId);
-    const distributor: FaucetDistributor = {
+    const distributor = {
       transferQais: async (to, amount) => {
         const hash = await distWallet.writeContract({
           address: deployment.contracts.token,
@@ -244,11 +246,18 @@ export async function buildGateway(
           args: [distWallet.account.address],
         }),
       ethBalance: () => publicClient.getBalance({ address: distWallet.account.address }),
-    };
+    } satisfies FaucetDistributor;
     faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei, {
       ipDailyLimit: hardening.faucetIpDailyLimit,
       dailyCap: hardening.faucetDailyCap,
     });
+    // Slice 8 `faucet-low` sweep: the well's balances vs the per-claim amounts.
+    faucetSweepReads = {
+      qaisBalance: distributor.qaisBalance,
+      ethBalance: distributor.ethBalance,
+      claimQaisWei: opts.config.faucetAmountWei,
+      claimEthWei: opts.config.faucetEthWei,
+    };
   }
 
   // Slice 8 keeper liveness: every background timer registers + beats here; the
@@ -349,12 +358,44 @@ export async function buildGateway(
         }, opts.config.treasuryDistributeIntervalSeconds * 1000)
       : undefined;
   treasuryTimer?.unref();
+  // Slice 8 alert sweep: the catalogue rules (gas, stuck debits, settle streak, node
+  // drop, open flags, faucet, stale keepers, RPC) evaluated over injected reads.
+  // Dedup/cooldown lives in AlertService, so the tight interval stays quiet.
+  const sweeper = new AlertSweeper(
+    alerts,
+    {
+      gasBalanceWei: () => chain.ethBalance(settler),
+      oldestPendingDebitAt: () => credit.oldestPendingDebitAt(),
+      consecutiveFlushFailures: () => credit.consecutiveFlushFailures(),
+      connectedNodes: () => pool.size(),
+      openFlagCount: () => nodeFlags.openCount(),
+      faucet: faucetSweepReads,
+      staleKeepers: (now) => keepers.stale(now),
+      rpcProbe: async () => {
+        await chain.latestBlockTimestamp();
+      },
+    },
+    {
+      gasMinWei: alertsCfg.gasMinWei,
+      debitMaxAgeSeconds: alertsCfg.debitMaxAgeSeconds,
+      settleFailStreak: alertsCfg.settleFailStreak,
+    },
+  );
+  keepers.register('alert-sweep', alertsCfg.sweepIntervalSeconds * 1000);
+  const sweepTimer = setInterval(() => {
+    void sweeper
+      .sweep()
+      .then(() => keepers.beat('alert-sweep'))
+      .catch((err: unknown) => logger.error({ err }, 'alert sweep failed'));
+  }, alertsCfg.sweepIntervalSeconds * 1000);
+  sweepTimer.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
     clearInterval(flushTimer);
     clearInterval(snapshotTimer);
     clearInterval(patternTimer);
+    clearInterval(sweepTimer);
     if (treasuryTimer) clearInterval(treasuryTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
