@@ -76,6 +76,14 @@ async function main(): Promise<void> {
     admin,
   ]);
   console.log('DisputeResolution ->', dispute.address);
+  // Slice 6B: the treasury's 20% staker share is credited pro-rata to active staked nodes.
+  const rewards = await viem.deployContract('StakingRewards', [
+    token.address,
+    registry.address,
+    admin,
+  ]);
+  console.log('StakingRewards  ->', rewards.address);
+  await treasuryContract.write.setStakerPool([rewards.address]);
 
   // Grant the gateway its operational roles.
   const ORACLE_ROLE = await registry.read.ORACLE_ROLE();
@@ -93,11 +101,13 @@ async function main(): Promise<void> {
   // needs SLASHER on the registry to route slashed stake through its 50/30/20 split.
   await dispute.write.grantRole([DISPUTE_ORACLE_ROLE, gatewayAddr]);
   await registry.write.grantRole([SLASHER_ROLE, dispute.address]);
-  // Slice 6A: the gateway is the daily distribute() keeper.
+  // Slice 6A/6B: the gateway is the daily keeper for both epoch sweeps.
   const KEEPER_ROLE = await treasuryContract.read.KEEPER_ROLE();
   await treasuryContract.write.grantRole([KEEPER_ROLE, gatewayAddr]);
+  const REWARDS_KEEPER_ROLE = await rewards.read.KEEPER_ROLE();
+  await rewards.write.grantRole([REWARDS_KEEPER_ROLE, gatewayAddr]);
   console.log(
-    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit), ORACLE (dispute), KEEPER (treasury) to gateway; SLASHER (registry) to DisputeResolution',
+    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit), ORACLE (dispute), KEEPER (treasury + rewards) to gateway; SLASHER (registry) to DisputeResolution',
   );
 
   // Fund test node/requester with QAIS where we know their addresses.
@@ -128,6 +138,7 @@ async function main(): Promise<void> {
       creditAccount: creditAccount.address,
       disputeResolution: dispute.address,
       protocolTreasury: treasury,
+      stakingRewards: rewards.address,
     },
     treasury,
     accounts: {
@@ -159,6 +170,9 @@ async function main(): Promise<void> {
       `  hardhat verify --network ${networkName} ${dispute.address} ${token.address} ${registry.address} ${treasury} ${admin}`,
     );
     console.log(`  hardhat verify --network ${networkName} ${treasury} ${token.address} ${admin}`);
+    console.log(
+      `  hardhat verify --network ${networkName} ${rewards.address} ${token.address} ${registry.address} ${admin}`,
+    );
   }
 }
 

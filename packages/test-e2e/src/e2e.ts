@@ -10,6 +10,7 @@ import {
   makeWalletClient,
   nodeRegistryAbi,
   protocolTreasuryAbi,
+  stakingRewardsAbi,
   quaisTokenAbi,
   splitPayment,
   type Deployment,
@@ -49,6 +50,8 @@ interface NodeView {
   jobsServed: number;
   /** Open manual-review flags (Slice 5: Layer-A anomalies + output patterns). */
   flags: number;
+  /** Earned, unclaimed staking rewards (Slice 6B), wei string. */
+  claimableRewardsWei: string;
   dimensions: {
     accuracy: number;
     uptime: number;
@@ -890,7 +893,7 @@ export async function runTreasuryCase(): Promise<void> {
     assert.ok(treasury, 'the deployment has a ProtocolTreasury contract');
 
     const treasuryRead = (
-      fn: 'totalBurned' | 'stakerEarmarkWei' | 'opsRetainedWei' | 'pendingDistribution',
+      fn: 'totalBurned' | 'totalToStakers' | 'opsRetainedWei' | 'pendingDistribution',
     ): Promise<bigint> =>
       pub.readContract({ address: treasury!, abi: protocolTreasuryAbi, functionName: fn });
     const supplyOf = (): Promise<bigint> =>
@@ -901,9 +904,11 @@ export async function runTreasuryCase(): Promise<void> {
       });
 
     // Baselines BEFORE this scenario's jobs (earlier scenarios already accrued fees).
-    const [burned0, earmark0, ops0, supply0] = await Promise.all([
+    // Since 6B the staker share transfers straight to the StakingRewards pool, so the
+    // split is asserted via the treasury's monotonic counters, not the parked earmark.
+    const [burned0, toStakers0, ops0, supply0] = await Promise.all([
       treasuryRead('totalBurned'),
-      treasuryRead('stakerEarmarkWei'),
+      treasuryRead('totalToStakers'),
       treasuryRead('opsRetainedWei'),
       supplyOf(),
     ]);
@@ -928,25 +933,93 @@ export async function runTreasuryCase(): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
-    const [burned1, earmark1, ops1, supply1] = await Promise.all([
+    const [burned1, toStakers1, ops1, supply1] = await Promise.all([
       treasuryRead('totalBurned'),
-      treasuryRead('stakerEarmarkWei'),
+      treasuryRead('totalToStakers'),
       treasuryRead('opsRetainedWei'),
       supplyOf(),
     ]);
-    const swept = burned1 - burned0 + (earmark1 - earmark0) + (ops1 - ops0);
+    const swept = burned1 - burned0 + (toStakers1 - toStakers0) + (ops1 - ops0);
     assert.ok(swept >= pendingBefore, 'everything pending was swept');
     assert.equal(burned1 - burned0, (swept * 2000n) / 10000n, '20% burned');
-    assert.equal(earmark1 - earmark0, (swept * 2000n) / 10000n, '20% earmarked for stakers (6B)');
+    assert.equal(toStakers1 - toStakers0, (swept * 2000n) / 10000n, '20% to the staker pool');
     assert.equal(
       ops1 - ops0,
-      swept - (burned1 - burned0) - (earmark1 - earmark0),
+      swept - (burned1 - burned0) - (toStakers1 - toStakers0),
       '60% ops = exact remainder (conservation to the wei)',
     );
     assert.equal(supply0 - supply1, burned1 - burned0, 'the burn shrinks total supply');
 
     const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
     assert.match(metricsText, /querais_treasury_distributions_total [1-9]/, 'sweep counted');
+  } finally {
+    await h.stop();
+  }
+}
+
+/**
+ * Staking rewards (Slice 6B, Option 1): the treasury's 20% staker share is credited
+ * pro-rata to active staked nodes by the keeper's epoch step, and the node operator
+ * pulls it with claim() — fee → sweep → epoch credit → claim, conserved end-to-end.
+ */
+export async function runStakingRewardsCase(): Promise<void> {
+  const h = await startHarness({ treasuryDistributeIntervalSeconds: 2 });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
+    const rewards = h.deployment.contracts.stakingRewards;
+    assert.ok(rewards, 'the deployment has a StakingRewards contract');
+    const provider = h.deployment.accounts.node;
+
+    const claimableOf = (): Promise<bigint> =>
+      pub.readContract({
+        address: rewards!,
+        abi: stakingRewardsAbi,
+        functionName: 'claimable',
+        args: [provider],
+      });
+
+    const claimable0 = await claimableOf();
+    for (let i = 0; i < 2; i++) {
+      const res = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `staker rewards ${i}` }],
+        max_tokens: 30,
+      });
+      assert.equal(res.status, 200, `fee-generating job ${i} succeeds`);
+    }
+
+    // fee → treasury sweep → rewards epoch credit, all driven by the keeper timer.
+    const deadline = Date.now() + 20_000;
+    let claimable1 = claimable0;
+    for (;;) {
+      claimable1 = await claimableOf();
+      if (claimable1 > claimable0) break;
+      assert.ok(Date.now() < deadline, 'timed out waiting for the rewards epoch credit');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const earned = claimable1 - claimable0;
+
+    // The single active node gets 100% of the staker share; /v1/nodes surfaces it.
+    const [view] = await fetchNodes(h.baseUrl);
+    assert.equal(view!.claimableRewardsWei, claimable1.toString(), '/v1/nodes shows earnings');
+
+    // The operator claims: balance grows by exactly the earned amount.
+    const nodeWallet = makeWalletClient(h.deployment.rpcUrl, KEYS.node, h.deployment.chainId);
+    const b0 = await balanceOf(pub, h.deployment, provider);
+    const claimHash = await nodeWallet.writeContract({
+      address: rewards!,
+      abi: stakingRewardsAbi,
+      functionName: 'claim',
+    });
+    const receipt = await pub.waitForTransactionReceipt({ hash: claimHash });
+    assert.equal(receipt.status, 'success', 'claim succeeds');
+    const b1 = await balanceOf(pub, h.deployment, provider);
+    assert.equal(b1 - b0, claimable1, 'claim pays out exactly the credited rewards');
+    assert.equal(await claimableOf(), 0n, 'claimable zeroed after the claim');
+    assert.ok(earned > 0n, 'the staker share was non-trivial');
+
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(metricsText, /querais_rewards_epochs_total [1-9]/, 'epoch credit counted');
   } finally {
     await h.stop();
   }

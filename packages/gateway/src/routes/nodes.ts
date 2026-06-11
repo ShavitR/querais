@@ -21,6 +21,11 @@ export function registerNodes(app: FastifyInstance, deps: GatewayDeps): void {
           },
           // Slice 5: open manual-review flags (Layer-A anomalies, output patterns).
           flags: deps.nodeFlags.countFor(n.wallet),
+          // Slice 6B: earned, unclaimed staking rewards (wei string; '0' pre-6B).
+          claimableRewardsWei: (deps.chain.stakingRewardsContract()
+            ? await deps.chain.claimableRewards(n.wallet)
+            : 0n
+          ).toString(),
           jobsServed: n.jobsServed,
           models: n.models.map((m) => ({
             model: m.model,

@@ -249,24 +249,37 @@ export async function buildGateway(
     }
   }, layerACfg.patternScanIntervalSeconds * 1000);
   patternTimer.unref();
-  // Treasury epoch sweep (Slice 6A): the gateway is the distribute() keeper. Reads
-  // pending first so an empty epoch is a quiet no-op, not a reverted tx. Disabled on
-  // pre-6A manifests (no ProtocolTreasury deployed).
-  const treasuryTimer = chain.treasuryContract()
-    ? setInterval(() => {
-        void (async () => {
-          try {
-            if ((await chain.treasuryPending()) === 0n) return;
-            await chain.distributeTreasury();
-            metrics.treasuryDistributions += 1;
-            logger.info('treasury distributed (60/20/20 epoch sweep)');
-          } catch (err) {
-            metrics.treasuryDistributeFailures += 1;
-            logger.error({ err }, 'treasury distribute failed');
-          }
-        })();
-      }, opts.config.treasuryDistributeIntervalSeconds * 1000)
-    : undefined;
+  // Treasury epoch sweep (Slice 6A) + staking-rewards epoch credit (6B): one keeper
+  // tick runs both in order, so the staker share a sweep just paid out is credited to
+  // operators in the same tick. Reads pending first so empty epochs are quiet no-ops.
+  // Each step is auto-disabled on manifests that predate its contract.
+  const treasuryTimer =
+    chain.treasuryContract() || chain.stakingRewardsContract()
+      ? setInterval(() => {
+          void (async () => {
+            try {
+              if (chain.treasuryContract() && (await chain.treasuryPending()) > 0n) {
+                await chain.distributeTreasury();
+                metrics.treasuryDistributions += 1;
+                logger.info('treasury distributed (60/20/20 epoch sweep)');
+              }
+            } catch (err) {
+              metrics.treasuryDistributeFailures += 1;
+              logger.error({ err }, 'treasury distribute failed');
+            }
+            try {
+              if (chain.stakingRewardsContract() && (await chain.rewardsPending()) > 0n) {
+                await chain.distributeRewardsEpoch();
+                metrics.rewardsEpochs += 1;
+                logger.info('staking rewards credited (pro-rata epoch)');
+              }
+            } catch (err) {
+              metrics.rewardsEpochFailures += 1;
+              logger.error({ err }, 'rewards epoch credit failed');
+            }
+          })();
+        }, opts.config.treasuryDistributeIntervalSeconds * 1000)
+      : undefined;
   treasuryTimer?.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).

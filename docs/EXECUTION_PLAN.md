@@ -181,7 +181,7 @@ protocol credible as a complete design rather than a demo.
   cases ✅ (12th e2e scenario: slash lands + splits exactly on-chain).
 - **Maps to:** P3.8.
 
-### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · ◐ 6A DONE (#33) · 6B Option 1 decided · 6C next
+### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · ◐ 6A #33 · 6B #34 DONE · 6C next
 - **Goal:** turn on the economic loops (today: fee → a single treasury EOA).
 - **Why the split:** as one slice this secretly contains a *new staking contract* (6B) and
   an *ops program* (6C) hiding behind the treasury work (6A). Same lesson as 2A/2B/2C and
@@ -210,14 +210,16 @@ protocol credible as a complete design rather than a demo.
   - **Acceptance:** fees accrue across settlements; one `distribute()` burns 20% (total
     supply measurably shrinks), earmarks/pays 20% to stakers, retains 60%; e2e scenario
     asserts the split conserves to the wei (the 5B conservation-test pattern).
-- **6B — Staking rewards (DECISION REQUIRED: who is a "staker"?):**
-  - **Option 1 (recommended): node-operator stakes in `NodeRegistry`** — rewards
-    pro-rata to active staked nodes. No new staking contract, pays the people securing
-    the network, and doubles as a node incentive. Small surface: a claim function fed
-    by the treasury's staker share.
-  - Option 2: general token-holder staking — a new `StakingPool` + reward accounting;
-    that's a slice of its own and mostly serves the future DAO. If chosen, defer to
-    Phase 5 rather than inflating Stage B.
+- **6B — Staking rewards (BUILT #34; Option 1):** **`StakingRewards.sol`** — the
+  treasury's staker share flows here (`setStakerPool`, wired at deploy); a keeper
+  `distributeEpoch()` walks the ACTIVE node set on-chain and credits `claimable`
+  pro-rata to stake; operators pull with `claim()` (NOT pausable — a user exit; earned
+  rewards survive later slashes/unbonding). Discrete epoch crediting — no registry
+  hooks; division dust rolls forward, conservation exact. Known trade-offs documented
+  in-contract: staked-at-sweep-time membership (no intra-epoch weighting) and O(n)
+  registry reads per epoch (Merkle distributor is the deferred scale-out path). The
+  gateway keeper tick runs treasury sweep then epoch credit in order; `/v1/nodes`
+  surfaces `claimableRewardsWei`.
 - **6C — Node incentive programs (ops, not protocol):** bootstrap multiplier, uptime
   pool, first-model bonus — paid from the Ecosystem Fund via the treasury's `allocate()`
   (multisig/cold-key gated), computed gateway-side from data Slice 4 already collects

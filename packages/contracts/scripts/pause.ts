@@ -4,7 +4,7 @@
  * docs/RUNBOOK_KEYS.md.
  *
  *   tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia>
- *                        [--contracts registry,escrow,credit,dispute,treasury]
+ *                        [--contracts registry,escrow,credit,dispute,treasury,rewards]
  *
  * `status` is read-only (no key). `pause`/`unpause` sign with PAUSER_PRIVATE_KEY
  * (fallback DEPLOYER_PRIVATE_KEY) from the process env or the repo-root .env.
@@ -42,6 +42,7 @@ const CONTRACT_KEYS = {
   credit: 'creditAccount',
   dispute: 'disputeResolution',
   treasury: 'protocolTreasury',
+  rewards: 'stakingRewards',
 } as const;
 type ContractAlias = keyof typeof CONTRACT_KEYS;
 
@@ -66,12 +67,19 @@ function parseArgs(argv: string[]) {
   const [action] = argv;
   if (action !== 'status' && action !== 'pause' && action !== 'unpause') {
     console.error(
-      'Usage: tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia> [--contracts registry,escrow,credit,dispute,treasury]',
+      'Usage: tsx scripts/pause.ts <status|pause|unpause> --network <localhost|arbitrumSepolia> [--contracts registry,escrow,credit,dispute,treasury,rewards]',
     );
     process.exit(2);
   }
   let network = '';
-  let contracts: ContractAlias[] = ['registry', 'escrow', 'credit', 'dispute', 'treasury'];
+  let contracts: ContractAlias[] = [
+    'registry',
+    'escrow',
+    'credit',
+    'dispute',
+    'treasury',
+    'rewards',
+  ];
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === '--network') network = argv[++i] ?? '';
     else if (argv[i] === '--contracts') {
@@ -79,7 +87,7 @@ function parseArgs(argv: string[]) {
       for (const c of contracts) {
         if (!(c in CONTRACT_KEYS)) {
           console.error(
-            `Unknown contract alias '${c}' (use registry,escrow,credit,dispute,treasury)`,
+            `Unknown contract alias '${c}' (use registry,escrow,credit,dispute,treasury,rewards)`,
           );
           process.exit(2);
         }
@@ -114,7 +122,7 @@ const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const targets = contracts.flatMap((alias) => {
   const address = deployment.contracts[CONTRACT_KEYS[alias]];
   if (!address) {
-    if (alias === 'dispute' || alias === 'treasury') {
+    if (alias === 'dispute' || alias === 'treasury' || alias === 'rewards') {
       // Pre-5B/6A deployments lack these contracts — skip rather than fail the drill.
       console.log(`${alias.padEnd(8)} (not in this deployment manifest — skipped)`);
       return [];

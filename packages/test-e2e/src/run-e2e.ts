@@ -21,6 +21,7 @@ import {
   runLayerACase,
   runDisputeCase,
   runTreasuryCase,
+  runStakingRewardsCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -80,6 +81,10 @@ async function main(): Promise<void> {
     console.log('▶  treasury case: fees accrue → keeper sweep → 20/20/60 burn/stakers/ops…');
     await runTreasuryCase();
     console.log('✅ treasury case passed');
+
+    console.log('▶  staking rewards case: staker share → pro-rata epoch credit → claim…');
+    await runStakingRewardsCase();
+    console.log('✅ staking rewards case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

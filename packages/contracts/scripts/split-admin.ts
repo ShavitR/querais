@@ -42,6 +42,7 @@ const CONTRACTS = [
   { alias: 'credit', key: 'creditAccount' },
   { alias: 'dispute', key: 'disputeResolution' },
   { alias: 'treasury', key: 'protocolTreasury' },
+  { alias: 'rewards', key: 'stakingRewards' },
 ] as const;
 
 function parseEnvFile(path: string): Record<string, string> {
