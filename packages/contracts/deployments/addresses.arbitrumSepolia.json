@@ -2,12 +2,15 @@
   "chainId": 421614,
   "rpcUrl": "https://sepolia-rollup.arbitrum.io/rpc",
   "contracts": {
-    "token": "0x1e89e050e68e81c32980205ec0db444ede3f4e2c",
-    "nodeRegistry": "0x6d13d0f94ef912c6817a74c632a378997eacf776",
-    "jobEscrow": "0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0",
-    "creditAccount": "0x1e44f2ce56d90f764121b82bc3571b08a1d15522"
+    "token": "0x5532663d4d4560d9923e30fb7230b82edcb25531",
+    "nodeRegistry": "0xe9674474f7450b8fdc88895f7646d0d5fc34e99a",
+    "jobEscrow": "0x9a8be9ad9f980e828757163780aea1ca46303267",
+    "creditAccount": "0xc148e3d305a35876d9df211dbc9ef944ab4c8191",
+    "disputeResolution": "0x546b548bf5401aad0a21e85ce750aad5e58d8013",
+    "protocolTreasury": "0x83acf7b9a8182a6398c1fd80d0e237011e903fa2",
+    "stakingRewards": "0x8fa6ec119ae18f0793d1ec0eb0525e9f6f6b648f"
   },
-  "treasury": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
+  "treasury": "0x83acf7b9a8182a6398c1fd80d0e237011e903fa2",
   "accounts": {
     "deployer": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
     "gateway": "0xc80a8137e57d494b195eda12f74d7df324f5b9d6",
