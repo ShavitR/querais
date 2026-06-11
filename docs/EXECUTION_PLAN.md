@@ -181,15 +181,46 @@ protocol credible as a complete design rather than a demo.
   cases ✅ (12th e2e scenario: slash lands + splits exactly on-chain).
 - **Maps to:** P3.8.
 
-### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M
+### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · split 6A/6B/6C
 - **Goal:** turn on the economic loops (today: fee → a single treasury EOA).
-- **Build:** `ProtocolTreasury.sol` with the **60/20/20** ops/staker/burn split + `receiveFee`;
-  **staking-rewards** distribution to $QAIS stakers; **node incentives** (bootstrap multiplier,
-  uptime pool, first-model bonus) from the Ecosystem Fund. Wire settlement's fee transfer into
-  the Treasury. All on testnet.
-- **Acceptance:** fees split + burn on settlement; stakers accrue rewards; incentive payouts
-  observable on-chain.
-- **Depends on:** Slice 2 (batched settlement is where fees now flow).
+- **Why the split:** as one slice this secretly contains a *new staking contract* (6B) and
+  an *ops program* (6C) hiding behind the treasury work (6A). Same lesson as 2A/2B/2C and
+  3A/3B: ship the small clean core first, keep each PR independently green.
+- **6A — `ProtocolTreasury.sol` + burn (the core; money-moving → confirm design first):**
+  - **Accumulate-and-sweep, NOT per-settlement splitting.** The spec's `receiveFee`
+    (split + burn on every settlement) would add token ops + gas to every `batchSettle`
+    on the hot path. Instead: fees keep arriving as the plain ERC-20 transfers they
+    already are — the treasury *contract address* simply replaces the treasury EOA — and
+    a keeper-called **`distribute()`** on a daily epoch (same timer pattern as the
+    reputation snapshots) executes the **60/20/20** ops/staker/burn split in ONE tx.
+    Same economics, fraction of the gas, zero changes to settlement code.
+  - **Activation is additive + reversible:** deploy the treasury, then the cold admin
+    calls the *existing* `setTreasury` on `JobEscrow` + `CreditAccount` (+ point
+    `DisputeResolution`'s treasury share at it). No redeploys, instant rollback to the
+    EOA if something's wrong. Operator command list per the runbook §7 pattern.
+  - Rates admin-tunable (cold key) with `burn + staker <= 10000` enforced; until 6B
+    ships, the staker share **parks in the treasury under an earmarked counter** (so 6A
+    never blocks on 6B). Pause rule: pausing blocks `distribute()`/`allocate()`; the
+    treasury holds protocol funds only, so no user exit path exists to keep open —
+    state that explicitly in the Pausable test table.
+  - **Acceptance:** fees accrue across settlements; one `distribute()` burns 20% (total
+    supply measurably shrinks), earmarks/pays 20% to stakers, retains 60%; e2e scenario
+    asserts the split conserves to the wei (the 5B conservation-test pattern).
+- **6B — Staking rewards (DECISION REQUIRED: who is a "staker"?):**
+  - **Option 1 (recommended): node-operator stakes in `NodeRegistry`** — rewards
+    pro-rata to active staked nodes. No new staking contract, pays the people securing
+    the network, and doubles as a node incentive. Small surface: a claim function fed
+    by the treasury's staker share.
+  - Option 2: general token-holder staking — a new `StakingPool` + reward accounting;
+    that's a slice of its own and mostly serves the future DAO. If chosen, defer to
+    Phase 5 rather than inflating Stage B.
+- **6C — Node incentive programs (ops, not protocol):** bootstrap multiplier, uptime
+  pool, first-model bonus — paid from the Ecosystem Fund via the treasury's `allocate()`
+  (multisig/cold-key gated), computed gateway-side from data Slice 4 already collects
+  (uptime sessions, longevity, model coverage). Formulas in docs; earned incentives
+  surfaced on `/v1/nodes` + dashboard. No new contract logic.
+- **Depends on:** Slice 2 (fees flow through batched settlement) ✓ and 5B (`slashTo`
+  treasury routing) ✓.
 - **Maps to:** P3.11.
 
 ---
@@ -199,61 +230,262 @@ protocol credible as a complete design rather than a demo.
 Now there's something worth hosting. Stand up the real service and bring the world to it.
 
 ### Slice 7 — Production deploy & infra · Effort L · Risk M
-- **Build:** host the gateway 24/7 (Fly.io / Railway / VPS+k8s) from `packages/gateway/Dockerfile`;
-  TLS + domain; **secrets manager** for the oracle/matching + faucet keys (no plaintext on
-  disk); graceful shutdown; `/ready`/`/health` wired to the platform; a **gas hot-wallet** with
-  low-balance alerting + documented top-up; WS-aware load balancing.
-- **Acceptance:** public HTTPS URL serves `/v1/*`; a node connects over the internet; restart
-  loses no committed data; secrets never on disk in plaintext.
+- **Framing that drives every choice here: the gateway DB is now money.** The pending-debit
+  ledger is unsettled liabilities owed to nodes; bond/gas wallets fund disputes and
+  settlement. Hosting is not "run the Docker image somewhere" — it's custody of that state.
+- **Build:**
+  - Host the gateway 24/7 (Fly.io / Railway / VPS) from `packages/gateway/Dockerfile`;
+    TLS + domain; `/ready`/`/health` wired to the platform.
+  - **Exactly ONE gateway instance.** `node:sqlite` is single-writer, and the flush /
+    snapshot / sampling / pattern / dispute timers all assume a single owner — two
+    instances would double-publish reputation and double-raise disputes (`settledJob`
+    idempotency protects settlement, nothing protects the rest). Horizontal scale stays
+    deferred (P3.6); enforce `max_instances = 1` in platform config and say why in a comment.
+  - **Persistent volume + continuous off-box backup** (Litestream or platform snapshots,
+    RPO ≤ 5 min). A **restore drill is part of the slice**, not an aspiration: kill the
+    instance, restore from backup, prove settled state is intact and any lost-window
+    pending debits are caught by the 2C reconcile-on-revert machinery.
+  - **Graceful shutdown flushes pending debits** — verify the existing shutdown flush
+    completes inside the platform's SIGTERM grace window (size the window to worst-case
+    flush gas latency; document it).
+  - **Secrets manager** for the hot keys (gateway/oracle/faucet) — never plaintext on
+    disk. The cold admin + pauser keys NEVER touch the host (preserve the runbook §7
+    custody model).
+  - **Gas + dispute-bond hot-wallet gauges** with documented top-up procedure (Slice 8
+    wires the paging; this slice exposes the numbers).
+  - **Fold the Sepolia redeploy in here:** the live deployment predates 5B (and 6) —
+    this slice's deploy ships the full current contract set + role wiring (runbook §7b)
+    instead of doing a separate interim redeploy.
+  - Re-run the **live pause drill against the hosted gateway** (runbook drill-log entry).
+- **Acceptance:** public HTTPS URL serves `/v1/*`; a node connects over the internet;
+  `kill -9` + restore-from-backup loses no settled state and ≤ 5 min of pending debits
+  (reconciled automatically); a SIGTERM deploy drains to 0 pending debits; secrets never
+  on disk in plaintext; pause drill executed against production.
 - **Maps to:** P3.1.
 
 ### Slice 8 — Observability & SRE · Effort M · Risk M
+- **Highest-value item: close the manual-review loop.** Slices 4/5 deliberately route
+  cheating signals (rapid reputation decline, Layer-A anomalies, pattern cheaters) to
+  "manual review" — but today a flag is a log line + metric and **nobody is paged**, so a
+  flagged cheater keeps serving until someone happens to read logs. Build: `node_flags` +
+  rapid-decline events → a real notification channel (email / Telegram / Discord webhook,
+  behind a small seam), plus a minimal review queue (gateway endpoint + dashboard section
+  listing open flags, mark-reviewed) — no new infra.
 - **Build:** Prometheus scrape of `/metrics` (latency histograms, per-model counters,
-  settlement success/fail, gas-balance gauge); Grafana dashboards; **alert rules** (gas low,
-  error rate, node-count drop, settlement failures, faucet drained); structured logs →
-  aggregation; a **public status page**; **runbooks**.
-- **Acceptance:** dashboard shows live jobs/nodes/gas; simulated gas-low + node-drop fire
-  alerts; status page reflects an induced outage.
+  settlement success/fail); Grafana dashboards; structured logs → aggregation; a **public
+  status page**; **alert rules** — including the money-shaped ones the catalogue misses:
+  - **oldest-unflushed-debit age** (settlement stuck = nodes silently unpaid),
+  - settlement failure rate, gas wallet balance, **dispute-bond wallet balance**,
+  - faucet distributor balance (QAIS + ETH), Layer-A anomaly rate, open-flag count,
+  - error rate, node-count drop.
+- **Runbooks:** extend the `RUNBOOK_KEYS.md` pattern — every alert links a runbook with
+  copy-pasteable 2am steps; an alert without a runbook doesn't ship.
+- **Acceptance:** dashboard shows live jobs/nodes/gas; simulated gas-low + node-drop +
+  stuck-debit events fire alerts; **an induced Layer-A flag reaches a human channel in
+  < 5 min**; status page reflects an induced outage.
 - **Maps to:** P3.4.
 
 ### Slice 9 — DX, node polish & growth · Effort L · Risk L
 - **Build:** **signed installers / prebuilt release artifacts** (onboarding skips the source
-  build); **model registry** with SHA256 verification; a **local operator dashboard** (earnings,
-  uptime, GPU/VRAM, active jobs); a **signup portal** (wallet/email → API key + starter
-  credits); a **docs site** (quickstart, migration guide, cost calculator); publish the
-  **Python SDK** + **LangChain/LlamaIndex** providers; **ToS + prompt-privacy disclosure +
-  "testnet, no real value"** framing; beta-cohort recruitment + leaderboard campaign.
+  build); **model registry** with SHA256 verification; a **docs site** (quickstart,
+  migration guide, cost calculator); publish the **Python SDK** + **LangChain/LlamaIndex**
+  providers; beta-cohort recruitment + leaderboard campaign. (The signup portal and the
+  operator dashboard moved to **Slice 10** — 10B/10C — so they're built once, inside the
+  real web app, not as throwaway pages here.)
+- **Disclosures must match what the system actually does** (linked before the first key is
+  issued): ToS + "testnet, no real value" framing, and a prompt-privacy disclosure that
+  explicitly states (a) **~5% of prompts are re-run on oracle infrastructure** for
+  verification (Layer-A sampling), (b) prompts/outputs are processed in memory and never
+  persisted — hashes only, (c) verification anomalies can trigger on-chain disputes
+  against providers. Burying (a) would look bad precisely when Layer-A catches its first
+  real cheater in public.
+- **Repo-public gate** (the one-liner installer needs `ShavitR/querais` public, and going
+  public is irreversible — user signs off on a checklist):
+  - mechanical secret scan over **all git history/refs** (gitleaks or trufflehog — the
+    runbook says keys never lived in-repo; verify it, don't assume it),
+  - GitHub secret scanning + push protection enabled; `SECURITY.md` with a disclosure
+    contact; LICENSE chosen,
+  - Slither baseline + `docs/SLITHER_TRIAGE.md` published as-is (honest > polished).
 - **Acceptance:** a dev signs up → streamed completion via the official `openai` client in
   <5 min, no human contact; an operator installs from a release in <5 min with no build;
-  disclosures linked before first key.
+  disclosures linked before first key; history scan clean before the repo flips public.
 - **Maps to:** P3.9 + P3.10 + P3.12 + P3.13.
+
+---
+
+## Stage D — Product & expansion (the chosen direction past the catalogue)
+
+Stages A–C make the protocol complete, hosted, and observable. Stage D is where we chose
+what to focus on next (this section is the decision, not a menu): first make everything
+we built **visible and usable** — the protocol has sessions, reputation dimensions,
+disputes, and burns that no human can currently see (today's "frontend" is a 124-line
+inline-HTML page in `gateway/src/routes/dashboard.ts`, and `apps/dashboard` is an empty
+placeholder) — then finish the **arbitration mechanic**, then buy **scale confidence**,
+then assemble the **mainnet go/no-go package**. Rationale for the order: a real frontend
+multiplies the value of every prior slice and is the adoption bottleneck for the Slice 9
+growth push; arbitration is the last incomplete protocol mechanic; load testing must
+precede any real volume; mainnet is a gate, not a feature.
+
+### Slice 10 — The web app · Effort XL · Risk M · split 10A/10B/10C/10D
+
+One product, four shippable increments. **10A is the foundation; 10B/10C/10D are
+independent once 10A lands** (they can interleave with Slices 6–8 if frontend energy is
+available early — nothing in 10 blocks the protocol track except where noted).
+
+- **10A — Foundation: the real app + auth · Effort M:**
+  - Stand up the actual **Vite + React + TypeScript** app in `apps/dashboard` (the
+    placeholder finally lands). Dark theme consistent with the current page; a small
+    component kit (cards/tables/charts) — no heavyweight UI framework.
+  - **Served by the gateway** at `/` from the app's built `dist/` (same-origin API ⇒ no
+    CORS, no second deployment, one TLS cert — Slice 7's single-instance model holds).
+    The inline-HTML dashboard is **retired in the same PR** (one frontend, not two).
+    CI gains the app's build + typecheck + lint; e2e gains a served-app smoke check.
+  - **Auth model:** sign in with an **API key** (requester) or a **wallet signature**
+    (node operator / requester wallet — sign-in-with-Ethereum style nonce, verified
+    gateway-side; read-only public mode with no sign-in at all). Key never in
+    localStorage in plaintext — session cookie minted by the gateway.
+  - **Data layer:** typed client over the existing `/v1/*` routes (stats, nodes, jobs,
+    usage, sessions, models) + a read-only WS or polling channel for live updates.
+  - **Acceptance:** `pnpm build` produces the app; the gateway serves it at `/`; sign-in
+    works with a key and with a wallet; the old page is gone; green bar includes the app.
+- **10B — Requester console · Effort M:**
+  - **Playground:** streaming chat with model picker + per-request cost readout (the
+    cost calculator, live) — the current prompt box, grown up.
+  - **Keys & usage:** create/list keys (tier visible), usage and quota charts from
+    `/v1/usage` + the `x-querais-quota-*` headers.
+  - **Jobs explorer:** job list + detail (status, tokens, settlement tx → Arbiscan
+    link, venue: batched vs escrow).
+  - **Sessions & credit (the flagship):** deposit → **sign the EIP-712 spending cap in
+    the browser wallet** → watch live cap spend / headroom / pending debits from
+    `GET /v1/sessions`; withdraw-after-notice flow. This makes Slice 2 — the marquee
+    protocol work — actually demoable to a human.
+  - **Acceptance:** a new user goes deposit → session → 10 streamed completions → sees
+    the single batch settlement land, entirely in the UI, no CLI.
+- **10C — Operator console + review queue · Effort M:**
+  - **Node operator view** (wallet-gated to the node's own data): earnings over time,
+    the **5-dimension reputation breakdown** (accuracy/uptime/latency/longevity/stake)
+    with history from `reputation_snapshots`, TTFT trend, stake status, flags raised
+    against the node, dispute notices + counter-evidence deadline countdown (5B's 24h
+    window is unusable without a UI).
+  - **Admin review queue** (admin-gated): open `node_flags` with verdict context from
+    `layer_a_checks` (hashes + scores, never prompt text — privacy rule), mark-reviewed,
+    and a **raise-dispute action** for confirmed cheaters. This is the UI for Slice 8's
+    notification loop — if 8 hasn't landed yet, the queue endpoint is built here and 8
+    only wires the paging.
+  - **Acceptance:** an operator sees why their score moved without reading the DB; an
+    admin goes flag → evidence → reviewed/disputed entirely in the UI.
+- **10D — Public face: network explorer + landing · Effort S:**
+  - Unauthenticated: live network stats, **node leaderboard** (composite + dimensions —
+    also the Slice 9 leaderboard campaign artifact), recent-jobs ticker (job hashes +
+    models only — privacy), **token economics panel** (fees collected, burned, staker
+    pool — reads the 6A treasury; render zeros gracefully if 6A isn't live), gateway
+    status indicator, docs links, the **"testnet, no real value" banner** on every page.
+  - This page is the destination the Slice 9 growth campaign points at.
+  - **Acceptance:** a stranger with no key understands what the network is doing in 30
+    seconds; the leaderboard updates as reputation snapshots land.
+- **Depends on:** nothing hard (10A can start any time after Stage B); 10D's token panel
+  prefers 6A first; 10C's review queue coordinates with Slice 8.
+- **Maps to:** P3.10 (portal) + P3.9 (operator UX) + the dashboard placeholder.
+
+### Slice 11 — Arbitration completeness (STANDARD track) · Effort L · Risk H
+- **Goal:** finish the last incomplete protocol mechanic. 5B shipped the FAST track
+  (oracle-only `autoResolve`); contested or high-value disputes still have no path —
+  the spec's STANDARD/ESCALATED tracks (`querais_smart_contracts.md` §5) are unbuilt.
+- **Build (money-moving contract work → design sign-off first, standing rule):**
+  - **Arbitrator registration + staking** in `NodeRegistry` or a small
+    `ArbitratorPool` (stake to join, slashed for provably-wrong votes).
+  - **Commit-reveal voting** on `DisputeResolution` (parallel mappings keyed by jobId —
+    the spec's documented Solidity constraint), panel selection, voting deadlines with
+    a default-resolution path so a silent panel can never strand a dispute (the 5B
+    `reclaimBond` principle, extended).
+  - **Rewards for being CORRECT** (oracle-verified after the fact), not for siding with
+    the majority — the design docs are explicit on this.
+  - Track routing: counter-evidence (5B) moves FAST → STANDARD; job value moves
+    STANDARD → ESCALATED (larger panel).
+  - **UI ships in the same slice** (10C extension: arbitrator view — assigned disputes,
+    commit, reveal, outcomes). Post-Slice-10 rule: a protocol feature isn't done until
+    a human can use it.
+- **Acceptance:** a contested dispute (counter-evidence submitted) reaches a panel,
+  commit-reveal resolves it, rewards/slashes conserve to the wei (e2e); a panel that
+  never votes cannot trap the bond or the defendant's stake.
+- **Maps to:** the Phase 5 arbitration deferral, pulled in deliberately.
+
+### Slice 12 — Scale confidence (load, not architecture) · Effort M · Risk M
+- **Goal:** know the ceiling before the growth push finds it for us. We deliberately
+  deferred horizontal scale (P3.6); this slice buys the data that says whether that
+  deferral holds.
+- **Build:** a **load-test harness** (k6 or artillery + a fleet of mock nodes from the
+  e2e harness) run against a staging gateway: concurrent streams, sessions/batch-flush
+  under load, WS fan-in at the flood-cap boundary, SQLite write contention; capture
+  ceilings as numbers in a **capacity runbook** (requests/s, concurrent streams, nodes,
+  flush latency at depth). Fix the cheap wins it surfaces (backpressure, pool tuning,
+  query indexes). **Decision gate at the end:** if SQLite or the single instance is the
+  binding constraint at realistic load, scope the Postgres migration (the repository
+  seam from Slice 1 exists for exactly this) — otherwise re-affirm the deferral with
+  evidence.
+- **Acceptance:** documented ceilings from real runs; alerts (Slice 8) tuned to fire
+  *before* the measured cliffs; a written keep/migrate decision on SQLite with numbers
+  attached.
+- **Maps to:** P3.6, resolved with data instead of architecture.
+
+### Slice 13 — Mainnet go/no-go package · Effort L · Risk H
+- **Goal:** everything before real value moves. This is a **gate, not a feature** — the
+  output is a decision package for the user, who makes the call (mainnet/TGE itself
+  stays out of scope until then).
+- **Build:** freeze the contract set; **external audit** prep + engagement (Slither
+  baseline, threat model refresh, the 5B/6A conservation invariants written up as the
+  audit's starting claims); an **upgrade/migration rehearsal** on testnet (the
+  Transparent-Proxy story has never been exercised end-to-end); economic-parameter
+  review (bond sizes, slash percentages, 60/20/20 — testnet data informs real-value
+  numbers); key-custody upgrade plan (cold EOA → multisig); incident-response drill
+  against the full stack; a **go/no-go checklist** with every open risk named.
+- **Acceptance:** an auditor can start from the package without a walkthrough call; the
+  upgrade rehearsal succeeded on testnet; the user has a one-document basis to decide
+  mainnet timing.
+- **Maps to:** the mainnet/TGE deferral, made into an explicit gate.
 
 ---
 
 ## Deferred for now (and why)
 
-- **Redis / horizontal scale (P3.6)** — premature. One gateway handles far more than current
-  load; don't distribute pool state until there's load to distribute. Revisit inside Stage C
-  only if load testing demands it.
-- **Full `DisputeResolution` arbitration panel** — only the challenge *hook* lands (Slice 5).
-- **Phase 4/5 entirely** — libp2p mesh, on-chain sealed-bid auction, decentralized oracle,
-  TEE prompt privacy, mainnet/TGE, DAO. Out of scope; removing the trusted gateway is the
-  whole point of Phase 4 and is a separate effort.
+- **Redis / horizontal scale (P3.6)** — premature, and now also *unsafe by default*: the
+  gateway's timers (flush/snapshot/sampling/patterns/disputes) assume a single owner
+  (Slice 7). One gateway handles far more than current load; don't distribute pool state
+  until there's load to distribute. Revisit inside Stage C only if load testing demands it.
+- **Full `DisputeResolution` arbitration panel** (commit-reveal voting, panel selection) —
+  only the FAST-track challenge *hook* landed (5B). **Now scheduled: Slice 11.**
+- **General token-holder staking** (`StakingPool`) — only if 6B's decision goes that way;
+  otherwise the staker share pays NodeRegistry stakers and a holder pool waits for the DAO.
+- **Per-settlement fee splitting** (the spec's `receiveFee`) — rejected on gas grounds in
+  favor of accumulate-and-sweep (Slice 6A). Revisit only if epoch-level burns ever matter.
+- **Phase 4 entirely** — libp2p mesh, on-chain sealed-bid auction, decentralized oracle,
+  TEE prompt privacy, DAO. Out of scope; removing the trusted gateway is the whole point
+  of Phase 4 and is a separate effort. (The Phase 5 arbitration panel became Slice 11;
+  mainnet/TGE became the Slice 13 gate.)
 
 ## Sequencing summary
 
 ```
-Stage A (foundation)      0 CI/Slither → 1 Persistence → 2 Batched settlement ⭐ → 3 Harden surface
-Stage B (protocol depth)  4 Reputation → 5 Layer-A verify → 6 Tokenomics
-Stage C (operate)         7 Deploy → 8 Observability → 9 DX/node-polish/growth
+Stage A (foundation)      ✅ 0 CI/Slither → ✅ 1 Persistence → ✅ 2 Batched settlement ⭐ → ✅ 3 Harden surface
+Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ⬜ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
+Stage C (operate)         ⬜ 7 Deploy (DB-as-money) → ⬜ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
+Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D public explorer)
+                          ⬜ 11 Arbitration (STANDARD track) → ⬜ 12 Scale confidence → ⬜ 13 Mainnet go/no-go gate
 ```
 
 Each stage ends on the standard gate (build/typecheck/lint/unit/e2e) plus its slices'
 acceptance criteria. Don't open the URL widely until Stage A is fully done; don't promote
 volume until Stage B is done; Stage C is the public-launch push.
 
-## First step on approval
+## Next step on approval
 
-**Slice 0 — CI + Slither.** It's robust to everything that follows, it's small, and it gates
-the contract work in Slice 2. Concretely: add `.github/workflows/ci.yml` running the existing
-green-bar commands headless, wire in Slither + coverage, and triage the first findings.
+**Slice 6A — ProtocolTreasury + burn.** Money-moving contract work, so per the standing
+rule it needs the user's design sign-off first. The two decisions to confirm before
+building:
+
+1. **Accumulate-and-sweep** (daily `distribute()` epoch) instead of the spec's
+   per-settlement `receiveFee` split — same 60/20/20 economics, far less gas, zero hot-path
+   changes. (Recommended: yes.)
+2. **Who is a "staker"** for the 20% staker share (6B)? Recommended: NodeRegistry
+   node stakes (Option 1) — no new contract, rewards the network's actual security. The
+   6A treasury earmarks the share either way, so 6A can start once decision 1 is approved.
