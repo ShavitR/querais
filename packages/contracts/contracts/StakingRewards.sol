@@ -84,18 +84,25 @@ contract StakingRewards is AccessControl, Pausable, ReentrancyGuard {
         uint256 n = registry.activeNodeCount();
         if (n == 0) revert NoActiveNodes(); // funds simply wait for the next epoch
 
+        // Read phase: collect the active set + stakes (registry views), THEN write —
+        // strict CEI even though the only external calls are reads of our own registry.
+        address[] memory wallets = new address[](n);
+        uint256[] memory stakes = new uint256[](n);
         uint256 totalActiveStake = 0;
         for (uint256 i; i < n; ++i) {
-            totalActiveStake += registry.getNode(registry.activeNodeAt(i)).stakeAmount;
+            address wallet = registry.activeNodeAt(i);
+            uint256 stake = registry.getNode(wallet).stakeAmount;
+            wallets[i] = wallet;
+            stakes[i] = stake;
+            totalActiveStake += stake;
         }
         if (totalActiveStake == 0) revert NoActiveNodes();
 
         uint256 credited = 0;
         for (uint256 i; i < n; ++i) {
-            address wallet = registry.activeNodeAt(i);
-            uint256 share = (pending * registry.getNode(wallet).stakeAmount) / totalActiveStake;
+            uint256 share = (pending * stakes[i]) / totalActiveStake;
             if (share > 0) {
-                claimable[wallet] += share;
+                claimable[wallets[i]] += share;
                 credited += share;
             }
         }
