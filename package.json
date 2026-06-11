@@ -27,6 +27,7 @@
     "live:sepolia": "pnpm --filter @querais/test-e2e live:sepolia",
     "gateway:sepolia": "pnpm --filter @querais/test-e2e gateway:sepolia",
     "ops:pause": "pnpm --filter @querais/contracts pause",
+    "ops:allocate": "pnpm --filter @querais/contracts allocate",
     "prepare:vm-node": "pnpm --filter @querais/test-e2e prepare:vm-node",
     "demo": "pnpm --filter @querais/test-e2e demo"
   },

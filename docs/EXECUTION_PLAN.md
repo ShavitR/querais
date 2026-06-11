@@ -181,7 +181,7 @@ protocol credible as a complete design rather than a demo.
   cases ✅ (12th e2e scenario: slash lands + splits exactly on-chain).
 - **Maps to:** P3.8.
 
-### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · ◐ 6A #33 · 6B #34 DONE · 6C next
+### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · ✅ DONE (6A #33 · 6B #34 · 6C #35)
 - **Goal:** turn on the economic loops (today: fee → a single treasury EOA).
 - **Why the split:** as one slice this secretly contains a *new staking contract* (6B) and
   an *ops program* (6C) hiding behind the treasury work (6A). Same lesson as 2A/2B/2C and
@@ -220,11 +220,15 @@ protocol credible as a complete design rather than a demo.
   registry reads per epoch (Merkle distributor is the deferred scale-out path). The
   gateway keeper tick runs treasury sweep then epoch credit in order; `/v1/nodes`
   surfaces `claimableRewardsWei`.
-- **6C — Node incentive programs (ops, not protocol):** bootstrap multiplier, uptime
-  pool, first-model bonus — paid from the Ecosystem Fund via the treasury's `allocate()`
-  (multisig/cold-key gated), computed gateway-side from data Slice 4 already collects
-  (uptime sessions, longevity, model coverage). Formulas in docs; earned incentives
-  surfaced on `/v1/nodes` + dashboard. No new contract logic.
+- **6C — Node incentive programs (BUILT #35; ops, not protocol):** the gateway COMPUTES
+  payout recommendations (`gateway/src/incentives.ts` + admin-gated
+  `GET /v1/admin/incentives`); the OPERATOR executes them from the cold key via
+  `pnpm ops:allocate` (`scripts/allocate.ts`). Three programs per the specs — uptime
+  pool (equal split among ≥95%-uptime actives × tenure multiplier), first-model bonus
+  (earliest verified provider per model, from job rows), bootstrap launch bonus
+  (earliest N actives with ≥30d tenure, go-to-market's 5,000 QAIS). **Paid-state is
+  derived from on-chain `Allocated` purposes** (canonical strings) — no payout table to
+  drift. Formulas + operator flow: `docs/INCENTIVES.md`. No new contract logic.
 - **Depends on:** Slice 2 (fees flow through batched settlement) ✓ and 5B (`slashTo`
   treasury routing) ✓.
 - **Maps to:** P3.11.

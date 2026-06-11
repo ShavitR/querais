@@ -1,4 +1,5 @@
 import { parseEther, type Address, type Hex } from 'viem';
+import type { IncentiveConfig } from './incentives.js';
 
 /** Daily budgets for one API-key quota tier. */
 export interface QuotaTier {
@@ -89,6 +90,9 @@ export function resolveLayerA(partial?: Partial<LayerAConfig>): LayerAConfig {
   return { ...LAYER_A_DEFAULTS, ...partial };
 }
 
+// Slice 6C incentive knobs live in gateway/src/incentives.ts (INCENTIVE_DEFAULTS);
+// the env overrides are parsed here alongside the other groups.
+
 export interface GatewayConfig {
   port: number;
   /** Deployment to load (addresses.<network>.json): 'localhost' | 'arbitrumSepolia' | … */
@@ -135,6 +139,8 @@ export interface GatewayConfig {
   hardening?: Partial<HardeningConfig>;
   /** Slice 5: Layer-A oracle overrides. Unset fields fall back to LAYER_A_DEFAULTS. */
   layerA?: Partial<LayerAConfig>;
+  /** Slice 6C: incentive-program overrides. Unset fields fall back to INCENTIVE_DEFAULTS. */
+  incentives?: Partial<IncentiveConfig>;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -209,10 +215,26 @@ function layerAFromEnv(env: NodeJS.ProcessEnv): Partial<LayerAConfig> {
   return out;
 }
 
+/** Read any GATEWAY_INCENTIVE_* overrides present in the environment. */
+function incentivesFromEnv(env: NodeJS.ProcessEnv): Partial<IncentiveConfig> {
+  const out: Record<string, number> = {};
+  const num = (key: string, field: string) => {
+    if (env[key] !== undefined && env[key] !== '') out[field] = Number(env[key]);
+  };
+  num('GATEWAY_INCENTIVE_UPTIME_POOL_QAIS', 'uptimePoolQais');
+  num('GATEWAY_INCENTIVE_UPTIME_THRESHOLD_BPS', 'uptimeThresholdBps');
+  num('GATEWAY_INCENTIVE_FIRST_MODEL_QAIS', 'firstModelBonusQais');
+  num('GATEWAY_INCENTIVE_BOOTSTRAP_QAIS', 'bootstrapBonusQais');
+  num('GATEWAY_INCENTIVE_BOOTSTRAP_MAX_NODES', 'bootstrapMaxNodes');
+  num('GATEWAY_INCENTIVE_BOOTSTRAP_MIN_TENURE_DAYS', 'bootstrapMinTenureDays');
+  return out;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   return {
     hardening: hardeningFromEnv(env),
     layerA: layerAFromEnv(env),
+    incentives: incentivesFromEnv(env),
     port: Number(env.GATEWAY_PORT ?? '8787'),
     network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),

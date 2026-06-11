@@ -362,4 +362,52 @@ export class ChainClient {
     }
     return address;
   }
+
+  // ── Incentive recommendation reads (Slice 6C — ops, no writes) ───────────────
+
+  /** Enumerate the registry's active node wallets. */
+  async activeNodeWallets(): Promise<Address[]> {
+    const count = await this.publicClient.readContract({
+      address: this.deployment.contracts.nodeRegistry,
+      abi: nodeRegistryAbi,
+      functionName: 'activeNodeCount',
+    });
+    const wallets: Address[] = [];
+    for (let i = 0n; i < count; i++) {
+      wallets.push(
+        await this.publicClient.readContract({
+          address: this.deployment.contracts.nodeRegistry,
+          abi: nodeRegistryAbi,
+          functionName: 'activeNodeAt',
+          args: [i],
+        }),
+      );
+    }
+    return wallets;
+  }
+
+  /** Every allocate() purpose string ever paid — the one-time-bonus dedup ledger
+   *  (derived from chain events; the gateway keeps no payout table). */
+  async allocatedPurposes(): Promise<string[]> {
+    const treasury = this.deployment.contracts.protocolTreasury;
+    if (!treasury) return [];
+    const events = await this.publicClient.getContractEvents({
+      address: treasury,
+      abi: protocolTreasuryAbi,
+      eventName: 'Allocated',
+      fromBlock: 'earliest',
+    });
+    return events.map((e) => (e.args as { purpose?: string }).purpose ?? '');
+  }
+
+  /** The treasury's spendable ops share (allocate() reverts beyond this). */
+  treasuryOpsRetained(): Promise<bigint> {
+    const treasury = this.deployment.contracts.protocolTreasury;
+    if (!treasury) return Promise.resolve(0n);
+    return this.publicClient.readContract({
+      address: treasury,
+      abi: protocolTreasuryAbi,
+      functionName: 'opsRetainedWei',
+    });
+  }
 }

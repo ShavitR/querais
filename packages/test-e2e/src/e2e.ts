@@ -1025,6 +1025,123 @@ export async function runStakingRewardsCase(): Promise<void> {
   }
 }
 
+/** Run the REAL ops allocate script (cold-key payout) as a child process. */
+function runAllocateScript(
+  recipient: string,
+  amountQais: string,
+  purpose: string,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        'scripts/allocate.ts',
+        '--network',
+        'localhost',
+        '--recipient',
+        recipient,
+        '--amount',
+        amountQais,
+        '--purpose',
+        purpose,
+      ],
+      {
+        cwd: join(repoRoot(), 'packages', 'contracts'),
+        shell: true,
+        stdio: 'inherit',
+        // On localhost the treasury admin is the deployer key, NOT the gateway key —
+        // rehearses the production posture (payouts need the cold key).
+        env: { ...process.env, ADMIN_PRIVATE_KEY: KEYS.deployer },
+      },
+    );
+    proc.on('exit', (code) => resolve(code ?? 1));
+    proc.on('error', reject);
+  });
+}
+
+/**
+ * Node incentives (Slice 6C): the gateway COMPUTES the payout recommendation
+ * (first-model bonus here) from telemetry + chain state; the OPERATOR executes it from
+ * the cold key with the real ops:allocate script; the on-chain Allocated purpose then
+ * dedups the bonus out of the next recommendation. Read-only gateway, cold-key money.
+ */
+export async function runIncentivesCase(): Promise<void> {
+  const h = await startHarness({
+    treasuryDistributeIntervalSeconds: 2, // ops budget needs a sweep to exist
+    incentives: { uptimePoolQais: 0, firstModelBonusQais: 25, bootstrapMinTenureDays: 30 },
+  });
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
+    const provider = h.deployment.accounts.node;
+
+    // One verified job makes the node the first provider for mock-model.
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'earn the first-model bonus' }],
+      max_tokens: 30,
+    });
+    assert.equal(res.status, 200);
+
+    // Give the treasury an ops budget: transfer "fees", let the keeper sweep (60% ops).
+    const deployerWallet = makeWalletClient(
+      h.deployment.rpcUrl,
+      KEYS.deployer,
+      h.deployment.chainId,
+    );
+    const fundHash = await deployerWallet.writeContract({
+      address: h.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'transfer',
+      args: [h.deployment.contracts.protocolTreasury!, parseEther('100')],
+    });
+    await pub.waitForTransactionReceipt({ hash: fundHash });
+
+    const admin = { headers: { 'x-admin-token': ADMIN_TOKEN } };
+    interface Rec {
+      payouts: Array<{ recipient: string; amountQais: string; purpose: string; program: string }>;
+      fundsSufficient: boolean;
+      opsSpendableWei: string;
+    }
+    // Wait for the sweep to produce a spendable ops budget covering the bonus.
+    const deadline = Date.now() + 20_000;
+    let rec: Rec;
+    for (;;) {
+      rec = (await (await fetch(`${h.baseUrl}/v1/admin/incentives`, admin)).json()) as Rec;
+      if (BigInt(rec.opsSpendableWei) >= parseEther('25') && rec.fundsSufficient) break;
+      assert.ok(Date.now() < deadline, 'timed out waiting for a spendable ops budget');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    const bonus = rec.payouts.find((p) => p.program === 'first-model');
+    assert.ok(bonus, 'the first-model bonus is recommended');
+    assert.equal(bonus!.recipient.toLowerCase(), provider.toLowerCase());
+    assert.equal(bonus!.amountQais, '25');
+    assert.match(bonus!.purpose, /^incentive:first-model:mock-model$/);
+    // The endpoint is admin-gated.
+    const unauthorized = await fetch(`${h.baseUrl}/v1/admin/incentives`);
+    assert.equal(unauthorized.status, 401, 'incentives endpoint requires the admin token');
+
+    // The OPERATOR pays the line with the real cold-key script.
+    const b0 = await balanceOf(pub, h.deployment, provider);
+    const code = await runAllocateScript(bonus!.recipient, bonus!.amountQais, bonus!.purpose);
+    assert.equal(code, 0, 'allocate script must exit 0');
+    const b1 = await balanceOf(pub, h.deployment, provider);
+    assert.equal(b1 - b0, parseEther('25'), 'the bonus landed in the operator wallet');
+
+    // The on-chain Allocated purpose dedups the bonus out of the next recommendation.
+    const after = (await (await fetch(`${h.baseUrl}/v1/admin/incentives`, admin)).json()) as Rec;
+    assert.equal(
+      after.payouts.filter((p) => p.program === 'first-model').length,
+      0,
+      'a paid bonus never recommends again',
+    );
+  } finally {
+    await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';

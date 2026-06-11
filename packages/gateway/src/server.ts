@@ -36,6 +36,8 @@ import { NodeFlagStore } from './db/node-flags.js';
 import { LayerASampler, OllamaOracle, type OracleInference } from './oracle/layer-a.js';
 import { OllamaEmbeddings, type EmbeddingProvider } from './oracle/embeddings.js';
 import { PatternDetector } from './oracle/patterns.js';
+import { IncentiveService, resolveIncentives } from './incentives.js';
+import { registerIncentives } from './routes/incentives.js';
 import { BatchedSettlement } from './batched-settlement.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
@@ -150,6 +152,14 @@ export async function buildGateway(
         )
       : undefined;
   const patterns = new PatternDetector(db, nodeFlags, logger);
+  // Slice 6C: read-only incentive recommendations (the operator pays via ops:allocate).
+  const incentives = new IncentiveService(
+    chain,
+    nodeSessions,
+    jobs,
+    resolveIncentives(opts.config.incentives),
+    logger,
+  );
 
   const dispatcher = new Dispatcher(
     opts.config,
@@ -218,6 +228,7 @@ export async function buildGateway(
     reputation,
     nodeFlags,
     layerAChecks,
+    incentives,
     hardening,
     quota,
     logger,
@@ -325,6 +336,7 @@ export async function buildGateway(
   registerStats(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);
+  registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);
 
   return { app, deps };

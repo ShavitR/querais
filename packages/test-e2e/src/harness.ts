@@ -12,6 +12,7 @@ import {
   type BuildOptions,
   type GatewayConfig,
   type HardeningConfig,
+  type IncentiveConfig,
   type LayerAConfig,
   type Settlement,
 } from '@querais/gateway';
@@ -57,6 +58,8 @@ export interface HarnessOptions {
   reputationSnapshotIntervalSeconds?: number;
   /** Slice 6A: treasury distribute() sweep interval (default daily; tests shrink it). */
   treasuryDistributeIntervalSeconds?: number;
+  /** Slice 6C: incentive-program knobs (budgets/thresholds). */
+  incentives?: Partial<IncentiveConfig>;
   /** Slice 5: Layer-A knobs (sample rate, oracle runs, pattern sweep cadence). */
   layerAConfig?: Partial<LayerAConfig>;
   /** Slice 5: injected oracle inference + embeddings (sampler off when absent). */
@@ -103,6 +106,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     reputationSnapshotIntervalSeconds: opts.reputationSnapshotIntervalSeconds ?? 86_400,
     treasuryDistributeIntervalSeconds: opts.treasuryDistributeIntervalSeconds ?? 86_400,
     ...(opts.layerAConfig ? { layerA: opts.layerAConfig } : {}),
+    ...(opts.incentives ? { incentives: opts.incentives } : {}),
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
