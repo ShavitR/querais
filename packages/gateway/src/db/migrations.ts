@@ -132,6 +132,14 @@ const MIGRATIONS: readonly string[] = [
      created_at INTEGER NOT NULL
    );
    CREATE INDEX idx_node_flags_wallet ON node_flags(wallet, created_at);`,
+
+  // 7 — Slice 8 review queue: a flag is a human's to-do until someone marks it
+  // reviewed. Additive-only (live-volume safe); NULL reviewed_at = open. The partial
+  // index keeps the open-queue scan O(open), not O(history).
+  `ALTER TABLE node_flags ADD COLUMN reviewed_at INTEGER;
+   ALTER TABLE node_flags ADD COLUMN reviewed_by TEXT;
+   ALTER TABLE node_flags ADD COLUMN review_note TEXT;
+   CREATE INDEX idx_node_flags_open ON node_flags(reviewed_at) WHERE reviewed_at IS NULL;`,
 ];
 
 /** Apply any migrations the database hasn't seen yet. Idempotent and safe to call on boot. */
