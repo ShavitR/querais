@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
 import type { WebSocket } from 'ws';
+import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
 import { renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
@@ -118,6 +119,21 @@ export async function buildGateway(
     (layerACfg.ollamaUrl
       ? new OllamaEmbeddings(layerACfg.ollamaUrl, layerACfg.embedModel)
       : undefined);
+  // Slice 5B challenge hook: anomalies raise + auto-resolve a FAST-track dispute when
+  // enabled AND this deployment has the contract (pre-5B manifests: flags only).
+  const disputeRaiser =
+    layerACfg.disputeOnAnomaly && chain.disputeContract()
+      ? {
+          raiseAndAutoResolve: async (jobId: Hex, defendant: Address, evidenceHash: Hex) => {
+            await chain.ensureDisputeAllowance();
+            await chain.raiseDispute(jobId, defendant, evidenceHash);
+            await chain.autoResolveDispute(jobId, true);
+          },
+        }
+      : undefined;
+  if (layerACfg.disputeOnAnomaly && !chain.disputeContract()) {
+    logger.warn('GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY set but no DisputeResolution deployed');
+  }
   const layerA =
     oracleInference && oracleEmbeddings
       ? new LayerASampler(
@@ -129,6 +145,8 @@ export async function buildGateway(
           pool,
           logger,
           { sampleRate: layerACfg.sampleRate, oracleRuns: layerACfg.oracleRuns },
+          undefined,
+          disputeRaiser,
         )
       : undefined;
   const patterns = new PatternDetector(db, nodeFlags, logger);

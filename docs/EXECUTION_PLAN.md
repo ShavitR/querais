@@ -149,7 +149,7 @@ protocol credible as a complete design rather than a demo.
   scenarios); scores snapshot on-chain on the daily epoch timer; matching uses the composite.
 - **Maps to:** P3.7.
 
-### Slice 5 — Verification depth (Layer-A) · Effort L · Risk H · ◐ 5A DONE (#30) · 5B pending
+### Slice 5 — Verification depth (Layer-A) · Effort L · Risk H · ✅ DONE (5A #30 · 5B #31)
 - **Goal:** catch cheating beyond Layer-B, since strangers run nodes.
 - **Built — 5A (gateway oracle, no contract changes):** **Layer-A semantic sampling**
   (`gateway/src/oracle/`) — re-run ~5% of settled jobs (`GATEWAY_LAYER_A_SAMPLE_RATE`) on
@@ -164,12 +164,21 @@ protocol credible as a complete design rather than a demo.
   (privacy) — hashes only. Ollama-backed `OracleInference`/`EmbeddingProvider` impls for
   production; injectable seams for tests/e2e. Migration 6. 11th e2e scenario: a
   canned-output cheater passes Layer-B, sampling + patterns catch it.
-- **Pending — 5B (challenge hook, NEEDS DESIGN SIGN-OFF — money-moving contract work):**
-  minimal `DisputeResolution.sol` (`raiseDispute` + bond, `submitCounterEvidence`,
-  oracle-only FAST-track `autoResolve` with the 50/30/20 slash split) + `JobEscrow`
-  dispute wiring. Full arbitration panel stays Phase 5.
-- **Acceptance:** a plausible-but-wrong node is flagged by sampling ✅; a pattern-cheater
-  is caught ✅; a dispute can be raised and auto-resolved for clear cases (5B).
+- **Built — 5B (challenge hook, design signed off):** **`DisputeResolution.sol`** —
+  `raiseDispute(jobId, defendant, evidenceHash)` with a 50-QAIS challenger bond,
+  `submitCounterEvidence` (24h window, NOT pausable — a pause can't silence a defense),
+  oracle-only FAST-track `autoResolve`: challenger wins → 20%-of-stake slash routed
+  **50% burn / 30% challenger / 20% treasury** via the new `NodeRegistry.slashTo`
+  (SLASHER-gated proceeds routing) + bond returned; provider wins → bond burned.
+  `reclaimBond` escape hatch after 30d (pause never traps funds). Disputes act on STAKE,
+  not escrow — Layer-A samples settled jobs, so payment already moved; **no JobEscrow
+  changes** (deviation from the original sketch, explained in the PR). Gateway: anomalies
+  optionally raise + auto-resolve on-chain (`GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY`,
+  default off; auto-disabled on pre-5B manifests). Sepolia activation = operator
+  redeploy (runbook §7b). Full arbitration panel stays Phase 5.
+- **Acceptance (met):** a plausible-but-wrong node is flagged by sampling ✅; a
+  pattern-cheater is caught ✅; a dispute can be raised and auto-resolved for clear
+  cases ✅ (12th e2e scenario: slash lands + splits exactly on-chain).
 - **Maps to:** P3.8.
 
 ### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M

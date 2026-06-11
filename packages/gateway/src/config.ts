@@ -72,6 +72,9 @@ export interface LayerAConfig {
   ollamaUrl?: string;
   /** Embedding model for similarity scoring. */
   embedModel: string;
+  /** Slice 5B: also raise + auto-resolve an on-chain dispute on every anomaly
+   *  (needs a DisputeResolution deployment + bond funds; flags alone otherwise). */
+  disputeOnAnomaly: boolean;
 }
 
 export const LAYER_A_DEFAULTS: LayerAConfig = {
@@ -79,6 +82,7 @@ export const LAYER_A_DEFAULTS: LayerAConfig = {
   oracleRuns: 2,
   patternScanIntervalSeconds: 3600,
   embedModel: 'nomic-embed-text',
+  disputeOnAnomaly: false,
 };
 
 export function resolveLayerA(partial?: Partial<LayerAConfig>): LayerAConfig {
@@ -196,6 +200,9 @@ function layerAFromEnv(env: NodeJS.ProcessEnv): Partial<LayerAConfig> {
   }
   if (env.GATEWAY_ORACLE_OLLAMA_URL) out.ollamaUrl = env.GATEWAY_ORACLE_OLLAMA_URL;
   if (env.GATEWAY_ORACLE_EMBED_MODEL) out.embedModel = env.GATEWAY_ORACLE_EMBED_MODEL;
+  if (env.GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY) {
+    out.disputeOnAnomaly = env.GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY === 'true';
+  }
   return out;
 }
 

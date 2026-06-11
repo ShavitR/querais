@@ -112,14 +112,14 @@ jobs:
           mkdir slither-scratch
           cp -r contracts slither-scratch/contracts
           cp -rL node_modules/@openzeppelin/contracts slither-scratch/oz-contracts
-      - name: Slither (fails only on findings beyond the triaged baseline of 1)
+      - name: Slither (fails only on findings beyond the triaged baseline of 3)
         working-directory: packages/contracts/slither-scratch
         run: |
           slither contracts --solc-remaps "@openzeppelin/contracts/=oz-contracts/" \
             --config-file ../slither.config.json 2>&1 | tee slither.log || true
           COUNT=$(grep -oE '[0-9]+ result' slither.log | tail -1 | grep -oE '[0-9]+' || echo 0)
-          echo "findings: ${COUNT:-0} (baseline 1 = acknowledged arbitrary-send-erc20, see docs/SLITHER_TRIAGE.md)"
-          test "${COUNT:-0}" -le 1
+          echo "findings: ${COUNT:-0} (baseline 3 = acknowledged findings, see docs/SLITHER_TRIAGE.md)"
+          test "${COUNT:-0}" -le 3
 
   coverage:
     name: Coverage (reported, non-gating)

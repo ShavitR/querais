@@ -66,6 +66,13 @@ async function main(): Promise<void> {
     admin,
   ]);
   console.log('CreditAccount   ->', creditAccount.address);
+  const dispute = await viem.deployContract('DisputeResolution', [
+    token.address,
+    registry.address,
+    treasury,
+    admin,
+  ]);
+  console.log('DisputeResolution ->', dispute.address);
 
   // Grant the gateway its operational roles.
   const ORACLE_ROLE = await registry.read.ORACLE_ROLE();
@@ -73,13 +80,18 @@ async function main(): Promise<void> {
   const MATCHING_ENGINE_ROLE = await escrow.read.MATCHING_ENGINE_ROLE();
   const ESCROW_ORACLE_ROLE = await escrow.read.ORACLE_ROLE();
   const SETTLER_ROLE = await creditAccount.read.SETTLER_ROLE();
+  const DISPUTE_ORACLE_ROLE = await dispute.read.ORACLE_ROLE();
   await registry.write.grantRole([ORACLE_ROLE, gatewayAddr]);
   await registry.write.grantRole([SLASHER_ROLE, gatewayAddr]);
   await escrow.write.grantRole([ESCROW_ORACLE_ROLE, gatewayAddr]);
   await escrow.write.grantRole([MATCHING_ENGINE_ROLE, gatewayAddr]);
   await creditAccount.write.grantRole([SETTLER_ROLE, gatewayAddr]);
+  // Slice 5B: the gateway oracle resolves FAST-track disputes; the dispute contract
+  // needs SLASHER on the registry to route slashed stake through its 50/30/20 split.
+  await dispute.write.grantRole([DISPUTE_ORACLE_ROLE, gatewayAddr]);
+  await registry.write.grantRole([SLASHER_ROLE, dispute.address]);
   console.log(
-    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit) to gateway',
+    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit), ORACLE (dispute) to gateway; SLASHER (registry) to DisputeResolution',
   );
 
   // Fund test node/requester with QAIS where we know their addresses.
@@ -90,6 +102,11 @@ async function main(): Promise<void> {
   if (requesterAddr && requesterAddr !== admin) {
     await token.write.transfer([requesterAddr, parseEther('10000')]);
     console.log(`Funded requester ${requesterAddr} with 10000 QAIS`);
+  }
+  // The gateway posts the 50-QAIS challenger bond when it disputes a sampled job.
+  if (isLocal && gatewayAddr !== admin) {
+    await token.write.transfer([gatewayAddr, parseEther('1000')]);
+    console.log(`Funded gateway ${gatewayAddr} with 1000 QAIS (dispute bonds)`);
   }
 
   const chainId = await publicClient.getChainId();
@@ -103,6 +120,7 @@ async function main(): Promise<void> {
       nodeRegistry: registry.address,
       jobEscrow: escrow.address,
       creditAccount: creditAccount.address,
+      disputeResolution: dispute.address,
     },
     treasury,
     accounts: {
@@ -129,6 +147,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `  hardhat verify --network ${networkName} ${creditAccount.address} ${token.address} ${treasury} ${admin}`,
+    );
+    console.log(
+      `  hardhat verify --network ${networkName} ${dispute.address} ${token.address} ${registry.address} ${treasury} ${admin}`,
     );
   }
 }

@@ -19,6 +19,7 @@ import {
   runPauseDrillCase,
   runReputationCase,
   runLayerACase,
+  runDisputeCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
     console.log('▶  layer-A case: canned-output cheater caught by semantic sampling + patterns…');
     await runLayerACase();
     console.log('✅ layer-A case passed');
+
+    console.log('▶  dispute case: anomaly → on-chain dispute → 20% slash split 50/30/20…');
+    await runDisputeCase();
+    console.log('✅ dispute case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

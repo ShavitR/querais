@@ -7,11 +7,11 @@ import { as, deploy, jobId, signCap, creditDomain, JOB, TEST_PRIVATE_KEYS } from
 const REQUESTER_PK = TEST_PRIVATE_KEYS[3];
 
 /**
- * Pins the exact pause surface of the three Pausable contracts. The runbook
+ * Pins the exact pause surface of the four Pausable contracts. The runbook
  * (docs/RUNBOOK_KEYS.md) table of "what pause does / does not stop" must match
  * these tests — if a gate changes, change both. QUAISToken is NOT pausable.
  */
-/** The three contracts have unrelated generated types; this is their shared pause surface
+/** The contracts have unrelated generated types; this is their shared pause surface
  *  (calling .write.pause on the union directly is not typeable). */
 type PausableSurface = {
   write: { pause: () => Promise<`0x${string}`>; unpause: () => Promise<`0x${string}`> };
@@ -22,12 +22,13 @@ describe('Pausable — emergency pause surface', async () => {
 
   // ─── Access control ──────────────────────────────────────────────────────────
 
-  it('pause/unpause require PAUSER_ROLE on all three contracts', async () => {
+  it('pause/unpause require PAUSER_ROLE on all four contracts', async () => {
     const ctx = await deploy(viem);
     for (const [name, contract] of [
       ['NodeRegistry', ctx.registry],
       ['JobEscrow', ctx.escrow],
       ['CreditAccount', ctx.credit],
+      ['DisputeResolution', ctx.dispute],
     ] as const) {
       const asOutsider = (await as(
         viem,
@@ -233,6 +234,48 @@ describe('Pausable — emergency pause surface', async () => {
 
     await ctx.credit.write.unpause();
     await creditGw.write.batchSettle([cap, sig, debits]); // settles normally again
+  });
+
+  // ─── DisputeResolution (Slice 5B) ─────────────────────────────────────────────
+
+  it('DisputeResolution: pause gates raiseDispute/autoResolve; defense + reclaim stay open', async () => {
+    const ctx = await deploy(viem);
+    // Register the node and arm the gateway with bond money + approval.
+    const tokenNode = await as(viem, 'QUAISToken', ctx.token.address, ctx.node);
+    await tokenNode.write.approve([ctx.registry.address, parseEther('100')]);
+    const regNode = await as(viem, 'NodeRegistry', ctx.registry.address, ctx.node);
+    await regNode.write.registerNode([jobId('p-defendant'), parseEther('100')]);
+    await ctx.token.write.transfer([ctx.gateway.account.address, parseEther('200')]);
+    const tokenGw = await as(viem, 'QUAISToken', ctx.token.address, ctx.gateway);
+    await tokenGw.write.approve([ctx.dispute.address, parseEther('200')]);
+    const dispGw = await as(viem, 'DisputeResolution', ctx.dispute.address, ctx.gateway);
+
+    const open = jobId('p-open');
+    await dispGw.write.raiseDispute([open, ctx.node.account.address, jobId('evidence')]);
+
+    await ctx.dispute.write.pause();
+    // Value inflow + settlement freeze…
+    await viem.assertions.revertWithCustomError(
+      dispGw.write.raiseDispute([jobId('p-blocked'), ctx.node.account.address, jobId('e2')]),
+      ctx.dispute,
+      'EnforcedPause',
+    );
+    await viem.assertions.revertWithCustomError(
+      dispGw.write.autoResolve([open, true]),
+      ctx.dispute,
+      'EnforcedPause',
+    );
+    // …but the defendant's defense and the challenger's escape stay open.
+    const dispNode = await as(viem, 'DisputeResolution', ctx.dispute.address, ctx.node);
+    await dispNode.write.submitCounterEvidence([open, jobId('counter')]); // not pausable
+    await networkHelpers.time.increase(30 * 24 * 60 * 60 + 1);
+    const before = await ctx.token.read.balanceOf([ctx.gateway.account.address]);
+    await dispGw.write.reclaimBond([open]); // bond exits under pause
+    const after = await ctx.token.read.balanceOf([ctx.gateway.account.address]);
+    assert.equal(after - before, parseEther('50'));
+
+    await ctx.dispute.write.unpause();
+    await dispGw.write.raiseDispute([jobId('p-after'), ctx.node.account.address, jobId('e3')]);
   });
 
   it('CreditAccount: withdrawal exit stays open while paused', async () => {
