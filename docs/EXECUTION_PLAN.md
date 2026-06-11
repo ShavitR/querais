@@ -287,11 +287,11 @@ Now there's something worth hosting. Stand up the real service and bring the wor
 
 ### Slice 9 — DX, node polish & growth · Effort L · Risk L
 - **Build:** **signed installers / prebuilt release artifacts** (onboarding skips the source
-  build); **model registry** with SHA256 verification; a **docs site** (quickstart,
-  migration guide, cost calculator); publish the **Python SDK** + **LangChain/LlamaIndex**
-  providers; beta-cohort recruitment + leaderboard campaign. (The signup portal and the
-  operator dashboard moved to **Slice 10** — 10B/10C — so they're built once, inside the
-  real web app, not as throwaway pages here.)
+  build); **model registry** with SHA256 verification; publish the **Python SDK** +
+  **LangChain/LlamaIndex** providers; beta-cohort recruitment + leaderboard campaign.
+  (The signup portal and operator dashboard moved to **Slice 10** — 10B/10C — and the
+  docs site moved to **10E**, the Next.js content property, so each is built once in the
+  right place; this slice keeps the release engineering and the campaign.)
 - **Disclosures must match what the system actually does** (linked before the first key is
   issued): ToS + "testnet, no real value" framing, and a prompt-privacy disclosure that
   explicitly states (a) **~5% of prompts are re-run on oracle infrastructure** for
@@ -326,18 +326,29 @@ multiplies the value of every prior slice and is the adoption bottleneck for the
 growth push; arbitration is the last incomplete protocol mechanic; load testing must
 precede any real volume; mainnet is a gate, not a feature.
 
-### Slice 10 — The web app · Effort XL · Risk M · split 10A/10B/10C/10D
+### Slice 10 — The web app · Effort XL · Risk M · split 10A/10B/10C/10D/10E
 
-One product, four shippable increments. **10A is the foundation; 10B/10C/10D are
+One product, five shippable increments. **10A is the foundation; 10B/10C/10D are
 independent once 10A lands** (they can interleave with Slices 6–8 if frontend energy is
-available early — nothing in 10 blocks the protocol track except where noted).
+available early — nothing in 10 blocks the protocol track except where noted). 10E is
+fully independent of all of them.
+
+**Two frontends, one boundary rule (decided):** pages a **crawler** should index live in
+a **Next.js** marketing/docs site (10E) on the root domain, statically rendered and
+deployed separately from the gateway; pages a **signed-in human or live data** needs live
+in the **Vite app** (10A–10D) served by the gateway (e.g. `querais.xyz` vs
+`app.querais.xyz`). The Next site never touches the money path — if it goes down, the
+protocol doesn't notice; if it wants live numbers it fetches public read-only endpoints
+at build/revalidate time (ISR), so the gateway needs no CORS opening. When a page is
+ambiguous, ask "does it need a wallet, a key, or a WebSocket?" — yes ⇒ app, no ⇒ site.
 
 - **10A — Foundation: the real app + auth · Effort M:**
   - Stand up the actual **Vite + React + TypeScript** app in `apps/dashboard` (the
     placeholder finally lands). Dark theme consistent with the current page; a small
     component kit (cards/tables/charts) — no heavyweight UI framework.
   - **Served by the gateway** at `/` from the app's built `dist/` (same-origin API ⇒ no
-    CORS, no second deployment, one TLS cert — Slice 7's single-instance model holds).
+    CORS, no second app *server* — Slice 7's single-instance model holds; the only other
+    deployment is 10E's static site, which has no server and no gateway access).
     The inline-HTML dashboard is **retired in the same PR** (one frontend, not two).
     CI gains the app's build + typecheck + lint; e2e gains a served-app smoke check.
   - **Auth model:** sign in with an **API key** (requester) or a **wallet signature**
@@ -374,18 +385,39 @@ available early — nothing in 10 blocks the protocol track except where noted).
     only wires the paging.
   - **Acceptance:** an operator sees why their score moved without reading the DB; an
     admin goes flag → evidence → reviewed/disputed entirely in the UI.
-- **10D — Public face: network explorer + landing · Effort S:**
-  - Unauthenticated: live network stats, **node leaderboard** (composite + dimensions —
-    also the Slice 9 leaderboard campaign artifact), recent-jobs ticker (job hashes +
-    models only — privacy), **token economics panel** (fees collected, burned, staker
-    pool — reads the 6A treasury; render zeros gracefully if 6A isn't live), gateway
-    status indicator, docs links, the **"testnet, no real value" banner** on every page.
-  - This page is the destination the Slice 9 growth campaign points at.
+- **10D — Network explorer (live, in-app) · Effort S:**
+  - Unauthenticated route in the Vite app: live network stats, **node leaderboard**
+    (composite + dimensions — also the Slice 9 leaderboard campaign artifact),
+    recent-jobs ticker (job hashes + models only — privacy), **token economics panel**
+    (fees collected, burned, staker pool — reads the 6A treasury; render zeros
+    gracefully if 6A isn't live), gateway status indicator, the **"testnet, no real
+    value" banner** on every page.
+  - Live data belongs here, not in 10E — a crawler snapshot of an explorer is stale the
+    moment it's taken; 10E links to it ("see the live network →").
   - **Acceptance:** a stranger with no key understands what the network is doing in 30
     seconds; the leaderboard updates as reputation snapshots land.
-- **Depends on:** nothing hard (10A can start any time after Stage B); 10D's token panel
-  prefers 6A first; 10C's review queue coordinates with Slice 8.
-- **Maps to:** P3.10 (portal) + P3.9 (operator UX) + the dashboard placeholder.
+- **10E — Marketing & docs site (Next.js, the SEO surface) · Effort M:**
+  - New `apps/website`: **Next.js, statically rendered/ISR**, deployed separately
+    (Vercel or any static host/CDN) on the root domain — the gateway never serves it
+    and it can never take the gateway down.
+  - **Landing + SEO pages:** what QueraIS is, how it works (requester and operator
+    paths), pricing/cost calculator, FAQ — the pages that should rank.
+  - **Absorbs the Slice 9 docs site** (quickstart, migration guide, API reference) as
+    MDX — one content property, not a third framework; Slice 9 keeps only SDK
+    publishing, installers, and the growth campaign itself.
+  - Headline numbers ("X jobs settled, Y QAIS burned") fetched from public read-only
+    endpoints at **build/revalidate time** — no client-side gateway calls, no CORS.
+  - Disclosures live here canonically (ToS, prompt-privacy incl. Layer-A sampling,
+    testnet framing — the Slice 9 requirement) and the app links to them.
+  - Signup CTA links into the app (`app.…/signup`) — the portal itself stays in 10B's
+    Vite app where keys and wallets already work.
+  - **Acceptance:** root domain serves the site statically with the app untouched;
+    docs/quickstart indexed by search engines; a gateway outage leaves the site fully
+    up (and vice versa).
+- **Depends on:** nothing hard (10A and 10E can start any time after Stage B); 10D's
+  token panel prefers 6A first; 10C's review queue coordinates with Slice 8.
+- **Maps to:** P3.10 (portal) + P3.9 (operator UX + docs site) + the dashboard
+  placeholder.
 
 ### Slice 11 — Arbitration completeness (STANDARD track) · Effort L · Risk H
 - **Goal:** finish the last incomplete protocol mechanic. 5B shipped the FAST track
@@ -469,7 +501,7 @@ available early — nothing in 10 blocks the protocol track except where noted).
 Stage A (foundation)      ✅ 0 CI/Slither → ✅ 1 Persistence → ✅ 2 Batched settlement ⭐ → ✅ 3 Harden surface
 Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ⬜ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
 Stage C (operate)         ⬜ 7 Deploy (DB-as-money) → ⬜ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
-Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D public explorer)
+Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D live explorer · 10E Next.js site)
                           ⬜ 11 Arbitration (STANDARD track) → ⬜ 12 Scale confidence → ⬜ 13 Mainnet go/no-go gate
 ```
 
