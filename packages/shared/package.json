@@ -1,8 +1,13 @@
 {
   "name": "@querais/shared",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "license": "MIT",
+  "description": "Shared types, schemas, wire protocol, and EIP-712 helpers for the QueraIS protocol. Published as a dependency of @querais/sdk.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShavitR/querais.git",
+    "directory": "packages/shared"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,6 +16,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/.tsbuildinfo"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -b",

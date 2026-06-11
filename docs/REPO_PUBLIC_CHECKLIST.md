@@ -56,6 +56,10 @@ checked by a human.
 
 - [ ] **npm**: create the `querais` org/scope on npmjs.com; generate a
       granular automation token; add it as the `NPM_TOKEN` repo secret.
+      Note the dependency chain: `@querais/sdk` → `@querais/shared` →
+      `@querais/contracts`, so all three publish together (use
+      `pnpm publish -r` — pnpm rewrites the `workspace:*` ranges to real
+      versions; plain `npm publish` would ship a broken `workspace:*` range).
 - [ ] **PyPI**: create the `querais` project (or reserve the name); generate a
       project-scoped API token; add it as the `PYPI_TOKEN` repo secret.
 - [ ] **Switch dry-runs to real publishes** in `.github/workflows/release.yml`
