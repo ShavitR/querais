@@ -291,7 +291,7 @@ export async function runOpsCase(): Promise<void> {
 
     const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
     assert.match(metricsText, /querais_jobs_settled_total \d+/, '/metrics exposes counters');
-    assert.match(metricsText, /querais_nodes 1/, '/metrics shows the connected node');
+    assert.match(metricsText, /querais_nodes_connected 1/, '/metrics shows the connected node');
 
     // Dashboard data: stats.jobs + per-node leaderboard counter.
     const stats = (await (await fetch(`${h.baseUrl}/v1/stats`)).json()) as {

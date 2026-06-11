@@ -205,8 +205,6 @@ export function renderMetrics(reads: GaugeReads | number): string {
       'Alerts dropped by the severity floor or cooldown.',
       metrics.alertsSuppressed,
     ),
-    // Legacy name — scrapes predating Slice 8 use it. Remove in Slice 9.
-    ...gauge('querais_nodes', 'Connected nodes in the pool (legacy name).', g.nodes),
     ...gauge('querais_nodes_connected', 'Connected nodes in the pool.', g.nodes),
   ];
   if (g.pendingDebits !== undefined) {
