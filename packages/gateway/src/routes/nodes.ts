@@ -19,8 +19,9 @@ export function registerNodes(app: FastifyInstance, deps: GatewayDeps): void {
             longevity: d.longevityBps / 10000,
             stake: d.stakeBps / 10000,
           },
-          // Slice 5: open manual-review flags (Layer-A anomalies, output patterns).
-          flags: deps.nodeFlags.countFor(n.wallet),
+          // Slice 5 flags, Slice 8 scope: OPEN (unreviewed) flags only — reviewed
+          // history stops scaring requesters; it stays queryable via the admin route.
+          flags: deps.nodeFlags.openCountFor(n.wallet),
           // Slice 6B: earned, unclaimed staking rewards (wei string; '0' pre-6B).
           claimableRewardsWei: (deps.chain.stakingRewardsContract()
             ? await deps.chain.claimableRewards(n.wallet)
