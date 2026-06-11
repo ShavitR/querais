@@ -9,3 +9,5 @@ packages/contracts/deployments/**
 packages/contracts/src/abis.ts
 pnpm-lock.yaml
 *.md
+# Python toolchain owns this tree (ruff format), incl. its local .venv
+sdk-python/**

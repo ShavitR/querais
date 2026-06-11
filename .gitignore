@@ -38,3 +38,11 @@ pnpm-debug.log*
 # runtime data
 data/
 *.local.json
+
+# python (sdk-python)
+.venv/
+__pycache__/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+sdk-python/dist/

@@ -51,6 +51,33 @@ jobs:
       - name: E2E acceptance gate
         run: pnpm test:e2e
 
+  python-sdk:
+    name: Python SDK (ruff · pytest · build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sdk-python
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: sdk-python/pyproject.toml
+      - name: Install (editable + dev tools)
+        run: pip install -e ".[dev]"
+      - name: Ruff (lint + format)
+        run: |
+          ruff check .
+          ruff format --check .
+      # Integration tests (langchain/llamaindex) skip without the extras — kept light
+      # here; the extras were exercised locally and pin only official upstream classes.
+      - name: Pytest
+        run: pytest -q
+      - name: Build sdist + wheel
+        run: python -m build
+
   gitleaks:
     name: Secret scan (gitleaks, gating)
     runs-on: ubuntu-latest
