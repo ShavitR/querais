@@ -35,7 +35,7 @@ describe('CreditAccount — settlement invariants (fuzz)', async () => {
 
     const feeRate = await ctx.credit.read.protocolFeeRate(); // 500
     const provider = ctx.node.account.address;
-    const treasury = ctx.treasury.account.address;
+    const treasury = ctx.treasuryAddr;
     const now = await networkHelpers.time.latest();
     const cap = {
       requester: ctx.requester.account.address,

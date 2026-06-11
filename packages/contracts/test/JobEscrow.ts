@@ -44,7 +44,7 @@ describe('JobEscrow — lifecycle & settlement', async () => {
     const ctx = await setup();
     const id = jobId('happy');
     const provider = ctx.node.account.address;
-    const treasury = ctx.treasury.account.address;
+    const treasury = ctx.treasuryAddr;
     const requester = ctx.requester.account.address;
 
     await ctx.escGw.write.createJob([

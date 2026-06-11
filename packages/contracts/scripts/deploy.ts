@@ -43,19 +43,22 @@ async function main(): Promise<void> {
   if (!deployer) throw new Error('No deployer account configured for this network');
   const admin = deployer.account.address;
 
-  // Resolve role/treasury/test addresses: env first, then local dev accounts, then admin.
+  // Resolve role/test addresses: env first, then local dev accounts, then admin.
   const gatewayAddr = envAddress('GATEWAY_ADDRESS') ?? wallets[1]?.account.address ?? admin;
-  const treasury = envAddress('TREASURY_ADDRESS') ?? wallets[4]?.account.address ?? admin;
   const nodeAddr = envAddress('NODE_ADDRESS') ?? wallets[2]?.account.address;
   const requesterAddr = envAddress('REQUESTER_ADDRESS') ?? wallets[3]?.account.address;
 
   console.log(`Deploying QueraIS contracts to ${networkName}…`);
   console.log('  deployer/admin:', admin);
   console.log('  gateway:       ', gatewayAddr);
-  console.log('  treasury:      ', treasury);
 
   const token = await viem.deployContract('QUAISToken', [admin]);
   console.log('QUAISToken      ->', token.address);
+  // Slice 6A: the treasury CONTRACT is the fee recipient from day one on fresh deploys
+  // (live chains migrate via the fee-payers' existing setTreasury — runbook §7c).
+  const treasuryContract = await viem.deployContract('ProtocolTreasury', [token.address, admin]);
+  const treasury = treasuryContract.address;
+  console.log('ProtocolTreasury->', treasury);
   const registry = await viem.deployContract('NodeRegistry', [token.address, admin]);
   console.log('NodeRegistry    ->', registry.address);
   const escrow = await viem.deployContract('JobEscrow', [token.address, treasury, admin]);
@@ -90,8 +93,11 @@ async function main(): Promise<void> {
   // needs SLASHER on the registry to route slashed stake through its 50/30/20 split.
   await dispute.write.grantRole([DISPUTE_ORACLE_ROLE, gatewayAddr]);
   await registry.write.grantRole([SLASHER_ROLE, dispute.address]);
+  // Slice 6A: the gateway is the daily distribute() keeper.
+  const KEEPER_ROLE = await treasuryContract.read.KEEPER_ROLE();
+  await treasuryContract.write.grantRole([KEEPER_ROLE, gatewayAddr]);
   console.log(
-    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit), ORACLE (dispute) to gateway; SLASHER (registry) to DisputeResolution',
+    'Granted ORACLE + SLASHER (registry), ORACLE + MATCHING_ENGINE (escrow), SETTLER (credit), ORACLE (dispute), KEEPER (treasury) to gateway; SLASHER (registry) to DisputeResolution',
   );
 
   // Fund test node/requester with QAIS where we know their addresses.
@@ -121,6 +127,7 @@ async function main(): Promise<void> {
       jobEscrow: escrow.address,
       creditAccount: creditAccount.address,
       disputeResolution: dispute.address,
+      protocolTreasury: treasury,
     },
     treasury,
     accounts: {
@@ -151,6 +158,7 @@ async function main(): Promise<void> {
     console.log(
       `  hardhat verify --network ${networkName} ${dispute.address} ${token.address} ${registry.address} ${treasury} ${admin}`,
     );
+    console.log(`  hardhat verify --network ${networkName} ${treasury} ${token.address} ${admin}`);
   }
 }
 

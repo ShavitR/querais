@@ -17,6 +17,9 @@ export const metrics = {
   layerAFailures: 0,
   layerADisputes: 0,
   patternFlags: 0,
+  // Slice 6A: treasury epoch sweeps.
+  treasuryDistributions: 0,
+  treasuryDistributeFailures: 0,
 };
 
 /** Render the Prometheus exposition, plus a live gauge for connected nodes. */
@@ -58,6 +61,12 @@ export function renderMetrics(nodes: number): string {
     '# HELP querais_pattern_flags_total Output-pattern cheater flags (manual review).',
     '# TYPE querais_pattern_flags_total counter',
     `querais_pattern_flags_total ${metrics.patternFlags}`,
+    '# HELP querais_treasury_distributions_total Treasury 60/20/20 sweeps executed.',
+    '# TYPE querais_treasury_distributions_total counter',
+    `querais_treasury_distributions_total ${metrics.treasuryDistributions}`,
+    '# HELP querais_treasury_distribute_failures_total Failed treasury sweeps.',
+    '# TYPE querais_treasury_distribute_failures_total counter',
+    `querais_treasury_distribute_failures_total ${metrics.treasuryDistributeFailures}`,
     '# HELP querais_nodes Connected nodes in the pool.',
     '# TYPE querais_nodes gauge',
     `querais_nodes ${nodes}`,

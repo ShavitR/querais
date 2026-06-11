@@ -3,6 +3,7 @@ import {
   disputeResolutionAbi,
   jobEscrowAbi,
   nodeRegistryAbi,
+  protocolTreasuryAbi,
   quaisTokenAbi,
   type Deployment,
   type QueraisPublicClient,
@@ -279,6 +280,40 @@ export class ChainClient {
     const address = this.deployment.contracts.disputeResolution;
     if (!address) {
       throw new Error('this deployment has no DisputeResolution contract (pre-5B manifest)');
+    }
+    return address;
+  }
+
+  // ── ProtocolTreasury (Slice 6A keeper) ───────────────────────────────────────
+
+  /** The treasury contract's address, or undefined on pre-6A deployments. */
+  treasuryContract(): Address | undefined {
+    return this.deployment.contracts.protocolTreasury;
+  }
+
+  /** Fees accrued since the last sweep (the keeper reads before writing). */
+  treasuryPending(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.requireTreasury(),
+      abi: protocolTreasuryAbi,
+      functionName: 'pendingDistribution',
+    });
+  }
+
+  /** Execute the daily 60/20/20 sweep (receipt-checked like every chain write). */
+  async distributeTreasury(): Promise<Hex> {
+    const hash = await this.walletClient.writeContract({
+      address: this.requireTreasury(),
+      abi: protocolTreasuryAbi,
+      functionName: 'distribute',
+    });
+    return this.waitForSuccess(hash, 'distribute');
+  }
+
+  private requireTreasury(): Address {
+    const address = this.deployment.contracts.protocolTreasury;
+    if (!address) {
+      throw new Error('this deployment has no ProtocolTreasury contract (pre-6A manifest)');
     }
     return address;
   }

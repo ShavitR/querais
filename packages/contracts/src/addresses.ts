@@ -19,6 +19,8 @@ export interface Deployment {
     creditAccount: Address;
     /** Absent on deployments that predate Slice 5B (disputes disabled there). */
     disputeResolution?: Address;
+    /** Absent on deployments that predate Slice 6A (fees go to the treasury EOA). */
+    protocolTreasury?: Address;
   };
   treasury: Address;
   accounts: {

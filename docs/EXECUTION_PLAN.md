@@ -181,12 +181,16 @@ protocol credible as a complete design rather than a demo.
   cases ✅ (12th e2e scenario: slash lands + splits exactly on-chain).
 - **Maps to:** P3.8.
 
-### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · split 6A/6B/6C
+### Slice 6 — Tokenomics activation (testnet) · Effort M · Risk M · ◐ 6A DONE (#33) · 6B Option 1 decided · 6C next
 - **Goal:** turn on the economic loops (today: fee → a single treasury EOA).
 - **Why the split:** as one slice this secretly contains a *new staking contract* (6B) and
   an *ops program* (6C) hiding behind the treasury work (6A). Same lesson as 2A/2B/2C and
   3A/3B: ship the small clean core first, keep each PR independently green.
-- **6A — `ProtocolTreasury.sol` + burn (the core; money-moving → confirm design first):**
+- **6B decision (taken):** Option 1 — node-operator stakes in `NodeRegistry` are the
+  stakers (rewards pro-rata to active staked nodes). Rationale: pays the people securing
+  the network and decentralizes the supply side; a passive token-holder pool decentralizes
+  nothing that matters pre-Phase-4.
+- **6A — `ProtocolTreasury.sol` + burn (BUILT #33; design confirmed):**
   - **Accumulate-and-sweep, NOT per-settlement splitting.** The spec's `receiveFee`
     (split + burn on every settlement) would add token ops + gas to every `batchSettle`
     on the hot path. Instead: fees keep arriving as the plain ERC-20 transfers they

@@ -7,7 +7,7 @@ import { as, deploy, jobId, signCap, creditDomain, JOB, TEST_PRIVATE_KEYS } from
 const REQUESTER_PK = TEST_PRIVATE_KEYS[3];
 
 /**
- * Pins the exact pause surface of the four Pausable contracts. The runbook
+ * Pins the exact pause surface of the five Pausable contracts. The runbook
  * (docs/RUNBOOK_KEYS.md) table of "what pause does / does not stop" must match
  * these tests — if a gate changes, change both. QUAISToken is NOT pausable.
  */
@@ -22,13 +22,14 @@ describe('Pausable — emergency pause surface', async () => {
 
   // ─── Access control ──────────────────────────────────────────────────────────
 
-  it('pause/unpause require PAUSER_ROLE on all four contracts', async () => {
+  it('pause/unpause require PAUSER_ROLE on all five contracts', async () => {
     const ctx = await deploy(viem);
     for (const [name, contract] of [
       ['NodeRegistry', ctx.registry],
       ['JobEscrow', ctx.escrow],
       ['CreditAccount', ctx.credit],
       ['DisputeResolution', ctx.dispute],
+      ['ProtocolTreasury', ctx.treasuryContract],
     ] as const) {
       const asOutsider = (await as(
         viem,
@@ -276,6 +277,27 @@ describe('Pausable — emergency pause surface', async () => {
 
     await ctx.dispute.write.unpause();
     await dispGw.write.raiseDispute([jobId('p-after'), ctx.node.account.address, jobId('e3')]);
+  });
+
+  it('ProtocolTreasury: pause blocks distribute + allocate (protocol funds only — no user exit to keep open)', async () => {
+    const ctx = await deploy(viem);
+    await ctx.token.write.transfer([ctx.treasuryAddr, parseEther('100')]);
+    const keeper = await as(viem, 'ProtocolTreasury', ctx.treasuryAddr, ctx.gateway);
+
+    await ctx.treasuryContract.write.pause();
+    await viem.assertions.revertWithCustomError(
+      keeper.write.distribute(),
+      ctx.treasuryContract,
+      'EnforcedPause',
+    );
+    await viem.assertions.revertWithCustomError(
+      ctx.treasuryContract.write.allocate([ctx.outsider.account.address, 1n, 'paused']),
+      ctx.treasuryContract,
+      'EnforcedPause',
+    );
+
+    await ctx.treasuryContract.write.unpause();
+    await keeper.write.distribute(); // sweeps normally again
   });
 
   it('CreditAccount: withdrawal exit stays open while paused', async () => {

@@ -42,6 +42,7 @@ export {
   jobEscrowAbi,
   creditAccountAbi,
   disputeResolutionAbi,
+  protocolTreasuryAbi,
   loadAddresses,
 } from '@querais/contracts';
 export type { Deployment } from '@querais/contracts';

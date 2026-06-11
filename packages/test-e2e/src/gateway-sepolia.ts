@@ -76,6 +76,9 @@ async function main(): Promise<void> {
     reputationSnapshotIntervalSeconds: Number(
       process.env.GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS ?? '86400',
     ),
+    treasuryDistributeIntervalSeconds: Number(
+      process.env.GATEWAY_TREASURY_DISTRIBUTE_INTERVAL_SECONDS ?? '86400',
+    ),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('5000'),
     faucetEthWei: parseEther('0.003'), // drip gas so new nodes self-fund (zero-touch)

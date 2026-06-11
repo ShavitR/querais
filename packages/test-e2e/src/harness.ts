@@ -55,6 +55,8 @@ export interface HarnessOptions {
   sessionDeadlineMarginSeconds?: number;
   /** Slice 4B: reputation snapshot sweep interval (default daily; tests shrink it). */
   reputationSnapshotIntervalSeconds?: number;
+  /** Slice 6A: treasury distribute() sweep interval (default daily; tests shrink it). */
+  treasuryDistributeIntervalSeconds?: number;
   /** Slice 5: Layer-A knobs (sample rate, oracle runs, pattern sweep cadence). */
   layerAConfig?: Partial<LayerAConfig>;
   /** Slice 5: injected oracle inference + embeddings (sampler off when absent). */
@@ -99,6 +101,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     batchFlushIntervalSeconds: 60,
     sessionDeadlineMarginSeconds: opts.sessionDeadlineMarginSeconds ?? 240,
     reputationSnapshotIntervalSeconds: opts.reputationSnapshotIntervalSeconds ?? 86_400,
+    treasuryDistributeIntervalSeconds: opts.treasuryDistributeIntervalSeconds ?? 86_400,
     ...(opts.layerAConfig ? { layerA: opts.layerAConfig } : {}),
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
     adminToken: ADMIN_TOKEN,

@@ -4,7 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import type { WebSocket } from 'ws';
 import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
-import { renderMetrics } from './metrics.js';
+import { metrics, renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
 import { resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
 import { QuotaEnforcer } from './quota.js';
@@ -249,12 +249,32 @@ export async function buildGateway(
     }
   }, layerACfg.patternScanIntervalSeconds * 1000);
   patternTimer.unref();
+  // Treasury epoch sweep (Slice 6A): the gateway is the distribute() keeper. Reads
+  // pending first so an empty epoch is a quiet no-op, not a reverted tx. Disabled on
+  // pre-6A manifests (no ProtocolTreasury deployed).
+  const treasuryTimer = chain.treasuryContract()
+    ? setInterval(() => {
+        void (async () => {
+          try {
+            if ((await chain.treasuryPending()) === 0n) return;
+            await chain.distributeTreasury();
+            metrics.treasuryDistributions += 1;
+            logger.info('treasury distributed (60/20/20 epoch sweep)');
+          } catch (err) {
+            metrics.treasuryDistributeFailures += 1;
+            logger.error({ err }, 'treasury distribute failed');
+          }
+        })();
+      }, opts.config.treasuryDistributeIntervalSeconds * 1000)
+    : undefined;
+  treasuryTimer?.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
     clearInterval(flushTimer);
     clearInterval(snapshotTimer);
     clearInterval(patternTimer);
+    if (treasuryTimer) clearInterval(treasuryTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
   });

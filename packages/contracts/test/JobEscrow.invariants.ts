@@ -31,7 +31,7 @@ describe('JobEscrow — settlement invariants (fuzz)', async () => {
 
     const feeRate = await ctx.escrow.read.protocolFeeRate(); // 500
     const provider = ctx.node.account.address;
-    const treasury = ctx.treasury.account.address;
+    const treasury = ctx.treasuryAddr;
     const requester = ctx.requester.account.address;
 
     for (let i = 0; i < 30; i++) {
