@@ -9,6 +9,7 @@ import {
 } from '@querais/shared';
 import {
   buildGateway,
+  type AlertsConfig,
   type BuildOptions,
   type GatewayConfig,
   type HardeningConfig,
@@ -66,6 +67,8 @@ export interface HarnessOptions {
   layerA?: BuildOptions['layerA'];
   /** Slice 3: surface-hardening overrides (quota tiers, prompt limits, WS caps, faucet). */
   hardening?: Partial<HardeningConfig>;
+  /** Slice 8: alerting overrides (webhook URL/format, cooldown, sweep + thresholds). */
+  alerts?: Partial<AlertsConfig>;
 }
 
 /**
@@ -108,6 +111,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     ...(opts.layerAConfig ? { layerA: opts.layerAConfig } : {}),
     ...(opts.incentives ? { incentives: opts.incentives } : {}),
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
+    ...(opts.alerts ? { alerts: opts.alerts } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
     faucetEthWei: 0n, // nodes are pre-funded in tests; no ETH drip needed

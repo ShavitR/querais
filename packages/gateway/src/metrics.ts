@@ -102,7 +102,11 @@ function gauge(name: string, help: string, value: number): string[] {
 export function renderMetrics(reads: GaugeReads | number): string {
   const g: GaugeReads = typeof reads === 'number' ? { nodes: reads } : reads;
   const lines: string[] = [
-    ...counter('querais_jobs_created_total', 'Jobs created (locked) on-chain.', metrics.jobsCreated),
+    ...counter(
+      'querais_jobs_created_total',
+      'Jobs created (locked) on-chain.',
+      metrics.jobsCreated,
+    ),
     '# HELP querais_jobs_settled_total Jobs verified and settled.',
     '# TYPE querais_jobs_settled_total counter',
     `querais_jobs_settled_total ${String(metrics.jobsSettled)}`,
@@ -120,10 +124,7 @@ export function renderMetrics(reads: GaugeReads | number): string {
       'querais_job_duration_seconds',
       'End-to-end job duration (match through settle).',
     ),
-    ...metrics.jobTtftSeconds.render(
-      'querais_job_ttft_seconds',
-      'Time to first streamed token.',
-    ),
+    ...metrics.jobTtftSeconds.render('querais_job_ttft_seconds', 'Time to first streamed token.'),
     ...counter(
       'querais_reputation_snapshots_total',
       'Reputation scores published on-chain.',
@@ -194,7 +195,11 @@ export function renderMetrics(reads: GaugeReads | number): string {
       'Alerts successfully delivered to the sink.',
       metrics.alertsDelivered,
     ),
-    ...counter('querais_alerts_failed_total', 'Alert deliveries that errored.', metrics.alertsFailed),
+    ...counter(
+      'querais_alerts_failed_total',
+      'Alert deliveries that errored.',
+      metrics.alertsFailed,
+    ),
     ...counter(
       'querais_alerts_suppressed_total',
       'Alerts dropped by the severity floor or cooldown.',
@@ -228,9 +233,7 @@ export function renderMetrics(reads: GaugeReads | number): string {
     );
   }
   if (g.openFlags !== undefined) {
-    lines.push(
-      ...gauge('querais_open_flags', 'Unreviewed manual-review flags.', g.openFlags),
-    );
+    lines.push(...gauge('querais_open_flags', 'Unreviewed manual-review flags.', g.openFlags));
   }
   if (g.keepers !== undefined && g.keepers.length > 0) {
     lines.push(

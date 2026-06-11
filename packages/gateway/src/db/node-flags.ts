@@ -135,7 +135,10 @@ export class NodeFlagStore {
     id: number,
     by: string,
     note?: string,
-  ): { outcome: 'ok'; flag: NodeFlag } | { outcome: 'not-found' } | { outcome: 'already-reviewed' } {
+  ):
+    | { outcome: 'ok'; flag: NodeFlag }
+    | { outcome: 'not-found' }
+    | { outcome: 'already-reviewed' } {
     const existing = this.get(id);
     if (!existing) return { outcome: 'not-found' };
     if (existing.reviewedAt !== null) return { outcome: 'already-reviewed' };

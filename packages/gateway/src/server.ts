@@ -7,13 +7,7 @@ import pino, { type Logger } from 'pino';
 import { metrics, renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
 import { resolveAlerts, resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
-import {
-  AlertService,
-  NoopSink,
-  WebhookSink,
-  redactWebhookUrl,
-  type AlertSink,
-} from './alerts.js';
+import { AlertService, NoopSink, WebhookSink, redactWebhookUrl, type AlertSink } from './alerts.js';
 import { QuotaEnforcer } from './quota.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';

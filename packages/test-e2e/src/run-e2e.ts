@@ -24,6 +24,7 @@ import {
   runStakingRewardsCase,
   runIncentivesCase,
   runGracefulShutdownCase,
+  runObservabilityCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -95,6 +96,12 @@ async function main(): Promise<void> {
     console.log('▶  graceful shutdown: pending debits drain on SIGTERM (app.close)…');
     await runGracefulShutdownCase();
     console.log('✅ graceful shutdown case passed');
+
+    console.log(
+      '▶  observability case: anomaly → webhook page → review; stuck debits → alert → recover…',
+    );
+    await runObservabilityCase();
+    console.log('✅ observability case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

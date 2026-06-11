@@ -58,12 +58,16 @@ export function registerFlags(app: FastifyInstance, deps: GatewayDeps): void {
     if (!requireAdmin(request, reply)) return reply;
     const id = Number((request.params as { id: string }).id);
     if (!Number.isInteger(id) || id < 1) {
-      return reply.code(400).send(openAiError('flag id must be a positive integer', 'invalid_request'));
+      return reply
+        .code(400)
+        .send(openAiError('flag id must be a positive integer', 'invalid_request'));
     }
     const body = request.body as { by?: string; note?: string } | undefined;
     const by = body?.by?.trim();
     if (!by) {
-      return reply.code(400).send(openAiError('"by" (reviewer name) is required', 'invalid_request'));
+      return reply
+        .code(400)
+        .send(openAiError('"by" (reviewer name) is required', 'invalid_request'));
     }
     const result = deps.nodeFlags.markReviewed(id, by, body?.note);
     switch (result.outcome) {

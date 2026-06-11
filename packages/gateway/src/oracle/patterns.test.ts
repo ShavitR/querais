@@ -124,5 +124,8 @@ test('PatternDetector.scanAll flags a duplicate-output cheater once per ongoing 
   assert.equal(sink.alerts.length, 1, 'one page per ongoing pattern, even across re-scans');
   assert.equal(sink.alerts[0]?.rule, 'pattern-cheater');
   assert.equal(sink.alerts[0]?.severity, 'critical');
-  assert.equal(sink.alerts[0]?.key, `pattern-cheater:pattern:duplicate-output:${NODE.toLowerCase()}`);
+  assert.equal(
+    sink.alerts[0]?.key,
+    `pattern-cheater:pattern:duplicate-output:${NODE.toLowerCase()}`,
+  );
 });

@@ -67,7 +67,9 @@ test('GET /v1/status returns the public shape and nothing sensitive', async () =
 
 test('degraded when RPC is down or when 0 nodes with recent jobs; empty devnet stays ok', async () => {
   const rpcDown = fixture({ rpcUp: false });
-  let body = (await rpcDown.app.inject({ method: 'GET', url: '/v1/status' })).json() as PublicStatus;
+  let body = (
+    await rpcDown.app.inject({ method: 'GET', url: '/v1/status' })
+  ).json() as PublicStatus;
   assert.equal(body.status, 'degraded');
   assert.equal(body.rpcOk, false);
 
