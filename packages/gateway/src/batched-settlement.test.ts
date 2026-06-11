@@ -40,7 +40,10 @@ function fakeChain(over: Record<string, unknown> = {}): ChainClient {
     spentAgainst: async () => 0n,
     creditBalance: async () => 1_000_000n,
     getNode: async () => ({ reputationScore: 7000n, stakeAmount: 1_000n }),
-    updateReputation: async () => TX,
+    // 4B: settlement moves money only — any reputation write here is a regression.
+    updateReputation: async () => {
+      throw new Error('settlement must not write reputation (snapshots own the chain)');
+    },
     slash: async () => TX,
     ...over,
   } as unknown as ChainClient;
