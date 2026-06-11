@@ -223,7 +223,9 @@ redeploying the fee-payers — reversible at any time:
 nodes; losing it without reconciliation loses payments. Hosting is custody of that state,
 not "run the image somewhere." A remote agent built the deploy-ready code (graceful
 drain, `/ready` probe, Docker hardening, the `VACUUM INTO` backup primitive + restore
-drill); the live hosting below is the operator's, with keys.
+drill) **and the Fly.io deploy pipeline** (`packages/gateway/fly.toml`,
+`.github/workflows/deploy.yml`, step-by-step in **`docs/DEPLOY.md`**); the live hosting
+below is the operator's, with keys.
 
 **Single instance, always.** `node:sqlite` is single-writer and every timer (flush,
 reputation snapshot, Layer-A, pattern, dispute, treasury, rewards) assumes one owner.

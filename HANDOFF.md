@@ -46,10 +46,12 @@ merges to main** (a permission classifier blocks self-merging; ask, or the user 
 
 **STAGES A AND B COMPLETE; Slice 7A (deploy-ready hardening, code-side) COMPLETE.**
 Immediate next actions:
-1. **Slice 7B — the live hosting (OPERATOR action, needs keys + a platform).** A remote
-   agent cannot do this; it is fully scripted in runbook **§7d** (deploy, single
-   instance, volume + Litestream backup, restore drill, secrets) and **§7b** (the
-   full-protocol Sepolia redeploy). Hand to the maintainer.
+1. **Slice 7B — the live EXECUTION only (OPERATOR action).** The Fly.io config + CI
+   deploy pipeline are BUILT (#37); what remains needs keys + a Fly account: `fly apps
+   create` + volume + `fly secrets set` (hot keys), add `FLY_API_TOKEN` + set
+   `DEPLOY_ENABLED=true`, the full-protocol Sepolia redeploy (runbook §7b), and the live
+   restore/pause drills. Step-by-step in **`docs/DEPLOY.md`**. A remote agent can't do
+   these; hand to the maintainer.
 2. **Slice 8 — observability & SRE.** Highest-value item: close the manual-review loop —
    `node_flags` + rapid-decline + Layer-A anomalies are computed but **nobody is paged**;
    wire a notification channel + a minimal review queue. Then Prometheus/Grafana, alert
@@ -295,7 +297,13 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
   for continuous off-box shipping (RPO ≤ ~10s).
 - **Docker hardening**: non-root `USER node`, HEALTHCHECK, and the **single-instance**
   constraint documented (node:sqlite is single-writer; all timers assume one owner).
-- Runbook **§7d** is the operator deploy + custody procedure.
+- **Fly.io deploy pipeline (code-side):** `packages/gateway/fly.toml` (one machine /
+  one volume, /health + /ready checks, `kill_timeout` above the drain), opt-in
+  `.github/workflows/deploy.yml` (deploys after CI green on main; gated by repo var
+  `DEPLOY_ENABLED` + secret `FLY_API_TOKEN`; app secrets live on Fly, never in CI), and
+  **`docs/DEPLOY.md`** (operator setup + drills). The maintainer chose Fly.io + the CI
+  pipeline so the hot keys never enter a build environment.
+- Runbook **§7d** is the operator deploy + custody procedure (points at `docs/DEPLOY.md`).
 
 **Deferred (do NOT assume these exist):**
 - Slice 7B (live hosting — operator), Slices 8–9, Stage D.
