@@ -14,4 +14,9 @@ export { loadConfig, deriveNodeId, type DaemonConfig } from './config.js';
 export { ensureRegistered } from './registry.js';
 export { encryptKey, decryptKey, loadOrCreateKey, type Keystore } from './keystore.js';
 export { GatewayClient, backoffDelayMs, type GatewayClientOptions } from './gateway-client.js';
+export {
+  manifestSelfCheck,
+  httpBaseFromGatewayWs,
+  type ManifestSelfCheck,
+} from './manifest-check.js';
 export { startDaemon } from './daemon.js';
