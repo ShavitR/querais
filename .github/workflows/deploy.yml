@@ -40,7 +40,6 @@ jobs:
         run: >
           flyctl deploy .
           --config packages/gateway/fly.toml
-          --dockerfile packages/gateway/Dockerfile
           --strategy immediate
           --remote-only
         env:

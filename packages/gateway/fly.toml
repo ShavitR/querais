@@ -9,7 +9,9 @@ app = "querais-gateway"  # change to your Fly app name
 primary_region = "iad"   # pick a region near your RPC provider
 
 [build]
-  dockerfile = "packages/gateway/Dockerfile"
+  # Resolved relative to THIS file's directory (flyctl behavior), while the build
+  # context stays the repo root passed on the command line.
+  dockerfile = "Dockerfile"
 
 [env]
   GATEWAY_PORT = "8787"

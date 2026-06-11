@@ -18,7 +18,8 @@
   },
   "files": [
     "dist",
-    "contracts"
+    "contracts",
+    "deployments"
   ],
   "scripts": {
     "compile": "hardhat compile",

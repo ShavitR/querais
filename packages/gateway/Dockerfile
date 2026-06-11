@@ -20,7 +20,9 @@ WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm -r --filter "./packages/**" build
-RUN pnpm --filter @querais/gateway deploy --prod /app
+# --legacy: pnpm v10+ requires inject-workspace-packages=true for `deploy`; we keep
+# the workspace symlink layout and use the legacy copy behavior instead.
+RUN pnpm --filter @querais/gateway deploy --legacy --prod /app
 
 FROM node:22-slim AS runtime
 WORKDIR /app

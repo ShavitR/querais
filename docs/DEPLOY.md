@@ -55,7 +55,7 @@ your local clone of `querais` first; running it from your home directory has no 
 to build):
 
 ```bash
-fly deploy . --config packages/gateway/fly.toml --dockerfile packages/gateway/Dockerfile --strategy immediate
+fly deploy . --config packages/gateway/fly.toml --strategy immediate
 fly scale count 1 --app querais-gateway
 fly status --app querais-gateway
 curl https://querais-gateway.fly.dev/health
