@@ -35,7 +35,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 ```
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
-Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ⬜ 5 Layer-A verify   ⬜ 6 Tokenomics
+Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ◐ 5 Layer-A (5A #30 · 5B hook pending)   ⬜ 6 Tokenomics
 Stage C — Operate           ⬜ 7 Deploy   ⬜ 8 Observability   ⬜ 9 DX/node-polish/growth
 ```
 
@@ -44,15 +44,15 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**Stage A is COMPLETE; Stage B Slice 4 (Reputation) is COMPLETE. Immediate next actions:**
-1. **Stage B, Slice 5 — Layer-A verification** (scope + acceptance in
-   `docs/EXECUTION_PLAN.md` Slice 5): semantic sampling on oracle nodes via embedding
-   cosine similarity (NOT cross-node hash matching — §6), pattern detection, oracle
-   redundancy, the on-chain challenge hook. **Plan before building** (the user wants big
-   work planned and confirmed first — §11), then the slice rhythm above.
-2. Then Slice 6 (Tokenomics). Slice 6 (`ProtocolTreasury.sol`, 60/20/20 split) is
-   money-moving contract work → **confirm the design with the user before building**
-   (standing rule).
+**Stage A COMPLETE; Slice 4 COMPLETE; Slice 5A (gateway Layer-A oracle) COMPLETE.
+Immediate next actions:**
+1. **Slice 5B — the on-chain challenge hook** (design sketch in `docs/EXECUTION_PLAN.md`
+   Slice 5): minimal `DisputeResolution.sol` (raiseDispute + bond, counter-evidence,
+   oracle-only FAST-track autoResolve, 50/30/20 slash split) + JobEscrow wiring. This is
+   **money-moving contract work → confirm the design with the user before building**
+   (standing rule). The full arbitration panel stays Phase 5.
+2. Then Slice 6 (Tokenomics): `ProtocolTreasury.sol`, 60/20/20 split — same standing
+   rule, confirm before building.
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -61,7 +61,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -177,8 +177,31 @@ no contract changes, no redeploy; the chain keeps the single uint16 composite:
   timer lands the composite on-chain, and the registry score equals the recomputed
   weighted dimension sum.
 
+**Slice 5A (merged #30) — Layer-A semantic verification (gateway oracle).**
+All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
+- **Semantic sampling** of settled jobs (default 5%, `GATEWAY_LAYER_A_SAMPLE_RATE`;
+  fire-and-forget from the dispatcher — never blocks or fails a request): re-run the
+  prompt on oracle-controlled inference (`GATEWAY_LAYER_A_ORACLE_RUNS`, default 2) and
+  compare **embedding cosine similarity**. The MAX similarity across runs decides —
+  every oracle run must disagree with the provider to flag (2-of-N redundancy).
+  Spec thresholds: ≥0.85 pass (no double-count) · 0.70–0.85 soft (accuracy EMA α=0.005)
+  · <0.70 anomaly (α=0.05 + manual-review flag). **Flags never auto-slash.**
+- **Pattern detection** on a sweep timer (`GATEWAY_PATTERN_SCAN_INTERVAL_SECONDS`,
+  default 1h), derived from job rows (jobs now persist `result_hash` + `finish_reason`):
+  identical output hash across ≥3 distinct prompts (a caching cheater — distinct jobId ⇒
+  distinct prompt), and (near-)always-`length` truncation over ≥10 jobs. One open flag
+  per ongoing pattern (no re-flag spam).
+- **Prompt privacy:** sampled prompts/outputs live only in memory; the DB stores
+  verdicts + hashes (`layer_a_checks`, `node_flags`). `/v1/nodes` exposes a `flags` count.
+- **Seams:** `OracleInference` + `EmbeddingProvider` (Ollama impls for production via
+  `GATEWAY_ORACLE_OLLAMA_URL`/`GATEWAY_ORACLE_EMBED_MODEL`; injected fakes in tests/e2e
+  via `BuildOptions.layerA`). Sampling is OFF unless one of those exists.
+- 11th e2e scenario: a canned-output cheater passes Layer-B; sampling collapses its
+  accuracy EMA + flags it, the pattern sweep catches the duplicate hashes, and the node
+  keeps serving (manual review, not eviction).
+
 **Deferred (do NOT assume these exist):**
-- Slices 5–9.
+- Slice 5B (DisputeResolution challenge hook — awaiting design sign-off), Slices 6–9.
 - `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
   `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -199,14 +222,15 @@ packages/
   matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
   gateway/      @querais/gateway — Fastify OpenAI API. src/{server,dispatcher,node-pool,
                 settlement,batched-settlement,reputation,verify,chain-client,quota,
-                session-status,key-store,faucet,metrics,config,auth,http}.ts + routes/*
-                + db/{index,migrations,jobs,sessions,ledger,node-sessions,
-                node-reputation,reputation-snapshots}.ts. 87 tests.
+                session-status,key-store,faucet,metrics,config,auth,http}.ts
+                + oracle/{layer-a,embeddings,patterns}.ts + routes/* + db/{index,
+                migrations,jobs,sessions,ledger,node-sessions,node-reputation,
+                reputation-snapshots,layer-a-checks,node-flags}.ts. 97 tests.
   node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 10-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 11-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
@@ -221,7 +245,7 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 (match → venue choice → stream → verify → settle), `gateway/src/batched-settlement.ts`
 (ledger/flush/reconcile/canAccrue), `gateway/src/reputation.ts` (the 5-dimension oracle),
 `gateway/src/quota.ts`, `gateway/src/db/migrations.ts`
-(**5 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
+(**6 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
 
 ---
 
@@ -243,6 +267,9 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 8. Reputation (Slice 4): the dispatcher folds the verified pass/fail into the gateway-side
    accuracy EMA and refreshes the pool's composite; the chain gets the composite via the
    daily snapshot sweep — or immediately after a slash.
+9. Layer-A (Slice 5A): ~5% of settled jobs are re-run on oracle inference and compared by
+   embedding cosine similarity (fire-and-forget); anomalies hit the EMA (α=0.05) and land
+   a manual-review flag. A pattern sweep flags caching/truncation cheaters from job rows.
 
 ---
 
@@ -273,6 +300,9 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
   called only by the daily snapshot sweep + the immediate post-slash publish. The accuracy
   EMA is NEVER seeded from the on-chain score (that's the composite — double-counting).
   Rapid decline flags for MANUAL review only — no auto-slash. (Slice 4.)
+- **Layer-A flags are manual-review only — never an auto-slash** (spec §6.2: anomaly →
+  review/dispute, not punishment), and **sampled prompts/outputs never persist** (the DB
+  stores verdicts + hashes only). Sampling must never block or fail a request. (5A.)
 - **`matching` stays pure** (no chain IO) so it can move on-chain in Phase 4.
 - **The gateway DB is a thin cache/index, never the source of truth for value/trust.**
 - Keep changes **additive via the existing seams**: `Settlement`, `InferenceBackend`,
@@ -294,7 +324,7 @@ pnpm build               # REBUILD BEFORE test:e2e after editing gateway src —
 pnpm typecheck
 pnpm lint                # eslint + prettier --check  (run `pnpm exec prettier --write .` first!)
 pnpm test                # all unit tests (109 TS + the 55-test contract suite)
-pnpm test:e2e            # self-contained: fresh local chain → 10 scenarios (~35s)
+pnpm test:e2e            # self-contained: fresh local chain → 11 scenarios (~40s)
 pnpm demo                # local human demo (real Ollama + dashboard)
 ```
 Sepolia (needs real keys — local operator only, see §12): `pnpm preflight:sepolia` →
@@ -362,6 +392,9 @@ optional — defaults in `HARDENING_DEFAULTS`, `gateway/src/config.ts`):
 `GATEWAY_WS_MAX_PER_IP`, `GATEWAY_WS_HANDSHAKE_TIMEOUT_MS`,
 `GATEWAY_WS_MAX_MESSAGES_PER_SECOND`. Slice 4 added `GATEWAY_WS_PING_INTERVAL_MS`
 (keepalive cadence) and `GATEWAY_REPUTATION_SNAPSHOT_INTERVAL_SECONDS` (daily epoch).
+Slice 5A added `GATEWAY_LAYER_A_SAMPLE_RATE`, `GATEWAY_LAYER_A_ORACLE_RUNS`,
+`GATEWAY_PATTERN_SCAN_INTERVAL_SECONDS`, `GATEWAY_ORACLE_OLLAMA_URL` (unset ⇒ sampling
+off), `GATEWAY_ORACLE_EMBED_MODEL`.
 
 ---
 
@@ -425,9 +458,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **10 scenarios**, gateway unit = **87**,
-  contracts = **56**, TS unit total = **140** (incl. 1 Ollama-gated node-daemon skip),
-  migrations = **5** (`MIGRATION_COUNT` tracks automatically).
+- Counts that tests assert or reports cite: e2e = **11 scenarios**, gateway unit = **97**,
+  contracts = **56**, TS unit total = **150** (incl. 1 Ollama-gated node-daemon skip),
+  migrations = **6** (`MIGRATION_COUNT` tracks automatically).
 
 ---
 
@@ -436,7 +469,7 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 10 scenarios pass (self-contained, ~35s).
+4. `pnpm test:e2e` → 11 scenarios pass (self-contained, ~40s).
 5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
    `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
    `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.

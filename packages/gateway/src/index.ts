@@ -44,6 +44,25 @@ export {
 export { NodeSessionStore, type SessionInterval } from './db/node-sessions.js';
 export { NodeReputationStore, type AccuracyState } from './db/node-reputation.js';
 export { ReputationSnapshotStore, type ReputationSnapshot } from './db/reputation-snapshots.js';
+export {
+  LayerASampler,
+  OllamaOracle,
+  classifySimilarityBps,
+  LAYER_A_PASS_BPS,
+  LAYER_A_SOFT_BPS,
+  type OracleInference,
+  type LayerAOptions,
+  type SampleContext,
+} from './oracle/layer-a.js';
+export { cosineSimilarity, OllamaEmbeddings, type EmbeddingProvider } from './oracle/embeddings.js';
+export {
+  PatternDetector,
+  detectDuplicateOutputs,
+  detectTruncationPattern,
+} from './oracle/patterns.js';
+export { LayerACheckStore, type LayerACheck, type LayerAVerdict } from './db/layer-a-checks.js';
+export { NodeFlagStore, type NodeFlag, type NodeFlagKind } from './db/node-flags.js';
+export { resolveLayerA, LAYER_A_DEFAULTS, type LayerAConfig } from './config.js';
 export { BatchedSettlement, type BatchedSettlementOptions } from './batched-settlement.js';
 export { SessionStore, type CreditSession } from './db/sessions.js';
 export { DebitLedgerStore, type DebitEntry } from './db/ledger.js';

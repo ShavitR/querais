@@ -245,6 +245,13 @@ test('recordOutcome seeds at 7000 (never from the on-chain score) and applies th
   assert.equal(chainReads(), 0, 'accuracy state must not touch the chain');
 });
 
+test('recordOutcome oracle kinds use the spec alphas (anomaly 0.05, soft 0.005)', () => {
+  const { service } = makeService();
+  assert.equal(service.recordOutcome(NODE, 'oracle-anomaly'), 6650); // 7000·0.95
+  const { service: s2 } = makeService();
+  assert.equal(s2.recordOutcome(OTHER, 'oracle-soft'), 6965); // 7000·0.995
+});
+
 test('dimensionsFor combines telemetry + chain reads into the composite', async () => {
   const now = Date.now();
   const { service, jobs, sessions } = makeService({

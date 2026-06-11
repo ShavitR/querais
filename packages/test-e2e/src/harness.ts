@@ -9,8 +9,10 @@ import {
 } from '@querais/shared';
 import {
   buildGateway,
+  type BuildOptions,
   type GatewayConfig,
   type HardeningConfig,
+  type LayerAConfig,
   type Settlement,
 } from '@querais/gateway';
 import {
@@ -53,6 +55,10 @@ export interface HarnessOptions {
   sessionDeadlineMarginSeconds?: number;
   /** Slice 4B: reputation snapshot sweep interval (default daily; tests shrink it). */
   reputationSnapshotIntervalSeconds?: number;
+  /** Slice 5: Layer-A knobs (sample rate, oracle runs, pattern sweep cadence). */
+  layerAConfig?: Partial<LayerAConfig>;
+  /** Slice 5: injected oracle inference + embeddings (sampler off when absent). */
+  layerA?: BuildOptions['layerA'];
   /** Slice 3: surface-hardening overrides (quota tiers, prompt limits, WS caps, faucet). */
   hardening?: Partial<HardeningConfig>;
 }
@@ -93,6 +99,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     batchFlushIntervalSeconds: 60,
     sessionDeadlineMarginSeconds: opts.sessionDeadlineMarginSeconds ?? 240,
     reputationSnapshotIntervalSeconds: opts.reputationSnapshotIntervalSeconds ?? 86_400,
+    ...(opts.layerAConfig ? { layerA: opts.layerAConfig } : {}),
     ...(opts.hardening ? { hardening: opts.hardening } : {}),
     adminToken: ADMIN_TOKEN,
     faucetAmountWei: parseEther('100'),
@@ -103,6 +110,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
   const { app } = await buildGateway({
     config: gatewayConfig,
     ...(opts.settlement ? { settlement: opts.settlement } : {}),
+    ...(opts.layerA ? { layerA: opts.layerA } : {}),
   });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();

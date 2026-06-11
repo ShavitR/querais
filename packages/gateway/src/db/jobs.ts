@@ -20,6 +20,9 @@ export interface SettledJob {
   paymentWei: bigint;
   providerPayWei: bigint;
   feeWei: bigint;
+  /** Slice 5 pattern-detection inputs (hashes only — output text never persists). */
+  resultHash?: Hex;
+  finishReason?: string;
 }
 
 /** A persisted job row, decoded back into typed fields. */
@@ -121,13 +124,16 @@ export class JobStore {
     this.db.conn
       .prepare(
         `UPDATE jobs SET status='verified', actual_tokens=?, payment_wei=?,
-           provider_pay_wei=?, fee_wei=?, updated_at=? WHERE job_id=?`,
+           provider_pay_wei=?, fee_wei=?, result_hash=?, finish_reason=?, updated_at=?
+         WHERE job_id=?`,
       )
       .run(
         s.actualTokens,
         s.paymentWei.toString(),
         s.providerPayWei.toString(),
         s.feeWei.toString(),
+        s.resultHash ?? null,
+        s.finishReason ?? null,
         Date.now(),
         jobId,
       );

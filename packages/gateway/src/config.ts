@@ -59,6 +59,32 @@ export function resolveHardening(partial?: Partial<HardeningConfig>): HardeningC
   return { ...HARDENING_DEFAULTS, ...partial };
 }
 
+/** Slice 5 Layer-A oracle knobs. Sampling stays off unless oracle inference exists
+ *  (an `ollamaUrl` here, or seams injected via BuildOptions in tests/e2e). */
+export interface LayerAConfig {
+  /** Fraction of settled jobs to semantically sample (spec: 0.05). */
+  sampleRate: number;
+  /** Oracle re-runs per sampled job (spec: 2–3; all must disagree to flag). */
+  oracleRuns: number;
+  /** Output-pattern sweep cadence (seconds). */
+  patternScanIntervalSeconds: number;
+  /** Ollama endpoint for oracle re-runs + embeddings (unset → sampler disabled). */
+  ollamaUrl?: string;
+  /** Embedding model for similarity scoring. */
+  embedModel: string;
+}
+
+export const LAYER_A_DEFAULTS: LayerAConfig = {
+  sampleRate: 0.05,
+  oracleRuns: 2,
+  patternScanIntervalSeconds: 3600,
+  embedModel: 'nomic-embed-text',
+};
+
+export function resolveLayerA(partial?: Partial<LayerAConfig>): LayerAConfig {
+  return { ...LAYER_A_DEFAULTS, ...partial };
+}
+
 export interface GatewayConfig {
   port: number;
   /** Deployment to load (addresses.<network>.json): 'localhost' | 'arbitrumSepolia' | … */
@@ -100,6 +126,8 @@ export interface GatewayConfig {
   /** Slice 3: surface-hardening overrides (faucet throttles, quota tiers, prompt limits,
    *  WS caps). Unset fields fall back to HARDENING_DEFAULTS. */
   hardening?: Partial<HardeningConfig>;
+  /** Slice 5: Layer-A oracle overrides. Unset fields fall back to LAYER_A_DEFAULTS. */
+  layerA?: Partial<LayerAConfig>;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -158,9 +186,23 @@ function hardeningFromEnv(env: NodeJS.ProcessEnv): Partial<HardeningConfig> {
   return out;
 }
 
+/** Read any GATEWAY_* Layer-A overrides present in the environment. */
+function layerAFromEnv(env: NodeJS.ProcessEnv): Partial<LayerAConfig> {
+  const out: Partial<LayerAConfig> = {};
+  if (env.GATEWAY_LAYER_A_SAMPLE_RATE) out.sampleRate = Number(env.GATEWAY_LAYER_A_SAMPLE_RATE);
+  if (env.GATEWAY_LAYER_A_ORACLE_RUNS) out.oracleRuns = Number(env.GATEWAY_LAYER_A_ORACLE_RUNS);
+  if (env.GATEWAY_PATTERN_SCAN_INTERVAL_SECONDS) {
+    out.patternScanIntervalSeconds = Number(env.GATEWAY_PATTERN_SCAN_INTERVAL_SECONDS);
+  }
+  if (env.GATEWAY_ORACLE_OLLAMA_URL) out.ollamaUrl = env.GATEWAY_ORACLE_OLLAMA_URL;
+  if (env.GATEWAY_ORACLE_EMBED_MODEL) out.embedModel = env.GATEWAY_ORACLE_EMBED_MODEL;
+  return out;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   return {
     hardening: hardeningFromEnv(env),
+    layerA: layerAFromEnv(env),
     port: Number(env.GATEWAY_PORT ?? '8787'),
     network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),

@@ -13,6 +13,8 @@ import type { SessionStore } from './db/sessions.js';
 import type { DebitLedgerStore } from './db/ledger.js';
 import type { BatchedSettlement } from './batched-settlement.js';
 import type { ReputationService } from './reputation.js';
+import type { NodeFlagStore } from './db/node-flags.js';
+import type { LayerACheckStore } from './db/layer-a-checks.js';
 
 /** Everything the route handlers need, assembled once at startup. */
 export interface GatewayDeps {
@@ -32,6 +34,9 @@ export interface GatewayDeps {
   credit?: BatchedSettlement;
   /** Slice 4: the 5-dimension reputation oracle (accuracy EMA + derived dimensions). */
   reputation: ReputationService;
+  /** Slice 5: manual-review flags (Layer-A anomalies, output patterns) + sample trail. */
+  nodeFlags: NodeFlagStore;
+  layerAChecks: LayerACheckStore;
   /** Slice 3 surface hardening: resolved limits + the per-key quota enforcer. */
   hardening: HardeningConfig;
   quota: QuotaEnforcer;
