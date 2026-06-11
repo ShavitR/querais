@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { parseEther, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
@@ -1223,6 +1224,210 @@ export async function runGracefulShutdownCase(): Promise<void> {
     );
   } finally {
     if (!drained) await h.stop();
+  }
+}
+
+/** The generic-format webhook body IS the Alert JSON (alerts.ts WebhookSink). */
+interface WebhookAlert {
+  key: string;
+  rule: string;
+  severity: string;
+  title: string;
+  detail: string;
+  runbook: string;
+  at: number;
+}
+
+/**
+ * Observability (Slice 8): the full paging loop, end to end. The harness boots the
+ * gateway with the webhook pointed at an in-process HTTP listener (the "human channel",
+ * generic format, 1s cooldown/sweep, 2s debit-max-age). A Layer-A anomaly pushes a
+ * `layer-a-anomaly` alert to the channel at flag time; the admin review queue shows it
+ * open and a review drains it to zero (visible on /v1/nodes too). Debits held past the
+ * age threshold fire `stuck-debits` from the sweep, and the flush recovers. The public
+ * status page reports `ok` with live numbers, and /metrics carries the Slice 8 gauges
+ * + histograms the Grafana dashboard reads.
+ */
+export async function runObservabilityCase(): Promise<void> {
+  // 1. The "human channel": an in-process listener collecting every delivered alert.
+  const received: WebhookAlert[] = [];
+  const hook = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      received.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as WebhookAlert);
+      res.writeHead(200).end();
+    });
+  });
+  await new Promise<void>((resolve) => hook.listen(0, '127.0.0.1', resolve));
+  const hookAddr = hook.address();
+  if (!hookAddr || typeof hookAddr === 'string') throw new Error('failed to bind webhook port');
+  const webhookUrl = `http://127.0.0.1:${String(hookAddr.port)}/alerts`;
+
+  const waitForAlert = async (rule: string): Promise<WebhookAlert> => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const hit = received.find((a) => a.rule === rule);
+      if (hit) return hit;
+      assert.ok(Date.now() < deadline, `timed out waiting for '${rule}' on the webhook`);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  };
+
+  // Canned cheater + injected oracle (scenario 11's induction), plus tight alert knobs:
+  // every alert delivers (info floor, 1s cooldown), the sweep runs every second, and a
+  // debit counts as stuck after 2s. Threshold 3 holds the first two debits pending.
+  const h = await startHarness({
+    backend: new CannedBackend(),
+    batchFlushThreshold: 3,
+    layerAConfig: { sampleRate: 1, oracleRuns: 2, patternScanIntervalSeconds: 3600 },
+    layerA: {
+      inference: {
+        generate: async (_model, messages) =>
+          `You said: ${messages[messages.length - 1]?.content ?? ''}`,
+      },
+      embeddings: trigramEmbeddings(),
+    },
+    alerts: {
+      webhookUrl,
+      webhookFormat: 'generic',
+      minSeverity: 'info',
+      cooldownSeconds: 1,
+      sweepIntervalSeconds: 1,
+      debitMaxAgeSeconds: 2,
+    },
+  });
+  try {
+    const admin = { 'x-admin-token': ADMIN_TOKEN };
+
+    // 2. Induce a Layer-A anomaly → the push alert reaches the channel at flag time.
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'what is the capital of France?' }],
+      max_tokens: 50,
+    });
+    assert.equal(res.status, 200, 'the canned cheater still passes Layer-B');
+    const anomaly = await waitForAlert('layer-a-anomaly');
+    assert.equal(anomaly.severity, 'critical', 'layer-a-anomaly pages at critical');
+    assert.ok(anomaly.runbook.endsWith('#layer-a-anomaly'), 'the alert links its runbook section');
+
+    // 3. The review queue: the flag is open, a review closes it, every surface agrees.
+    interface FlagsView {
+      flags: Array<{ id: number; status: string }>;
+      openCount: number;
+    }
+    const open = (await (
+      await fetch(`${h.baseUrl}/v1/admin/flags?status=open`, { headers: admin })
+    ).json()) as FlagsView;
+    assert.ok(open.openCount >= 1, 'the anomaly flag is open in the review queue');
+    for (const flag of open.flags) {
+      const reviewed = await fetch(`${h.baseUrl}/v1/admin/flags/${String(flag.id)}/review`, {
+        method: 'POST',
+        headers: { ...admin, 'content-type': 'application/json' },
+        body: JSON.stringify({ by: 'e2e', note: 'observability scenario review' }),
+      });
+      assert.equal(reviewed.status, 200, `flag ${String(flag.id)} reviews cleanly`);
+    }
+    const after = (await (
+      await fetch(`${h.baseUrl}/v1/admin/flags?status=open`, { headers: admin })
+    ).json()) as FlagsView;
+    assert.equal(after.openCount, 0, 'reviews drain the queue to zero');
+    const [nodeView] = await fetchNodes(h.baseUrl);
+    assert.equal(nodeView?.flags, 0, '/v1/nodes flag count drops back to 0 after review');
+
+    // 4. Hold debits past the age threshold → the sweep fires `stuck-debits`.
+    const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
+    const credit = h.deployment.contracts.creditAccount;
+    const reqWallet = makeWalletClient(h.deployment.rpcUrl, KEYS.requester, h.deployment.chainId);
+    const deposit = parseEther('100');
+    const approveHash = await reqWallet.writeContract({
+      address: h.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'approve',
+      args: [credit, deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: approveHash });
+    const depositHash = await reqWallet.writeContract({
+      address: credit,
+      abi: creditAccountAbi,
+      functionName: 'deposit',
+      args: [deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: depositHash });
+    const sdk = new QueraisClient({
+      baseUrl: h.baseUrl,
+      apiKey: API_KEY,
+      privateKey: KEYS.requester,
+    });
+    const opened = await sdk.openSession({
+      maxSpendWei: deposit,
+      nonce: 11n,
+      deadline: BigInt(Math.floor(Date.now() / 1000)) + 3600n,
+    });
+    assert.equal(opened.ok, true, 'session should open');
+    for (let i = 0; i < 2; i++) {
+      const job = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `held debit ${i}` }],
+        max_tokens: 20,
+      });
+      assert.equal(job.status, 200, `job ${i} accrues a pending debit`);
+    }
+    const stuck = await waitForAlert('stuck-debits');
+    assert.equal(stuck.severity, 'critical', 'unpaid providers page at critical');
+
+    // While stuck: the Grafana-facing gauge + latency histogram are live on /metrics.
+    const duringStuck = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(
+      duringStuck,
+      /querais_oldest_pending_debit_age_seconds [1-9]/,
+      'the oldest-debit-age gauge reports the stuck debit',
+    );
+    assert.match(
+      duringStuck,
+      /querais_job_duration_seconds_bucket\{le="/,
+      'the job-duration histogram renders cumulative buckets',
+    );
+
+    // 5. Recovery: the third job tips the threshold → one flush drains the ledger.
+    const last = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'held debit 2 (tips the flush)' }],
+      max_tokens: 20,
+    });
+    assert.equal(last.status, 200, 'the tipping job succeeds');
+    const drainDeadline = Date.now() + 15_000;
+    for (;;) {
+      const status = await sdk.sessionStatus();
+      if (status.pendingDebits.count === 0) break;
+      assert.ok(Date.now() < drainDeadline, 'timed out waiting for the flush to drain debits');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+
+    // 6. The public status page: `ok`, live numbers, and nothing sensitive.
+    const statusBody = (await (await fetch(`${h.baseUrl}/v1/status`)).json()) as {
+      status: string;
+      nodes: number;
+      rpcOk: boolean;
+      jobs24h: number;
+    };
+    assert.equal(statusBody.status, 'ok', '/v1/status reports ok once recovered');
+    assert.equal(statusBody.rpcOk, true, 'RPC probe passes');
+    assert.equal(statusBody.nodes, 1, 'the connected node is counted');
+    assert.ok(statusBody.jobs24h >= 1, 'the 24h job count is live');
+
+    // 7. The alert pipeline's own metrics moved.
+    const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    assert.match(
+      metricsText,
+      /querais_alerts_delivered_total [1-9]/,
+      'deliveries are counted on /metrics',
+    );
+  } finally {
+    await h.stop();
+    await new Promise<void>((resolve, reject) => {
+      hook.close((err) => (err ? reject(err) : resolve()));
+    });
   }
 }
 

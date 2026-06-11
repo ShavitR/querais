@@ -24,6 +24,9 @@ export interface BatchedSettlementOptions {
  */
 export class BatchedSettlement implements Settlement {
   private readonly flushing = new Set<string>();
+  // Slice 8 `settlement-failures` rule: consecutive on-chain flush failures (reset on
+  // any success). A streak means liability is accumulating — likely a chain/RPC issue.
+  private failStreak = 0;
 
   constructor(
     private readonly chain: ChainClient,
@@ -138,9 +141,11 @@ export class BatchedSettlement implements Settlement {
         // The whole batch reverts if ANY debit was already settled on-chain (e.g. a crash
         // landed between tx-send and markBatched). Reconcile against the contract's
         // settledJob guard so stale debits can't wedge the ledger forever, then rethrow.
+        this.failStreak += 1;
         await this.reconcile(requester, debits);
         throw err;
       }
+      this.failStreak = 0;
       this.ledger.markBatched(
         debits.map((d) => d.jobId),
         hash,
@@ -178,6 +183,17 @@ export class BatchedSettlement implements Settlement {
     } catch (err) {
       this.logger.error({ err, requester }, 'ledger reconciliation failed');
     }
+  }
+
+  /** When the oldest unflushed debit was recorded (ms) — the `stuck-debits` rule and
+   *  the oldest-debit-age gauge read it here (this class owns the pending ledger). */
+  oldestPendingDebitAt(): number | undefined {
+    return this.ledger.oldestPendingCreatedAt();
+  }
+
+  /** Consecutive on-chain flush failures since the last success. */
+  consecutiveFlushFailures(): number {
+    return this.failStreak;
   }
 
   /** Flush every requester with pending debits (timer / graceful shutdown). */

@@ -281,7 +281,7 @@ Now there's something worth hosting. Stand up the real service and bring the wor
   on disk in plaintext; pause drill executed against production.
 - **Maps to:** P3.1.
 
-### Slice 8 — Observability & SRE · Effort M · Risk M
+### Slice 8 — Observability & SRE · Effort M · Risk M · ✅ DONE (full plan + as-built record: `Slice8.md` in the repo root)
 - **Highest-value item: close the manual-review loop.** Slices 4/5 deliberately route
   cheating signals (rapid reputation decline, Layer-A anomalies, pattern cheaters) to
   "manual review" — but today a flag is a log line + metric and **nobody is paged**, so a
@@ -517,8 +517,8 @@ ambiguous, ask "does it need a wallet, a key, or a WebSocket?" — yes ⇒ app, 
 
 ```
 Stage A (foundation)      ✅ 0 CI/Slither → ✅ 1 Persistence → ✅ 2 Batched settlement ⭐ → ✅ 3 Harden surface
-Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ⬜ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
-Stage C (operate)         ⬜ 7 Deploy (DB-as-money) → ⬜ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
+Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ✅ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
+Stage C (operate)         ✅ 7 Deploy (7A code #37 · 7B live: querais-gateway.fly.dev) → ✅ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
 Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D live explorer · 10E Next.js site)
                           ⬜ 11 Arbitration (STANDARD track) → ⬜ 12 Scale confidence → ⬜ 13 Mainnet go/no-go gate
 ```

@@ -36,7 +36,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
 Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ✅ 6 Tokenomics (6A #33 · 6B #34 · 6C #35)
-Stage C — Operate           ◐ 7 Deploy (7A #37 code · 7B operator)   ⬜ 8 Observability   ⬜ 9 DX/growth
+Stage C — Operate           ✅ 7 Deploy (7A #37 code · 7B LIVE: querais-gateway.fly.dev)   ✅ 8 Observability   ⬜ 9 DX/growth
 ```
 
 **Working rhythm (established, stick to it):** one **branch + PR per slice** (big slices
@@ -44,20 +44,14 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**STAGES A AND B COMPLETE; Slice 7A (deploy-ready hardening, code-side) COMPLETE.**
-Immediate next actions:
-1. **Slice 7B — the live EXECUTION only (OPERATOR action).** The Fly.io config + CI
-   deploy pipeline are BUILT (#37); what remains needs keys + a Fly account: `fly apps
-   create` + volume + `fly secrets set` (hot keys), add `FLY_API_TOKEN` + set
-   `DEPLOY_ENABLED=true`, the full-protocol Sepolia redeploy (runbook §7b), and the live
-   restore/pause drills. Step-by-step in **`docs/DEPLOY.md`**. A remote agent can't do
-   these; hand to the maintainer.
-2. **Slice 8 — observability & SRE.** Highest-value item: close the manual-review loop —
-   `node_flags` + rapid-decline + Layer-A anomalies are computed but **nobody is paged**;
-   wire a notification channel + a minimal review queue. Then Prometheus/Grafana, alert
-   rules (oldest-unflushed-debit age, gas/bond gauges), status page. Mostly code-side —
-   plan before building (§11).
-3. Then Slice 9 (DX/node-polish/growth) → Stage D (web app, arbitration, scale, mainnet).
+**STAGES A AND B COMPLETE; Slices 7 AND 8 COMPLETE — the gateway is LIVE on Fly.io
+(`querais-gateway.fly.dev`) against the full Stage-B Sepolia contract set, with the
+Slice 8 paging loop / metrics / status page built.** Immediate next actions:
+1. **Slice 8 rollout (OPERATOR, minutes):** arm the alert webhook + fire the test alert —
+   step-by-step in **`docs/OBSERVABILITY.md`**; runbook = `docs/RUNBOOK_ALERTS.md`.
+2. **Slice 9 — DX, node polish & growth** (scope below + EXECUTION_PLAN). Includes the
+   repo-public gate (secret-scan + user sign-off) for the one-liner installer.
+3. Then Stage D (web app, arbitration, scale, mainnet gate).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -305,10 +299,42 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
   pipeline so the hot keys never enter a build environment.
 - Runbook **§7d** is the operator deploy + custody procedure (points at `docs/DEPLOY.md`).
 
+**Slice 7B (EXECUTED by the operator, 2026-06)** — the gateway is LIVE at
+`https://querais-gateway.fly.dev` (Fly.io, single machine + volume, CI deploy pipeline
+armed) against a **full Stage-B Sepolia redeploy** (all 7 contracts; manifest in
+`packages/contracts/deployments/addresses.arbitrumSepolia.json`). Hot keys live in Fly
+secrets only; cold admin/pauser keys never touch Fly or CI (runbook §7).
+
+**Slice 8 — Observability & SRE.** Full plan + as-built record: **`Slice8.md`** (repo
+root). Closes the loop: signal → alert → human with a runbook attached. All gateway-side:
+- **The paging loop**: `alerts.ts` (`AlertService` + webhook sink with discord/slack/
+  generic formats, severity floor, per-key cooldown, fire-and-forget raise that never
+  throws; URL redacted to host in all errors/logs — it embeds a channel token) + push
+  alerts at flag time (`layer-a-anomaly`, `pattern-cheater` critical; `rapid-decline`
+  warn) + `alert-rules.ts` sweep keeper (8 rules: gas-low / stuck-debits /
+  settlement-failures / rpc-degraded critical; node-drop / open-flags / faucet-low /
+  keeper-stale warn). Alerting is OFF unless `GATEWAY_ALERT_WEBHOOK_URL` is set.
+- **Review queue** (migration 7): flags carry `reviewed_at/by/note`; admin API
+  `GET /v1/admin/flags` + `POST /v1/admin/flags/:id/review`; `/v1/nodes` shows OPEN
+  flag counts only. `KeeperHealth` tracks every timer's last success.
+- **Metrics enrichment**: latency histograms (duration + TTFT), per-model counters,
+  money gauges (pending debits count/value/oldest-age, gas/hot-wallet/faucet balances
+  refreshed by the sweep — no extra RPC), keeper timestamps, alert pipeline counters.
+  `querais_nodes` is a legacy alias of `querais_nodes_connected` (remove in Slice 9).
+- **Public status page**: `GET /v1/status` (5 s cache; no balances/wallets/flag details)
+  + `GET /status` HTML; `degraded` = RPC down or 0 nodes with recent jobs.
+- **Channel check**: `POST /v1/admin/alerts/test` fires a synthetic alert through the
+  real sink. **Runbook**: `docs/RUNBOOK_ALERTS.md` — one section per rule id, enforced
+  by `runbook-coverage.test.ts` (an alert without a runbook does not ship). Ops examples:
+  `ops/prometheus.yml` + `ops/grafana-dashboard.json`, documented in
+  `docs/OBSERVABILITY.md`. 17th e2e scenario: induced anomaly → webhook delivery,
+  review-queue lifecycle, stuck-debits fire + recover, status page + gauges live.
+
 **Deferred (do NOT assume these exist):**
-- Slice 7B (live hosting — operator), Slices 8–9, Stage D.
-- `DisputeResolution.sol`, `ProtocolTreasury.sol` — 0% built (specs in
-  `querais_smart_contracts.md` §5–6). Fees currently go to a flat treasury EOA.
+- Slice 9 (DX/release/growth; repo is still private), Stage D (web app, STANDARD-track
+  arbitration panel, scale, mainnet gate).
+- Hosted Prometheus/Grafana/log aggregation — Slice 8 ships `/metrics` + example configs
+  (`ops/`), the operator brings the stack.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
 - Dependency majors (zod 4, openai 6, ts 6, …) — deliberate; Dependabot ignores npm majors.
 
@@ -328,18 +354,24 @@ packages/
   matching/     @querais/matching — pure scorer (0.5·price + 0.5·reputation), no chain IO. 6 tests.
   gateway/      @querais/gateway — Fastify OpenAI API. src/{server,dispatcher,node-pool,
                 settlement,batched-settlement,reputation,verify,chain-client,quota,
-                session-status,key-store,faucet,metrics,config,auth,http}.ts
-                + oracle/{layer-a,embeddings,patterns}.ts + routes/* + db/{index,
-                migrations,jobs,sessions,ledger,node-sessions,node-reputation,
-                reputation-snapshots,layer-a-checks,node-flags}.ts. 98 tests.
+                session-status,key-store,faucet,metrics,config,auth,http,
+                alerts,alert-rules,keeper-health}.ts
+                + oracle/{layer-a,embeddings,patterns}.ts + routes/* (incl. status,
+                flags, alerts-admin) + db/{index,migrations,jobs,sessions,ledger,
+                node-sessions,node-reputation,reputation-snapshots,layer-a-checks,
+                node-flags}.ts.
   node-daemon/  @querais/node-daemon — Ollama inference, encrypted keystore, auto-pricing,
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 16-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 17-scenario acceptance gate + live/ops scripts.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
+ops/                     example Prometheus scrape config + Grafana starter dashboard
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
+docs/RUNBOOK_ALERTS.md   per-alert-rule 2am runbook (every alert links its section)
+docs/OBSERVABILITY.md    alert webhook + Prometheus/Grafana + status page setup
+docs/DEPLOY.md           Fly.io operator setup + drills
 docs/SLITHER_TRIAGE.md   Slither setup rationale + acknowledged/excluded findings
 docs/SLICE1_PLAN.md      thin-DB principle + node:sqlite rationale
 docs/PHASE3_PLAN.md      broader workstream catalogue
@@ -350,8 +382,9 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 `shared/src/spending-cap.ts` (EIP-712 — must mirror the contract), `gateway/src/dispatcher.ts`
 (match → venue choice → stream → verify → settle), `gateway/src/batched-settlement.ts`
 (ledger/flush/reconcile/canAccrue), `gateway/src/reputation.ts` (the 5-dimension oracle),
-`gateway/src/quota.ts`, `gateway/src/db/migrations.ts`
-(**6 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
+`gateway/src/quota.ts`, `gateway/src/alerts.ts` + `alert-rules.ts` (the Slice 8 paging
+loop), `gateway/src/db/migrations.ts`
+(**7 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
 
 ---
 
@@ -504,6 +537,9 @@ off), `GATEWAY_ORACLE_EMBED_MODEL`. Slice 5B added `GATEWAY_LAYER_A_DISPUTE_ON_A
 (default off; needs a 5B deployment + gateway QAIS for bonds). Slice 6A added
 `GATEWAY_TREASURY_DISTRIBUTE_INTERVAL_SECONDS` (daily sweep; auto-off pre-6A);
 6C added the `GATEWAY_INCENTIVE_*` budget/threshold knobs (see `docs/INCENTIVES.md`).
+Slice 8 added the `GATEWAY_ALERT_*` knobs — webhook URL/format, severity floor,
+cooldown, sweep interval, gas/debit-age/fail-streak thresholds (full table in
+`docs/OBSERVABILITY.md`; alerting is off when the webhook URL is unset).
 
 ---
 
@@ -544,9 +580,8 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 
 ## 12. Loose ends / current runtime state
 
-- **Stage A complete; Slice 4 Reputation complete** — `main` is at #29 (Slice 4B
-  snapshots). Next: **Stage B, Slice 5 Layer-A verification** (scope in §2). No slice PR
-  is open.
+- **Stages A–C through Slice 8 complete** — the gateway is LIVE on Fly.io against the
+  Stage-B Sepolia contract set. Next: **Slice 9 DX/growth** (scope in §2).
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have changed state since this file was written.
 - **Remote agents (no local files): what you can and cannot do.**
@@ -563,13 +598,15 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the maintainer's
   `.env`. Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`)
   — the supply-chain age policy working as designed; leave it until the package ages in.
-- **No hosted gateway/VM node is running** — restart with `pnpm gateway:sepolia` + the node
-  scripts if needed (local operator; the VM restart recipe is in the maintainer's notes).
+- **The hosted gateway runs 24/7 at `querais-gateway.fly.dev`** (Fly.io, one machine —
+  never scale above 1: single-writer SQLite + single-owner timers). The maintainer's VM
+  node connects to it; the VM restart recipe is in the maintainer's notes. Alerting is
+  armed only once the operator sets `GATEWAY_ALERT_WEBHOOK_URL` (docs/OBSERVABILITY.md).
 - The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
   public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **16 scenarios**, gateway unit = **107**,
-  contracts = **81**, TS unit total = **160** (incl. 1 Ollama-gated node-daemon skip),
-  migrations = **6** (`MIGRATION_COUNT` tracks automatically).
+- Counts that tests assert or reports cite: e2e = **17 scenarios**,
+  migrations = **7** (`MIGRATION_COUNT` tracks automatically). Unit-test totals move
+  every slice — read them off the latest `pnpm test` run instead of trusting a doc.
 
 ---
 
@@ -578,9 +615,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 16 scenarios pass (self-contained, ~65s).
-5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts` (the Slice 4 oracle),
-   `verify.ts` (Layer-B — Slice 5 builds Layer-A above it), `CreditAccount.sol`,
-   `e2e.ts`, and `docs/RUNBOOK_KEYS.md`.
-6. Plan Slice 5 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
+4. `pnpm test:e2e` → 17 scenarios pass (self-contained, ~70s).
+5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts`, `alerts.ts` +
+   `alert-rules.ts` (the Slice 8 paging loop), `CreditAccount.sol`, `e2e.ts`, and
+   `docs/RUNBOOK_KEYS.md` + `docs/RUNBOOK_ALERTS.md`.
+6. Plan Slice 9 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
    the rhythm in §2.

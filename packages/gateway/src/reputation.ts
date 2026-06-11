@@ -5,6 +5,7 @@ import type { JobStore } from './db/jobs.js';
 import type { NodeReputationStore } from './db/node-reputation.js';
 import type { NodeSessionStore, SessionInterval } from './db/node-sessions.js';
 import type { ReputationSnapshotStore } from './db/reputation-snapshots.js';
+import type { AlertService } from './alerts.js';
 import { metrics } from './metrics.js';
 
 /**
@@ -183,6 +184,8 @@ export class ReputationService {
     private readonly jobs: JobStore,
     private readonly snapshots: ReputationSnapshotStore,
     private readonly logger: Logger,
+    /** Slice 8: rapid-decline flags page a human (absent in older tests → log only). */
+    private readonly alerts?: AlertService,
   ) {}
 
   /**
@@ -260,6 +263,16 @@ export class ReputationService {
         { wallet, priorMax, compositeBps: dims.compositeBps },
         'rapid reputation decline — node flagged for manual review',
       );
+      // Slice 8 push alert: flag → human at flag time, not on some later sweep.
+      this.alerts?.raise({
+        key: `rapid-decline:${wallet.toLowerCase()}`,
+        rule: 'rapid-decline',
+        severity: 'warn',
+        title: 'Rapid reputation decline — node flagged for review',
+        detail:
+          `node ${wallet} composite dropped to ${String(dims.compositeBps)} bps ` +
+          `from a 7d max of ${String(priorMax)} bps (> ${String(RAPID_DECLINE_DROP_BPS)} bps)`,
+      });
     }
 
     this.snapshots.insert({ wallet, ...dims, txHash, flagged, createdAt: Date.now() });

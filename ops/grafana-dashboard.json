@@ -1,0 +1,228 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus scraping the QueraIS gateway /metrics (see ops/prometheus.yml)",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "QueraIS Gateway",
+  "uid": "querais-gateway",
+  "tags": ["querais"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Connected nodes",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "querais_nodes_connected", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Open review flags",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "querais_open_flags", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Gas balance (ETH)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "querais_gas_balance_wei / 1e18", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.01 },
+              { "color": "green", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Oldest pending debit age (s)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "querais_oldest_pending_debit_age_seconds", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 300 },
+              { "color": "red", "value": 900 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Pending debit value (QAIS)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "querais_pending_debit_value_qais", "refId": "A" }]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Faucet (QAIS)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "querais_faucet_qais", "refId": "A" }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Job throughput (per minute)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "expr": "rate(querais_jobs_settled_total{model=\"\"}[5m]) * 60",
+          "legendFormat": "settled",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(querais_jobs_failed_total[5m]) * 60",
+          "legendFormat": "failed",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Jobs settled by model (per minute)",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "expr": "rate(querais_jobs_settled_total{model!=\"\"}[5m]) * 60",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Latency: TTFT p50/p95",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(querais_job_ttft_seconds_bucket[15m]))",
+          "legendFormat": "ttft p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(querais_job_ttft_seconds_bucket[15m]))",
+          "legendFormat": "ttft p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Latency: job duration p50/p95",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(querais_job_duration_seconds_bucket[15m]))",
+          "legendFormat": "duration p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(querais_job_duration_seconds_bucket[15m]))",
+          "legendFormat": "duration p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Money: pending debits + balances",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "targets": [
+        { "expr": "querais_pending_debits", "legendFormat": "pending debits", "refId": "A" },
+        {
+          "expr": "querais_pending_debit_value_qais",
+          "legendFormat": "pending value (QAIS)",
+          "refId": "B"
+        },
+        { "expr": "querais_gas_balance_wei / 1e18", "legendFormat": "gas (ETH)", "refId": "C" },
+        { "expr": "querais_hot_wallet_qais", "legendFormat": "hot wallet (QAIS)", "refId": "D" }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Alert pipeline (rate/h) + keeper staleness",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "targets": [
+        {
+          "expr": "sum(rate(querais_alerts_raised_total[1h])) * 3600",
+          "legendFormat": "raised/h",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(querais_alerts_delivered_total[1h]) * 3600",
+          "legendFormat": "delivered/h",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(querais_alerts_failed_total[1h]) * 3600",
+          "legendFormat": "failed/h",
+          "refId": "C"
+        },
+        {
+          "expr": "time() - (querais_keeper_last_success_timestamp / 1000)",
+          "legendFormat": "stale: {{keeper}} (s)",
+          "refId": "D"
+        }
+      ]
+    }
+  ]
+}

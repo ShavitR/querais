@@ -118,6 +118,8 @@ export class Dispatcher {
     requester: Address,
     onToken?: (delta: string) => void,
   ): Promise<DispatchResult> {
+    // Slice 8 latency histogram: end-to-end duration, match through settle.
+    const startedAtMs = Date.now();
     // Base the deadline on CHAIN time, not wall-clock — block.timestamp can drift
     // (e.g. Hardhat bumps it +1s per block under bursty load), and on-chain createJob
     // checks `deadline > block.timestamp`.
@@ -207,6 +209,7 @@ export class Dispatcher {
     if (streamed.firstTokenMs !== undefined) {
       const ttft = streamed.firstTokenMs;
       this.persist(() => this.jobs.recordFirstToken(spec.jobId, ttft));
+      metrics.jobTtftSeconds.observe(ttft / 1000);
     }
 
     // ── Layer-B verify ──
@@ -250,6 +253,11 @@ export class Dispatcher {
     });
     metrics.jobsSettled += 1;
     metrics.tokensServed += verdict.authoritativeTokens;
+    // Slice 8: per-model splits (the model registry bounds the label set) + duration.
+    metrics.jobsSettledByModel[spec.model] = (metrics.jobsSettledByModel[spec.model] ?? 0) + 1;
+    metrics.tokensServedByModel[spec.model] =
+      (metrics.tokensServedByModel[spec.model] ?? 0) + verdict.authoritativeTokens;
+    metrics.jobDurationSeconds.observe((Date.now() - startedAtMs) / 1000);
     // Mirror the settlement split (same integer math the contract used) into the job record.
     const { providerPay, fee } = splitPayment(payment);
     this.persist(() =>

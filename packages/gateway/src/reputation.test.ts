@@ -21,6 +21,7 @@ import {
   stakeScoreBps,
   uptimeRatioBps,
 } from './reputation.js';
+import { AlertService, MemorySink } from './alerts.js';
 
 const logger = pino({ level: 'silent' });
 const NODE = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as Address;
@@ -225,7 +226,18 @@ function makeService(node?: {
       return ('0x' + 'ee'.repeat(32)) as `0x${string}`;
     },
   } as unknown as ChainClient;
-  const service = new ReputationService(chain, accuracy, sessions, jobs, snapshots, logger);
+  // Slice 8: a rapid-decline flag must page — captured by a MemorySink.
+  const alertSink = new MemorySink();
+  const alertSvc = new AlertService(alertSink, logger, { cooldownSeconds: 0, minSeverity: 'warn' });
+  const service = new ReputationService(
+    chain,
+    accuracy,
+    sessions,
+    jobs,
+    snapshots,
+    logger,
+    alertSvc,
+  );
   return {
     service,
     db,
@@ -234,6 +246,7 @@ function makeService(node?: {
     accuracy,
     snapshots,
     published,
+    alerts: alertSink.alerts,
     chainReads: () => chainReads,
   };
 }
@@ -315,7 +328,7 @@ test('publishNow skips a node that is gone from the registry (publish would reve
 });
 
 test('rapid decline: a >2000 bps drop within 7 days flags the node (no chain effect)', async () => {
-  const { service, snapshots, accuracy, published } = makeService({
+  const { service, snapshots, accuracy, published, alerts } = makeService({
     registeredAt: 0n,
     stakeAmount: 0n,
   });
@@ -341,6 +354,12 @@ test('rapid decline: a >2000 bps drop within 7 days flags the node (no chain eff
   // the three updateReputation publishes themselves.
   assert.equal(published.length, 3);
   assert.equal(published[2]!.score, dims!.compositeBps);
+  // Slice 8: the flag pages a human (warn — the queue rule re-raises if ignored).
+  await new Promise((r) => setImmediate(r));
+  assert.equal(alerts.length, 1, 'exactly the collapse paged');
+  assert.equal(alerts[0]?.rule, 'rapid-decline');
+  assert.equal(alerts[0]?.severity, 'warn');
+  assert.equal(alerts[0]?.key, `rapid-decline:${NODE.toLowerCase()}`);
 });
 
 test('snapshotAll sweeps every known wallet and isolates per-node failures', async () => {

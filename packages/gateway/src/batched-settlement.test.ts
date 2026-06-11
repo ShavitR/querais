@@ -199,6 +199,38 @@ test('canAccrue enforces cap and deposit headroom over spent + pending + worst c
   assert.equal(await bs.canAccrue(REQ, 450n), false);
 });
 
+test('Slice 8 instrumentation: oldest pending debit age + consecutive-failure streak', async () => {
+  const { sessions, ledger } = fixture();
+  let fail = true;
+  const chain = fakeChain({
+    batchSettle: async () => {
+      if (fail) throw new Error('rpc down');
+      return TX;
+    },
+  });
+  const bs = new BatchedSettlement(chain, sessions, ledger, logger, {
+    flushThreshold: 1,
+    deadlineMarginSeconds: 60,
+  });
+
+  assert.equal(bs.oldestPendingDebitAt(), undefined, 'empty ledger: no oldest debit');
+  assert.equal(bs.consecutiveFlushFailures(), 0);
+
+  const before = Date.now();
+  await bs.settle(ctx(1)); // flush fails (caught), debit retained
+  await bs.settle(ctx(2)); // fails again — streak of 2
+  assert.equal(bs.consecutiveFlushFailures(), 2, 'each failed flush extends the streak');
+  const oldest = bs.oldestPendingDebitAt();
+  assert.ok(oldest !== undefined && oldest >= before, 'oldest debit timestamp is live');
+  assert.equal(ledger.pendingValueWei(), 200n, 'outstanding liability sums pending debits');
+
+  fail = false;
+  await bs.flush(REQ);
+  assert.equal(bs.consecutiveFlushFailures(), 0, 'a success resets the streak');
+  assert.equal(bs.oldestPendingDebitAt(), undefined, 'flushed ledger: nothing pending');
+  assert.equal(ledger.pendingValueWei(), 0n);
+});
+
 test('canAccrue is false without an active session', async () => {
   const db = new GatewayDb();
   const bs = new BatchedSettlement(

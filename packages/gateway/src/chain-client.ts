@@ -79,6 +79,11 @@ export class ChainClient {
     return block.timestamp;
   }
 
+  /** Native ETH balance — gas-tank reads for the `gas-low` / `faucet-low` sweeps. */
+  ethBalance(account: Address): Promise<bigint> {
+    return this.publicClient.getBalance({ address: account });
+  }
+
   tokenBalance(account: Address): Promise<bigint> {
     return this.publicClient.readContract({
       address: this.deployment.contracts.token,

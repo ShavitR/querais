@@ -5,6 +5,7 @@ import type { ReputationService } from '../reputation.js';
 import type { NodePool } from '../node-pool.js';
 import type { LayerACheckStore, LayerAVerdict } from '../db/layer-a-checks.js';
 import type { NodeFlagStore } from '../db/node-flags.js';
+import type { AlertService } from '../alerts.js';
 import { cosineSimilarity, type EmbeddingProvider } from './embeddings.js';
 import { metrics } from '../metrics.js';
 
@@ -99,6 +100,8 @@ export class LayerASampler {
     private readonly random: () => number = Math.random,
     /** Slice 5B: when present, anomalies also raise + auto-resolve an on-chain dispute. */
     private readonly disputes?: DisputeRaiser,
+    /** Slice 8: anomalies page a human at flag time (absent in older tests → log only). */
+    private readonly alerts?: AlertService,
   ) {}
 
   /** The dispatcher's fire-and-forget hook: decides the sample and runs the check.
@@ -145,6 +148,16 @@ export class LayerASampler {
         { jobId: ctx.jobId, provider: ctx.provider, similarityBps },
         'layer-A anomaly — flagged for manual review',
       );
+      // Slice 8 push alert: flag → human in seconds, not when someone reads the logs.
+      this.alerts?.raise({
+        key: `layer-a-anomaly:${ctx.provider.toLowerCase()}`,
+        rule: 'layer-a-anomaly',
+        severity: 'critical',
+        title: 'Layer-A anomaly — node flagged for review',
+        detail:
+          `node ${ctx.provider} job ${ctx.jobId}: ` +
+          `similarity ${(similarityBps / 10000).toFixed(4)} < 0.70`,
+      });
       await this.pool.refreshReputation(ctx.provider).catch(() => {});
       // Slice 5B challenge hook (clear-cut FAST track): the oracle's own re-runs are
       // the evidence, so it raises AND auto-resolves. Non-fatal — the flag above is

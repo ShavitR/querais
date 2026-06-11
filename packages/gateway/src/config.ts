@@ -1,5 +1,6 @@
 import { parseEther, type Address, type Hex } from 'viem';
 import type { IncentiveConfig } from './incentives.js';
+import type { AlertSeverity, WebhookFormat } from './alerts.js';
 
 /** Daily budgets for one API-key quota tier. */
 export interface QuotaTier {
@@ -90,6 +91,42 @@ export function resolveLayerA(partial?: Partial<LayerAConfig>): LayerAConfig {
   return { ...LAYER_A_DEFAULTS, ...partial };
 }
 
+/** Slice 8 alerting knobs. Everything defaults sane with NO env vars set: alerting is
+ *  off (noop sink) until `GATEWAY_ALERT_WEBHOOK_URL` exists; the sweep keeper always
+ *  runs (it also refreshes the balance gauges). */
+export interface AlertsConfig {
+  /** Outbound webhook target; unset → alerting disabled (NoopSink). */
+  webhookUrl?: string;
+  /** Body shape: 'discord' | 'slack' | 'generic' (raw Alert JSON). */
+  webhookFormat: WebhookFormat;
+  /** Alerts below this severity are metric+log only. */
+  minSeverity: AlertSeverity;
+  /** Per-alert-key suppression window. */
+  cooldownSeconds: number;
+  /** Sweep-rule keeper cadence (gas, stuck debits, keeper health, …). */
+  sweepIntervalSeconds: number;
+  /** `gas-low` fires when the hot wallet's ETH drops below this. */
+  gasMinWei: bigint;
+  /** `stuck-debits` fires when the oldest unflushed debit is older than this. */
+  debitMaxAgeSeconds: number;
+  /** `settlement-failures` fires at this many consecutive flush failures. */
+  settleFailStreak: number;
+}
+
+export const ALERTS_DEFAULTS: AlertsConfig = {
+  webhookFormat: 'generic',
+  minSeverity: 'warn',
+  cooldownSeconds: 3600,
+  sweepIntervalSeconds: 60,
+  gasMinWei: 10n ** 16n, // 0.01 ETH
+  debitMaxAgeSeconds: 900,
+  settleFailStreak: 3,
+};
+
+export function resolveAlerts(partial?: Partial<AlertsConfig>): AlertsConfig {
+  return { ...ALERTS_DEFAULTS, ...partial };
+}
+
 // Slice 6C incentive knobs live in gateway/src/incentives.ts (INCENTIVE_DEFAULTS);
 // the env overrides are parsed here alongside the other groups.
 
@@ -141,6 +178,8 @@ export interface GatewayConfig {
   layerA?: Partial<LayerAConfig>;
   /** Slice 6C: incentive-program overrides. Unset fields fall back to INCENTIVE_DEFAULTS. */
   incentives?: Partial<IncentiveConfig>;
+  /** Slice 8: alerting overrides. Unset fields fall back to ALERTS_DEFAULTS. */
+  alerts?: Partial<AlertsConfig>;
 }
 
 function required(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -215,6 +254,40 @@ function layerAFromEnv(env: NodeJS.ProcessEnv): Partial<LayerAConfig> {
   return out;
 }
 
+/** Read any GATEWAY_ALERT_* overrides present in the environment. */
+function alertsFromEnv(env: NodeJS.ProcessEnv): Partial<AlertsConfig> {
+  const out: Partial<AlertsConfig> = {};
+  if (env.GATEWAY_ALERT_WEBHOOK_URL) out.webhookUrl = env.GATEWAY_ALERT_WEBHOOK_URL;
+  if (env.GATEWAY_ALERT_WEBHOOK_FORMAT) {
+    const f = env.GATEWAY_ALERT_WEBHOOK_FORMAT;
+    if (f !== 'discord' && f !== 'slack' && f !== 'generic') {
+      throw new Error(`GATEWAY_ALERT_WEBHOOK_FORMAT must be discord|slack|generic, got "${f}"`);
+    }
+    out.webhookFormat = f;
+  }
+  if (env.GATEWAY_ALERT_MIN_SEVERITY) {
+    const s = env.GATEWAY_ALERT_MIN_SEVERITY;
+    if (s !== 'info' && s !== 'warn' && s !== 'critical') {
+      throw new Error(`GATEWAY_ALERT_MIN_SEVERITY must be info|warn|critical, got "${s}"`);
+    }
+    out.minSeverity = s;
+  }
+  if (env.GATEWAY_ALERT_COOLDOWN_SECONDS) {
+    out.cooldownSeconds = Number(env.GATEWAY_ALERT_COOLDOWN_SECONDS);
+  }
+  if (env.GATEWAY_ALERT_SWEEP_INTERVAL_SECONDS) {
+    out.sweepIntervalSeconds = Number(env.GATEWAY_ALERT_SWEEP_INTERVAL_SECONDS);
+  }
+  if (env.GATEWAY_ALERT_GAS_MIN_WEI) out.gasMinWei = BigInt(env.GATEWAY_ALERT_GAS_MIN_WEI);
+  if (env.GATEWAY_ALERT_DEBIT_MAX_AGE_SECONDS) {
+    out.debitMaxAgeSeconds = Number(env.GATEWAY_ALERT_DEBIT_MAX_AGE_SECONDS);
+  }
+  if (env.GATEWAY_ALERT_SETTLE_FAIL_STREAK) {
+    out.settleFailStreak = Number(env.GATEWAY_ALERT_SETTLE_FAIL_STREAK);
+  }
+  return out;
+}
+
 /** Read any GATEWAY_INCENTIVE_* overrides present in the environment. */
 function incentivesFromEnv(env: NodeJS.ProcessEnv): Partial<IncentiveConfig> {
   const out: Record<string, number> = {};
@@ -235,6 +308,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     hardening: hardeningFromEnv(env),
     layerA: layerAFromEnv(env),
     incentives: incentivesFromEnv(env),
+    alerts: alertsFromEnv(env),
     port: Number(env.GATEWAY_PORT ?? '8787'),
     network: env.NETWORK ?? 'localhost',
     rpcUrl: required(env, 'RPC_URL', 'http://127.0.0.1:8545'),

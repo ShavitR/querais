@@ -64,6 +64,7 @@ export {
 export { LayerACheckStore, type LayerACheck, type LayerAVerdict } from './db/layer-a-checks.js';
 export { NodeFlagStore, type NodeFlag, type NodeFlagKind } from './db/node-flags.js';
 export { resolveLayerA, LAYER_A_DEFAULTS, type LayerAConfig } from './config.js';
+export { resolveAlerts, ALERTS_DEFAULTS, type AlertsConfig } from './config.js';
 export {
   IncentiveService,
   resolveIncentives,

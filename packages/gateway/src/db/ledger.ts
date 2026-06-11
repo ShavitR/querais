@@ -61,6 +61,31 @@ export class DebitLedgerStore {
     }));
   }
 
+  /** When the oldest unflushed debit was recorded (ms), or undefined if none pending.
+   *  Slice 8: feeds the `stuck-debits` alert + the oldest-debit-age /metrics gauge. */
+  oldestPendingCreatedAt(): number | undefined {
+    const row = this.db.conn
+      .prepare('SELECT MIN(created_at) AS t FROM debit_entries WHERE batch_id IS NULL')
+      .get() as { t: number | null };
+    return row.t ?? undefined;
+  }
+
+  /** Unflushed debit rows network-wide — the `querais_pending_debits` gauge. */
+  pendingCount(): number {
+    const row = this.db.conn
+      .prepare('SELECT COUNT(*) AS n FROM debit_entries WHERE batch_id IS NULL')
+      .get() as { n: number };
+    return row.n;
+  }
+
+  /** Total wei of all unflushed debits — the gateway's outstanding liability gauge. */
+  pendingValueWei(): bigint {
+    const rows = this.db.conn
+      .prepare('SELECT amount_wei FROM debit_entries WHERE batch_id IS NULL')
+      .all() as { amount_wei: string }[];
+    return rows.reduce((sum, r) => sum + BigInt(r.amount_wei), 0n);
+  }
+
   /** Distinct requesters that currently have unflushed debits. */
   requestersWithPending(): Address[] {
     const rows = this.db.conn

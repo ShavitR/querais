@@ -6,7 +6,8 @@ import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
 import { metrics, renderMetrics } from './metrics.js';
 import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
-import { resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
+import { resolveAlerts, resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
+import { AlertService, NoopSink, WebhookSink, redactWebhookUrl, type AlertSink } from './alerts.js';
 import { QuotaEnforcer } from './quota.js';
 import { ChainClient } from './chain-client.js';
 import { NodePool } from './node-pool.js';
@@ -20,6 +21,9 @@ import { registerJobs } from './routes/jobs.js';
 import { registerStats } from './routes/stats.js';
 import { registerDashboard } from './routes/dashboard.js';
 import { registerKeys } from './routes/keys.js';
+import { registerFlags } from './routes/flags.js';
+import { registerStatus } from './routes/status.js';
+import { registerAlertsAdmin } from './routes/alerts-admin.js';
 import { registerFaucet } from './routes/faucet.js';
 import { ApiKeyStore } from './key-store.js';
 import { Faucet, type FaucetDistributor } from './faucet.js';
@@ -39,6 +43,8 @@ import { PatternDetector } from './oracle/patterns.js';
 import { IncentiveService, resolveIncentives } from './incentives.js';
 import { registerIncentives } from './routes/incentives.js';
 import { BatchedSettlement } from './batched-settlement.js';
+import { KeeperHealth } from './keeper-health.js';
+import { AlertSweeper, type SweepReads } from './alert-rules.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
 
@@ -49,6 +55,9 @@ export interface BuildOptions {
   /** Slice 5: inject oracle inference/embeddings (tests/e2e); production builds them
    *  from `config.layerA.ollamaUrl`. Sampling is disabled when neither exists. */
   layerA?: { inference?: OracleInference; embeddings?: EmbeddingProvider };
+  /** Slice 8: inject an alert sink (tests use MemorySink); production builds a
+   *  WebhookSink from `config.alerts.webhookUrl`, or NoopSink when unset. */
+  alertSink?: AlertSink;
   logger?: Logger;
 }
 
@@ -70,6 +79,31 @@ export async function buildGateway(
   const settler = walletClient.account.address;
   // Slice 3 surface hardening: resolved once, shared by routes, faucet, and the WS pool.
   const hardening = resolveHardening(opts.config.hardening);
+  // Slice 8 paging loop: push sites (Layer-A, patterns, reputation) and the sweep keeper
+  // all raise through this one seam. No webhook configured → noop sink, gateway runs fine.
+  const alertsCfg = resolveAlerts(opts.config.alerts);
+  const alertSink =
+    opts.alertSink ??
+    (alertsCfg.webhookUrl
+      ? new WebhookSink(alertsCfg.webhookUrl, alertsCfg.webhookFormat)
+      : new NoopSink());
+  const alerts = new AlertService(alertSink, logger, {
+    cooldownSeconds: alertsCfg.cooldownSeconds,
+    minSeverity: alertsCfg.minSeverity,
+  });
+  if (alertsCfg.webhookUrl) {
+    // Redaction discipline: the URL embeds a channel token — log the host only.
+    logger.info(
+      {
+        webhookHost: redactWebhookUrl(alertsCfg.webhookUrl),
+        format: alertsCfg.webhookFormat,
+        minSeverity: alertsCfg.minSeverity,
+      },
+      'alerting armed',
+    );
+  } else if (!opts.alertSink) {
+    logger.warn('alerting disabled — GATEWAY_ALERT_WEBHOOK_URL not set');
+  }
   const settlement = opts.settlement ?? new ChainSettlement(chain, logger);
   const db = new GatewayDb(opts.config.dbPath);
   const jobs = new JobStore(db);
@@ -87,6 +121,7 @@ export async function buildGateway(
     jobs,
     snapshots,
     logger,
+    alerts,
   );
   const pool = new NodePool(
     chain,
@@ -149,9 +184,10 @@ export async function buildGateway(
           { sampleRate: layerACfg.sampleRate, oracleRuns: layerACfg.oracleRuns },
           undefined,
           disputeRaiser,
+          alerts,
         )
       : undefined;
-  const patterns = new PatternDetector(db, nodeFlags, logger);
+  const patterns = new PatternDetector(db, nodeFlags, logger, alerts);
   // Slice 6C: read-only incentive recommendations (the operator pays via ops:allocate).
   const incentives = new IncentiveService(
     chain,
@@ -178,9 +214,10 @@ export async function buildGateway(
 
   // Optional faucet (only if a distributor key holding QAIS is configured).
   let faucet: Faucet | undefined;
+  let faucetSweepReads: SweepReads['faucet'];
   if (opts.config.faucetPrivateKey) {
     const distWallet = makeWalletClient(rpcUrl, opts.config.faucetPrivateKey, deployment.chainId);
-    const distributor: FaucetDistributor = {
+    const distributor = {
       transferQais: async (to, amount) => {
         const hash = await distWallet.writeContract({
           address: deployment.contracts.token,
@@ -205,12 +242,23 @@ export async function buildGateway(
           args: [distWallet.account.address],
         }),
       ethBalance: () => publicClient.getBalance({ address: distWallet.account.address }),
-    };
+    } satisfies FaucetDistributor;
     faucet = new Faucet(db, distributor, opts.config.faucetAmountWei, opts.config.faucetEthWei, {
       ipDailyLimit: hardening.faucetIpDailyLimit,
       dailyCap: hardening.faucetDailyCap,
     });
+    // Slice 8 `faucet-low` sweep: the well's balances vs the per-claim amounts.
+    faucetSweepReads = {
+      qaisBalance: distributor.qaisBalance,
+      ethBalance: distributor.ethBalance,
+      claimQaisWei: opts.config.faucetAmountWei,
+      claimEthWei: opts.config.faucetEthWei,
+    };
   }
+
+  // Slice 8 keeper liveness: every background timer registers + beats here; the
+  // `keeper-stale` sweep rule pages when one stops succeeding.
+  const keepers = new KeeperHealth();
 
   const deps: GatewayDeps = {
     config: opts.config,
@@ -231,30 +279,38 @@ export async function buildGateway(
     incentives,
     hardening,
     quota,
+    alerts,
+    keepers,
     logger,
   };
 
   const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
   // Interval flush ("flush every N sec / M jobs"): a low-traffic requester's debits never
   // wait unboundedly for the threshold. unref() so the timer can't hold the process open.
+  keepers.register('flush', opts.config.batchFlushIntervalSeconds * 1000);
   const flushTimer = setInterval(() => {
     void credit
       .flushAll()
+      .then(() => keepers.beat('flush'))
       .catch((err: unknown) => logger.error({ err }, 'interval flushAll failed'));
   }, opts.config.batchFlushIntervalSeconds * 1000);
   flushTimer.unref();
   // Daily reputation epoch (Slice 4B): publish every known node's composite on-chain.
   // Same lifecycle pattern as the flush timer; the interval shrinks to seconds in e2e.
+  keepers.register('snapshot', opts.config.reputationSnapshotIntervalSeconds * 1000);
   const snapshotTimer = setInterval(() => {
     void reputation
       .snapshotAll()
+      .then(() => keepers.beat('snapshot'))
       .catch((err: unknown) => logger.error({ err }, 'reputation snapshot sweep failed'));
   }, opts.config.reputationSnapshotIntervalSeconds * 1000);
   snapshotTimer.unref();
   // Output-pattern sweep (Slice 5): rolling 7-day cheater signals from job rows.
+  keepers.register('patterns', layerACfg.patternScanIntervalSeconds * 1000);
   const patternTimer = setInterval(() => {
     try {
       patterns.scanAll();
+      keepers.beat('patterns');
     } catch (err) {
       logger.error({ err }, 'pattern scan failed');
     }
@@ -264,6 +320,9 @@ export async function buildGateway(
   // tick runs both in order, so the staker share a sweep just paid out is credited to
   // operators in the same tick. Reads pending first so empty epochs are quiet no-ops.
   // Each step is auto-disabled on manifests that predate its contract.
+  if (chain.treasuryContract() || chain.stakingRewardsContract()) {
+    keepers.register('treasury', opts.config.treasuryDistributeIntervalSeconds * 1000);
+  }
   const treasuryTimer =
     chain.treasuryContract() || chain.stakingRewardsContract()
       ? setInterval(() => {
@@ -288,16 +347,52 @@ export async function buildGateway(
               metrics.rewardsEpochFailures += 1;
               logger.error({ err }, 'rewards epoch credit failed');
             }
+            // The beat means "the timer ticked to completion" — individual tx failures
+            // have their own metrics; keeper-stale is about the timer dying silently.
+            keepers.beat('treasury');
           })();
         }, opts.config.treasuryDistributeIntervalSeconds * 1000)
       : undefined;
   treasuryTimer?.unref();
+  // Slice 8 alert sweep: the catalogue rules (gas, stuck debits, settle streak, node
+  // drop, open flags, faucet, stale keepers, RPC) evaluated over injected reads.
+  // Dedup/cooldown lives in AlertService, so the tight interval stays quiet.
+  const sweeper = new AlertSweeper(
+    alerts,
+    {
+      gasBalanceWei: () => chain.ethBalance(settler),
+      hotWalletQaisWei: () => chain.tokenBalance(settler),
+      oldestPendingDebitAt: () => credit.oldestPendingDebitAt(),
+      consecutiveFlushFailures: () => credit.consecutiveFlushFailures(),
+      connectedNodes: () => pool.size(),
+      openFlagCount: () => nodeFlags.openCount(),
+      faucet: faucetSweepReads,
+      staleKeepers: (now) => keepers.stale(now),
+      rpcProbe: async () => {
+        await chain.latestBlockTimestamp();
+      },
+    },
+    {
+      gasMinWei: alertsCfg.gasMinWei,
+      debitMaxAgeSeconds: alertsCfg.debitMaxAgeSeconds,
+      settleFailStreak: alertsCfg.settleFailStreak,
+    },
+  );
+  keepers.register('alert-sweep', alertsCfg.sweepIntervalSeconds * 1000);
+  const sweepTimer = setInterval(() => {
+    void sweeper
+      .sweep()
+      .then(() => keepers.beat('alert-sweep'))
+      .catch((err: unknown) => logger.error({ err }, 'alert sweep failed'));
+  }, alertsCfg.sweepIntervalSeconds * 1000);
+  sweepTimer.unref();
   // On graceful shutdown: flush any unsettled batched debits, then release the SQLite
   // connection (and its WAL handles).
   app.addHook('onClose', async () => {
     clearInterval(flushTimer);
     clearInterval(snapshotTimer);
     clearInterval(patternTimer);
+    clearInterval(sweepTimer);
     if (treasuryTimer) clearInterval(treasuryTimer);
     await credit.flushAll().catch((err: unknown) => logger.error({ err }, 'flushAll on close'));
     db.close();
@@ -338,7 +433,20 @@ export async function buildGateway(
   });
   app.get('/metrics', noLimit, async (_req, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4');
-    return reply.send(renderMetrics(pool.size()));
+    // Scrape-time gauges are cheap sync reads (SQLite/pool); the RPC-priced ones
+    // (gas, balances) come from the metrics object, refreshed by the alert sweep.
+    const oldestDebit = credit.oldestPendingDebitAt();
+    return reply.send(
+      renderMetrics({
+        nodes: pool.size(),
+        pendingDebits: ledger.pendingCount(),
+        pendingDebitValueQais: Number(ledger.pendingValueWei()) / 1e18,
+        oldestPendingDebitAgeSeconds:
+          oldestDebit === undefined ? 0 : Math.floor((Date.now() - oldestDebit) / 1000),
+        openFlags: nodeFlags.openCount(),
+        keepers: keepers.list(),
+      }),
+    );
   });
 
   registerChatCompletions(app, deps);
@@ -348,8 +456,11 @@ export async function buildGateway(
   registerUsage(app, deps);
   registerSessions(app, deps);
   registerStats(app, deps);
+  registerStatus(app, deps);
   registerDashboard(app, deps);
   registerKeys(app, deps);
+  registerFlags(app, deps);
+  registerAlertsAdmin(app, deps);
   registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);
 

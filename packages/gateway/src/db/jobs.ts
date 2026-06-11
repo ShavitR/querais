@@ -173,6 +173,22 @@ export class JobStore {
     return new Map(rows.map((r) => [r.model, r.provider as Address]));
   }
 
+  /** Jobs created in a window — the public status page's 24h activity number. */
+  countSince(sinceMs: number): number {
+    const row = this.db.conn
+      .prepare('SELECT COUNT(*) AS n FROM jobs WHERE created_at > ?')
+      .get(sinceMs) as { n: number };
+    return row.n;
+  }
+
+  /** When the most recent job settled (ms), or undefined if none ever has. */
+  lastSettledAt(): number | undefined {
+    const row = this.db.conn
+      .prepare(`SELECT MAX(updated_at) AS t FROM jobs WHERE status='verified'`)
+      .get() as { t: number | null };
+    return row.t ?? undefined;
+  }
+
   markFailed(jobId: Hex, reason: string): void {
     this.db.conn
       .prepare(`UPDATE jobs SET status='failed', reason=?, updated_at=? WHERE job_id=?`)
