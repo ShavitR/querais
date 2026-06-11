@@ -155,6 +155,9 @@ export interface GatewayConfig {
   faucetEthWei: bigint;
   /** Distributor key for the faucet (must hold QAIS + ETH); unset => faucet disabled. */
   faucetPrivateKey?: Hex;
+  /** Slice 9: path to the operator's signed-model-manifest JSON file. Unset = no
+   *  digest enforcement (Slice 8 behavior). Invalid file = fail fast at boot. */
+  modelManifestPath?: string;
   /** Slice 2: flush a requester's accrued debits to CreditAccount.batchSettle once this many
    *  jobs have settled off-chain (also flushed on graceful shutdown). */
   batchFlushThreshold: number;
@@ -339,5 +342,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     ...(env.GATEWAY_FAUCET_PRIVATE_KEY
       ? { faucetPrivateKey: env.GATEWAY_FAUCET_PRIVATE_KEY as Hex }
       : {}),
+    ...(env.GATEWAY_MODEL_MANIFEST ? { modelManifestPath: env.GATEWAY_MODEL_MANIFEST } : {}),
   };
 }

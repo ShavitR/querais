@@ -5,7 +5,15 @@ import type { WebSocket } from 'ws';
 import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
 import { metrics, renderMetrics } from './metrics.js';
-import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
+import {
+  loadAddresses,
+  makePublicClient,
+  makeWalletClient,
+  quaisTokenAbi,
+  signModelManifest,
+  type SignedModelManifest,
+} from '@querais/shared';
+import { loadModelManifest } from './model-manifest.js';
 import { resolveAlerts, resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
 import { AlertService, NoopSink, WebhookSink, redactWebhookUrl, type AlertSink } from './alerts.js';
 import { QuotaEnforcer } from './quota.js';
@@ -260,6 +268,20 @@ export async function buildGateway(
   // `keeper-stale` sweep rule pages when one stops succeeding.
   const keepers = new KeeperHealth();
 
+  // Slice 9: signed model manifest — loaded + validated (fail fast: a typo'd
+  // manifest must kill the boot, not silently enforce nothing) and signed once
+  // with the gateway key. Served at GET /v1/models/manifest, enforced at node
+  // handshake. Unset = bit-identical to Slice 8 (no digest enforcement).
+  let modelManifest: SignedModelManifest | undefined;
+  if (opts.config.modelManifestPath) {
+    const manifest = loadModelManifest(opts.config.modelManifestPath);
+    modelManifest = await signModelManifest(walletClient, settler, manifest.models);
+    logger.info(
+      { models: Object.keys(manifest.models), signer: settler },
+      'model manifest loaded — digest enforcement armed',
+    );
+  }
+
   const deps: GatewayDeps = {
     config: opts.config,
     chain,
@@ -281,6 +303,7 @@ export async function buildGateway(
     quota,
     alerts,
     keepers,
+    modelManifest,
     logger,
   };
 

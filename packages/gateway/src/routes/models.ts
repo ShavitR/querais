@@ -14,4 +14,15 @@ export function registerModels(app: FastifyInstance, deps: GatewayDeps): void {
       })),
     };
   });
+
+  // Slice 9: the signed model manifest — daemons fetch this to self-verify
+  // their local model digests before connecting (signature checked against
+  // the settler address from /v1/credit/info). 404 = operator runs without
+  // digest enforcement.
+  app.get('/v1/models/manifest', async (_req, reply) => {
+    if (!deps.modelManifest) {
+      return reply.code(404).send({ error: 'no model manifest configured' });
+    }
+    return deps.modelManifest;
+  });
 }

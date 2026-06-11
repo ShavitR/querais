@@ -1,5 +1,6 @@
 import type { Logger } from 'pino';
 import type { Address } from 'viem';
+import type { SignedModelManifest } from '@querais/shared';
 import type { GatewayConfig, HardeningConfig } from './config.js';
 import type { ChainClient } from './chain-client.js';
 import type { QuotaEnforcer } from './quota.js';
@@ -49,5 +50,7 @@ export interface GatewayDeps {
   alerts: AlertService;
   /** Slice 8: background-timer liveness (the `keeper-stale` rule + /v1/status). */
   keepers: KeeperHealth;
+  /** Slice 9: the signed model manifest (loaded + signed once at boot); unset = no enforcement. */
+  modelManifest?: SignedModelManifest;
   logger: Logger;
 }
