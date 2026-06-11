@@ -287,11 +287,11 @@ Now there's something worth hosting. Stand up the real service and bring the wor
 
 ### Slice 9 — DX, node polish & growth · Effort L · Risk L
 - **Build:** **signed installers / prebuilt release artifacts** (onboarding skips the source
-  build); **model registry** with SHA256 verification; a **local operator dashboard** (earnings,
-  uptime, GPU/VRAM, active jobs); a **signup portal** (wallet/email → API key + starter
-  credits); a **docs site** (quickstart, migration guide, cost calculator); publish the
-  **Python SDK** + **LangChain/LlamaIndex** providers; beta-cohort recruitment +
-  leaderboard campaign.
+  build); **model registry** with SHA256 verification; a **docs site** (quickstart,
+  migration guide, cost calculator); publish the **Python SDK** + **LangChain/LlamaIndex**
+  providers; beta-cohort recruitment + leaderboard campaign. (The signup portal and the
+  operator dashboard moved to **Slice 10** — 10B/10C — so they're built once, inside the
+  real web app, not as throwaway pages here.)
 - **Disclosures must match what the system actually does** (linked before the first key is
   issued): ToS + "testnet, no real value" framing, and a prompt-privacy disclosure that
   explicitly states (a) **~5% of prompts are re-run on oracle infrastructure** for
@@ -313,6 +313,139 @@ Now there's something worth hosting. Stand up the real service and bring the wor
 
 ---
 
+## Stage D — Product & expansion (the chosen direction past the catalogue)
+
+Stages A–C make the protocol complete, hosted, and observable. Stage D is where we chose
+what to focus on next (this section is the decision, not a menu): first make everything
+we built **visible and usable** — the protocol has sessions, reputation dimensions,
+disputes, and burns that no human can currently see (today's "frontend" is a 124-line
+inline-HTML page in `gateway/src/routes/dashboard.ts`, and `apps/dashboard` is an empty
+placeholder) — then finish the **arbitration mechanic**, then buy **scale confidence**,
+then assemble the **mainnet go/no-go package**. Rationale for the order: a real frontend
+multiplies the value of every prior slice and is the adoption bottleneck for the Slice 9
+growth push; arbitration is the last incomplete protocol mechanic; load testing must
+precede any real volume; mainnet is a gate, not a feature.
+
+### Slice 10 — The web app · Effort XL · Risk M · split 10A/10B/10C/10D
+
+One product, four shippable increments. **10A is the foundation; 10B/10C/10D are
+independent once 10A lands** (they can interleave with Slices 6–8 if frontend energy is
+available early — nothing in 10 blocks the protocol track except where noted).
+
+- **10A — Foundation: the real app + auth · Effort M:**
+  - Stand up the actual **Vite + React + TypeScript** app in `apps/dashboard` (the
+    placeholder finally lands). Dark theme consistent with the current page; a small
+    component kit (cards/tables/charts) — no heavyweight UI framework.
+  - **Served by the gateway** at `/` from the app's built `dist/` (same-origin API ⇒ no
+    CORS, no second deployment, one TLS cert — Slice 7's single-instance model holds).
+    The inline-HTML dashboard is **retired in the same PR** (one frontend, not two).
+    CI gains the app's build + typecheck + lint; e2e gains a served-app smoke check.
+  - **Auth model:** sign in with an **API key** (requester) or a **wallet signature**
+    (node operator / requester wallet — sign-in-with-Ethereum style nonce, verified
+    gateway-side; read-only public mode with no sign-in at all). Key never in
+    localStorage in plaintext — session cookie minted by the gateway.
+  - **Data layer:** typed client over the existing `/v1/*` routes (stats, nodes, jobs,
+    usage, sessions, models) + a read-only WS or polling channel for live updates.
+  - **Acceptance:** `pnpm build` produces the app; the gateway serves it at `/`; sign-in
+    works with a key and with a wallet; the old page is gone; green bar includes the app.
+- **10B — Requester console · Effort M:**
+  - **Playground:** streaming chat with model picker + per-request cost readout (the
+    cost calculator, live) — the current prompt box, grown up.
+  - **Keys & usage:** create/list keys (tier visible), usage and quota charts from
+    `/v1/usage` + the `x-querais-quota-*` headers.
+  - **Jobs explorer:** job list + detail (status, tokens, settlement tx → Arbiscan
+    link, venue: batched vs escrow).
+  - **Sessions & credit (the flagship):** deposit → **sign the EIP-712 spending cap in
+    the browser wallet** → watch live cap spend / headroom / pending debits from
+    `GET /v1/sessions`; withdraw-after-notice flow. This makes Slice 2 — the marquee
+    protocol work — actually demoable to a human.
+  - **Acceptance:** a new user goes deposit → session → 10 streamed completions → sees
+    the single batch settlement land, entirely in the UI, no CLI.
+- **10C — Operator console + review queue · Effort M:**
+  - **Node operator view** (wallet-gated to the node's own data): earnings over time,
+    the **5-dimension reputation breakdown** (accuracy/uptime/latency/longevity/stake)
+    with history from `reputation_snapshots`, TTFT trend, stake status, flags raised
+    against the node, dispute notices + counter-evidence deadline countdown (5B's 24h
+    window is unusable without a UI).
+  - **Admin review queue** (admin-gated): open `node_flags` with verdict context from
+    `layer_a_checks` (hashes + scores, never prompt text — privacy rule), mark-reviewed,
+    and a **raise-dispute action** for confirmed cheaters. This is the UI for Slice 8's
+    notification loop — if 8 hasn't landed yet, the queue endpoint is built here and 8
+    only wires the paging.
+  - **Acceptance:** an operator sees why their score moved without reading the DB; an
+    admin goes flag → evidence → reviewed/disputed entirely in the UI.
+- **10D — Public face: network explorer + landing · Effort S:**
+  - Unauthenticated: live network stats, **node leaderboard** (composite + dimensions —
+    also the Slice 9 leaderboard campaign artifact), recent-jobs ticker (job hashes +
+    models only — privacy), **token economics panel** (fees collected, burned, staker
+    pool — reads the 6A treasury; render zeros gracefully if 6A isn't live), gateway
+    status indicator, docs links, the **"testnet, no real value" banner** on every page.
+  - This page is the destination the Slice 9 growth campaign points at.
+  - **Acceptance:** a stranger with no key understands what the network is doing in 30
+    seconds; the leaderboard updates as reputation snapshots land.
+- **Depends on:** nothing hard (10A can start any time after Stage B); 10D's token panel
+  prefers 6A first; 10C's review queue coordinates with Slice 8.
+- **Maps to:** P3.10 (portal) + P3.9 (operator UX) + the dashboard placeholder.
+
+### Slice 11 — Arbitration completeness (STANDARD track) · Effort L · Risk H
+- **Goal:** finish the last incomplete protocol mechanic. 5B shipped the FAST track
+  (oracle-only `autoResolve`); contested or high-value disputes still have no path —
+  the spec's STANDARD/ESCALATED tracks (`querais_smart_contracts.md` §5) are unbuilt.
+- **Build (money-moving contract work → design sign-off first, standing rule):**
+  - **Arbitrator registration + staking** in `NodeRegistry` or a small
+    `ArbitratorPool` (stake to join, slashed for provably-wrong votes).
+  - **Commit-reveal voting** on `DisputeResolution` (parallel mappings keyed by jobId —
+    the spec's documented Solidity constraint), panel selection, voting deadlines with
+    a default-resolution path so a silent panel can never strand a dispute (the 5B
+    `reclaimBond` principle, extended).
+  - **Rewards for being CORRECT** (oracle-verified after the fact), not for siding with
+    the majority — the design docs are explicit on this.
+  - Track routing: counter-evidence (5B) moves FAST → STANDARD; job value moves
+    STANDARD → ESCALATED (larger panel).
+  - **UI ships in the same slice** (10C extension: arbitrator view — assigned disputes,
+    commit, reveal, outcomes). Post-Slice-10 rule: a protocol feature isn't done until
+    a human can use it.
+- **Acceptance:** a contested dispute (counter-evidence submitted) reaches a panel,
+  commit-reveal resolves it, rewards/slashes conserve to the wei (e2e); a panel that
+  never votes cannot trap the bond or the defendant's stake.
+- **Maps to:** the Phase 5 arbitration deferral, pulled in deliberately.
+
+### Slice 12 — Scale confidence (load, not architecture) · Effort M · Risk M
+- **Goal:** know the ceiling before the growth push finds it for us. We deliberately
+  deferred horizontal scale (P3.6); this slice buys the data that says whether that
+  deferral holds.
+- **Build:** a **load-test harness** (k6 or artillery + a fleet of mock nodes from the
+  e2e harness) run against a staging gateway: concurrent streams, sessions/batch-flush
+  under load, WS fan-in at the flood-cap boundary, SQLite write contention; capture
+  ceilings as numbers in a **capacity runbook** (requests/s, concurrent streams, nodes,
+  flush latency at depth). Fix the cheap wins it surfaces (backpressure, pool tuning,
+  query indexes). **Decision gate at the end:** if SQLite or the single instance is the
+  binding constraint at realistic load, scope the Postgres migration (the repository
+  seam from Slice 1 exists for exactly this) — otherwise re-affirm the deferral with
+  evidence.
+- **Acceptance:** documented ceilings from real runs; alerts (Slice 8) tuned to fire
+  *before* the measured cliffs; a written keep/migrate decision on SQLite with numbers
+  attached.
+- **Maps to:** P3.6, resolved with data instead of architecture.
+
+### Slice 13 — Mainnet go/no-go package · Effort L · Risk H
+- **Goal:** everything before real value moves. This is a **gate, not a feature** — the
+  output is a decision package for the user, who makes the call (mainnet/TGE itself
+  stays out of scope until then).
+- **Build:** freeze the contract set; **external audit** prep + engagement (Slither
+  baseline, threat model refresh, the 5B/6A conservation invariants written up as the
+  audit's starting claims); an **upgrade/migration rehearsal** on testnet (the
+  Transparent-Proxy story has never been exercised end-to-end); economic-parameter
+  review (bond sizes, slash percentages, 60/20/20 — testnet data informs real-value
+  numbers); key-custody upgrade plan (cold EOA → multisig); incident-response drill
+  against the full stack; a **go/no-go checklist** with every open risk named.
+- **Acceptance:** an auditor can start from the package without a walkthrough call; the
+  upgrade rehearsal succeeded on testnet; the user has a one-document basis to decide
+  mainnet timing.
+- **Maps to:** the mainnet/TGE deferral, made into an explicit gate.
+
+---
+
 ## Deferred for now (and why)
 
 - **Redis / horizontal scale (P3.6)** — premature, and now also *unsafe by default*: the
@@ -320,14 +453,15 @@ Now there's something worth hosting. Stand up the real service and bring the wor
   (Slice 7). One gateway handles far more than current load; don't distribute pool state
   until there's load to distribute. Revisit inside Stage C only if load testing demands it.
 - **Full `DisputeResolution` arbitration panel** (commit-reveal voting, panel selection) —
-  only the FAST-track challenge *hook* landed (5B). Phase 5.
+  only the FAST-track challenge *hook* landed (5B). **Now scheduled: Slice 11.**
 - **General token-holder staking** (`StakingPool`) — only if 6B's decision goes that way;
   otherwise the staker share pays NodeRegistry stakers and a holder pool waits for the DAO.
 - **Per-settlement fee splitting** (the spec's `receiveFee`) — rejected on gas grounds in
   favor of accumulate-and-sweep (Slice 6A). Revisit only if epoch-level burns ever matter.
-- **Phase 4/5 entirely** — libp2p mesh, on-chain sealed-bid auction, decentralized oracle,
-  TEE prompt privacy, mainnet/TGE, DAO. Out of scope; removing the trusted gateway is the
-  whole point of Phase 4 and is a separate effort.
+- **Phase 4 entirely** — libp2p mesh, on-chain sealed-bid auction, decentralized oracle,
+  TEE prompt privacy, DAO. Out of scope; removing the trusted gateway is the whole point
+  of Phase 4 and is a separate effort. (The Phase 5 arbitration panel became Slice 11;
+  mainnet/TGE became the Slice 13 gate.)
 
 ## Sequencing summary
 
@@ -335,6 +469,8 @@ Now there's something worth hosting. Stand up the real service and bring the wor
 Stage A (foundation)      ✅ 0 CI/Slither → ✅ 1 Persistence → ✅ 2 Batched settlement ⭐ → ✅ 3 Harden surface
 Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ⬜ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
 Stage C (operate)         ⬜ 7 Deploy (DB-as-money) → ⬜ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
+Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D public explorer)
+                          ⬜ 11 Arbitration (STANDARD track) → ⬜ 12 Scale confidence → ⬜ 13 Mainnet go/no-go gate
 ```
 
 Each stage ends on the standard gate (build/typecheck/lint/unit/e2e) plus its slices'
