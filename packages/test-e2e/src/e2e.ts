@@ -1142,6 +1142,90 @@ export async function runIncentivesCase(): Promise<void> {
   }
 }
 
+/**
+ * Graceful shutdown (Slice 7A): a deploy/restart sends SIGTERM, which the gateway turns
+ * into `app.close()` — the onClose hook flushes pending batched debits (money owed to
+ * nodes) in one batchSettle before the process exits. Here we accrue debits BELOW the
+ * flush threshold (so nothing settles during normal operation), then close the gateway
+ * and prove the pending debits drained on-chain. The chain outlives the gateway, so we
+ * read the settlement after shutdown.
+ */
+export async function runGracefulShutdownCase(): Promise<void> {
+  const h = await startHarness({ batchFlushThreshold: 1000 }); // never auto-flushes here
+  const pub = makePublicClient(h.deployment.rpcUrl, h.deployment.chainId);
+  const credit = h.deployment.contracts.creditAccount;
+  const requester = h.deployment.accounts.requester;
+
+  const batchSettledCount = async (): Promise<number> =>
+    (
+      await pub.getContractEvents({
+        address: credit,
+        abi: creditAccountAbi,
+        eventName: 'BatchSettled',
+        args: { requester },
+        fromBlock: 0n,
+      })
+    ).length;
+
+  let drained = false;
+  try {
+    const reqWallet = makeWalletClient(h.deployment.rpcUrl, KEYS.requester, h.deployment.chainId);
+    const deposit = parseEther('100');
+    const approveHash = await reqWallet.writeContract({
+      address: h.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'approve',
+      args: [credit, deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: approveHash });
+    const depositHash = await reqWallet.writeContract({
+      address: credit,
+      abi: creditAccountAbi,
+      functionName: 'deposit',
+      args: [deposit],
+    });
+    await pub.waitForTransactionReceipt({ hash: depositHash });
+
+    const sdk = new QueraisClient({
+      baseUrl: h.baseUrl,
+      apiKey: API_KEY,
+      privateKey: KEYS.requester,
+    });
+    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+    const opened = await sdk.openSession({
+      maxSpendWei: deposit,
+      nonce: 9n,
+      deadline: nowSeconds + 3600n,
+    });
+    assert.equal(opened.ok, true, 'session should open');
+
+    const flushesBefore = await batchSettledCount();
+    for (let i = 0; i < 3; i++) {
+      const res = await chat(h.baseUrl, {
+        model: 'mock-model',
+        messages: [{ role: 'user', content: `pre-shutdown debit ${i}` }],
+        max_tokens: 20,
+      });
+      assert.equal(res.status, 200, `job ${i} accrues a debit`);
+    }
+    const mid = await sdk.sessionStatus();
+    assert.equal(mid.pendingDebits.count, 3, 'debits are pending, not yet flushed');
+    assert.equal(await batchSettledCount(), flushesBefore, 'nothing settled below the threshold');
+
+    // Graceful shutdown: stop() awaits app.close() — the SIGTERM drain path.
+    await h.stop();
+    drained = true;
+
+    assert.equal(
+      await batchSettledCount(),
+      flushesBefore + 1,
+      'graceful shutdown flushed the pending debits in one batchSettle',
+    );
+  } finally {
+    if (!drained) await h.stop();
+  }
+}
+
 /** A backend that emits a degenerate repetition loop, which Layer-B must reject. */
 class LoopBackend implements InferenceBackend {
   readonly name = 'loop';

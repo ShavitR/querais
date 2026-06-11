@@ -217,6 +217,48 @@ redeploying the fee-payers — reversible at any time:
 # Rollback: setTreasury(<old EOA>) on both fee-payers; the contract keeps its balance safe.
 ```
 
+## 7d. Production deploy & state custody (Slice 7 — operator action)
+
+**The gateway DB is now money.** The pending-debit ledger is unsettled liability owed to
+nodes; losing it without reconciliation loses payments. Hosting is custody of that state,
+not "run the image somewhere." A remote agent built the deploy-ready code (graceful
+drain, `/ready` probe, Docker hardening, the `VACUUM INTO` backup primitive + restore
+drill); the live hosting below is the operator's, with keys.
+
+**Single instance, always.** `node:sqlite` is single-writer and every timer (flush,
+reputation snapshot, Layer-A, pattern, dispute, treasury, rewards) assumes one owner.
+Pin `max_instances = 1` / `replicas: 1`; never run two.
+
+```bash
+# 1. Build + push the image (contracts compile in the builder — needs network):
+docker build -f packages/gateway/Dockerfile -t <registry>/querais-gateway:<tag> .
+
+# 2. Provision: a persistent volume mounted at the GATEWAY_DB_PATH dir, secrets for the
+#    HOT keys only (GATEWAY_PRIVATE_KEY, GATEWAY_FAUCET_PRIVATE_KEY, GATEWAY_ADMIN_TOKEN).
+#    The COLD admin/pauser keys NEVER touch the host (§7 custody model) — pause and
+#    allocate run from an operator machine.
+#    Platform health: liveness -> /health, readiness -> /ready (503 when RPC/DB down).
+#    Set the platform's SIGTERM grace window ABOVE GATEWAY_SHUTDOWN_GRACE_MS (default 25s)
+#    so the drain (one batchSettle of pending debits) completes before SIGKILL.
+
+# 3. Continuous backup (RPO <= 5 min). Litestream ships the SQLite WAL off-box:
+litestream replicate -config packages/gateway/litestream.yml &
+#    (or platform volume snapshots on a <=5-min schedule). Manual checkpoint any time:
+#      node -e "import('@querais/gateway').then(...)"  # or VACUUM INTO via a maintenance shell
+
+# 4. Restore drill (DO THIS before trusting prod — the automated version runs in CI as
+#    db/backup.test.ts, but rehearse the live path):
+#      kill the instance -> restore the latest snapshot to the volume -> start ->
+#      confirm settled jobs intact; any pending debits from the lost window are caught by
+#      the 2C reconcile-on-revert path (the next flush sees settledJob() and self-heals).
+
+# 5. Re-run the live pause drill against the hosted gateway (append to the §6 drill log).
+```
+
+Going live with the **full Stage-B protocol** also needs the §7b redeploy (the Sepolia
+deployment predates 5B/6) so disputes + tokenomics contracts exist; the treasury/rewards
+keepers and dispute hook then arm automatically once the manifest has the addresses.
+
 ## 8. Why there is no `/v1/admin/pause` HTTP endpoint
 
 Deliberate. Pause authority must work **when the gateway itself is compromised

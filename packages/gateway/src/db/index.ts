@@ -24,6 +24,17 @@ export class GatewayDb {
     runMigrations(this.conn);
   }
 
+  /**
+   * Write a consistent point-in-time snapshot to `path` (Slice 7A backup). `VACUUM INTO`
+   * is atomic and WAL-safe — it captures all committed state regardless of in-flight
+   * writers — so the snapshot is a valid standalone DB to restore from. This is the
+   * manual / drill counterpart to continuous shipping (Litestream); see docs/RUNBOOK_KEYS.md §9.
+   */
+  backupTo(path: string): void {
+    // The target must not exist; VACUUM INTO refuses to overwrite.
+    this.conn.prepare('VACUUM INTO ?').run(path);
+  }
+
   close(): void {
     this.conn.close();
   }
