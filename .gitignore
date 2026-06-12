@@ -38,3 +38,15 @@ pnpm-debug.log*
 # runtime data
 data/
 *.local.json
+
+# release artifacts (built by scripts/bundle-daemon.mjs / release.yml)
+# anchored: scripts/release/ (launcher sources) must stay tracked
+/release/
+
+# python (sdk-python)
+.venv/
+__pycache__/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+sdk-python/dist/

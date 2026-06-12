@@ -5,7 +5,15 @@ import type { WebSocket } from 'ws';
 import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
 import { metrics, renderMetrics } from './metrics.js';
-import { loadAddresses, makePublicClient, makeWalletClient, quaisTokenAbi } from '@querais/shared';
+import {
+  loadAddresses,
+  makePublicClient,
+  makeWalletClient,
+  quaisTokenAbi,
+  signModelManifest,
+  type SignedModelManifest,
+} from '@querais/shared';
+import { loadModelManifest } from './model-manifest.js';
 import { resolveAlerts, resolveHardening, resolveLayerA, type GatewayConfig } from './config.js';
 import { AlertService, NoopSink, WebhookSink, redactWebhookUrl, type AlertSink } from './alerts.js';
 import { QuotaEnforcer } from './quota.js';
@@ -123,6 +131,21 @@ export async function buildGateway(
     logger,
     alerts,
   );
+  // Slice 9: signed model manifest — loaded + validated (fail fast: a typo'd
+  // manifest must kill the boot, not silently enforce nothing) and signed once
+  // with the gateway key (signer == settler, which daemons already learn from
+  // /v1/credit/info). Served at GET /v1/models/manifest, enforced by the pool
+  // at node handshake. Unset = bit-identical to Slice 8 (no enforcement).
+  let modelManifest: SignedModelManifest | undefined;
+  if (opts.config.modelManifestPath) {
+    const manifest = loadModelManifest(opts.config.modelManifestPath);
+    modelManifest = await signModelManifest(walletClient, settler, manifest.models);
+    logger.info(
+      { models: Object.keys(manifest.models), signer: settler },
+      'model manifest loaded — digest enforcement armed',
+    );
+  }
+
   const pool = new NodePool(
     chain,
     logger,
@@ -133,7 +156,11 @@ export async function buildGateway(
       maxMessagesPerSecond: hardening.wsMaxMessagesPerSecond,
       pingIntervalMs: hardening.wsPingIntervalMs,
     },
-    { reputation, sessions: nodeSessions },
+    {
+      reputation,
+      sessions: nodeSessions,
+      ...(modelManifest ? { manifestModels: modelManifest.models } : {}),
+    },
   );
   // Slice 2: durable signed-cap sessions + the batched-settlement venue. Dormant until a
   // requester opens a session via POST /v1/sessions; otherwise the per-job escrow path runs.
@@ -281,6 +308,7 @@ export async function buildGateway(
     quota,
     alerts,
     keepers,
+    modelManifest,
     logger,
   };
 

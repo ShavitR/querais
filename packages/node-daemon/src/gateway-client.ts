@@ -19,6 +19,9 @@ export interface GatewayClientOptions {
   walletClient: QueraisWalletClient;
   nodeId: Hex;
   models: NodeModelOffer[];
+  /** Slice 9: model → blob digest, sent in the hello so a manifest-enforcing
+   *  gateway can verify offers. Optional — absent keeps the pre-Slice-9 hello. */
+  modelDigests?: Record<string, string>;
   backend: InferenceBackend;
   logger: Logger;
 }
@@ -115,6 +118,7 @@ export class GatewayClient {
       nonce,
       signature,
       models: this.opts.models,
+      ...(this.opts.modelDigests ? { modelDigests: this.opts.modelDigests } : {}),
     };
     this.send(hello);
   }

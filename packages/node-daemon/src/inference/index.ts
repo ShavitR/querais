@@ -1,6 +1,6 @@
 export * from './backend.js';
 export { OllamaBackend } from './ollama.js';
-export { MockBackend } from './mock.js';
+export { MockBackend, mockModelDigest } from './mock.js';
 
 /**
  * Optional friendly aliases mapping requested model names to local Ollama tags.

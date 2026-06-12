@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   FinishReason,
   InferenceBackend,
@@ -5,6 +6,12 @@ import type {
   InferenceRequest,
   InferenceResult,
 } from './backend.js';
+
+/** The deterministic fake digest the mock backend reports for a model — exported so
+ *  tests/e2e can author a manifest that matches (or deliberately doesn't). */
+export function mockModelDigest(model: string): string {
+  return `sha256:${createHash('sha256').update(`querais-mock:${model}`).digest('hex')}`;
+}
 
 /**
  * Deterministic backend for tests: echoes the last user message as a fixed reply,
@@ -21,6 +28,10 @@ export class MockBackend implements InferenceBackend {
 
   async listModels(): Promise<string[]> {
     return this.models;
+  }
+
+  async modelDigests(): Promise<Record<string, string>> {
+    return Object.fromEntries(this.models.map((m) => [m, mockModelDigest(m)]));
   }
 
   async generate(

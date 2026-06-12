@@ -1,0 +1,46 @@
+# gitleaks config — QueraIS
+#
+# Extends the gitleaks default ruleset; this file only narrows false positives.
+# Policy (SECURITY.md): anything matched here must be a *public constant*, never
+# a real credential. Any other finding is treated as real until proven
+# otherwise and must be surfaced, not allowlisted silently.
+#
+# NOTE: providing a custom config replaces the default *global* allowlist (which
+# is what was quietly skipping `.env.example`), so this allowlist must stand on
+# its own. It allows exactly two things, both verifiable public constants:
+#
+#   1. The well-known Hardhat development keys (accounts #0–#5 of the canonical
+#      "test test … junk" mnemonic, shipped in Hardhat's own docs and printed by
+#      every `hardhat node` boot). Listed as exact 64-hex literals — by value,
+#      not by pattern — so nothing else can hide behind them.
+#   2. The `"token": "0x…"` field in committed deployment manifests, which is
+#      the ERC-20 *contract address* (20 bytes / 40 hex — public, on-chain,
+#      Etherscan-verified). The pattern requires the closing quote after exactly
+#      40 hex chars, so a 64-hex private key in the same spot would STILL flag.
+#
+# CI: the `gitleaks` job in .github/workflows/ci.yml runs this over the full
+# history and is GATING — a new finding turns the bar red.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public constants only: Hardhat dev keys + contract addresses in deployment manifests"
+regexTarget = "match"
+regexes = [
+  # Hardhat account #0 (deployer/faucet on localhost)
+  '''ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
+  # Hardhat account #1 (gateway on localhost)
+  '''59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d''',
+  # Hardhat account #2 (node on localhost)
+  '''5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a''',
+  # Hardhat account #3 (requester on localhost)
+  '''7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6''',
+  # Hardhat account #4 (contract-test extra signer)
+  '''47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a''',
+  # Hardhat account #5 (contract-test extra signer)
+  '''8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba''',
+  # ERC-20 contract address in a deployment manifest ("token" is the field name,
+  # not a credential): exactly 40 hex chars then a closing quote.
+  '''token":\s*"0x[0-9a-fA-F]{40}"''',
+]

@@ -56,8 +56,10 @@ test('renderMetrics emits valid Prometheus text with the Slice 8 surface', () =>
   assert.ok(out.includes('querais_keeper_last_success_timestamp{keeper="flush"} 1000'));
   assert.ok(out.includes('querais_gas_balance_wei 500000000000000000'));
   assert.ok(out.includes('querais_faucet_qais 42.5'));
-  assert.ok(out.includes('querais_nodes 3'), 'legacy gauge name still emitted (Slice 9 removes)');
   assert.ok(out.includes('querais_nodes_connected 3'));
+  // The legacy `querais_nodes` alias was removed in Slice 9 — only the canonical
+  // name remains (`querais_nodes` must not reappear as a bare gauge).
+  assert.ok(!/querais_nodes \d/.test(out), 'legacy querais_nodes alias removed in Slice 9');
 
   // A bare node count (legacy callers) still renders, omitting the optional gauges.
   const bare = renderMetrics(5);

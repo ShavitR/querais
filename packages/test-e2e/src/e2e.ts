@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import pino from 'pino';
 import { parseEther, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
@@ -14,14 +15,20 @@ import {
   stakingRewardsAbi,
   quaisTokenAbi,
   splitPayment,
+  verifyModelManifest,
   type Deployment,
   type QueraisPublicClient,
+  type SignedModelManifest,
 } from '@querais/shared';
-import type {
-  InferenceBackend,
-  InferenceChunk,
-  InferenceRequest,
-  InferenceResult,
+import {
+  GatewayClient,
+  MockBackend,
+  deriveNodeId,
+  mockModelDigest,
+  type InferenceBackend,
+  type InferenceChunk,
+  type InferenceRequest,
+  type InferenceResult,
 } from '@querais/node-daemon';
 import { QueraisClient } from '@querais/sdk';
 import { startHarness, API_KEY, ADMIN_TOKEN, KEYS } from './harness.js';
@@ -291,7 +298,7 @@ export async function runOpsCase(): Promise<void> {
 
     const metricsText = await (await fetch(`${h.baseUrl}/metrics`)).text();
     assert.match(metricsText, /querais_jobs_settled_total \d+/, '/metrics exposes counters');
-    assert.match(metricsText, /querais_nodes 1/, '/metrics shows the connected node');
+    assert.match(metricsText, /querais_nodes_connected 1/, '/metrics shows the connected node');
 
     // Dashboard data: stats.jobs + per-node leaderboard counter.
     const stats = (await (await fetch(`${h.baseUrl}/v1/stats`)).json()) as {
@@ -1536,6 +1543,105 @@ export async function runFailureCase(): Promise<void> {
       Number(onchain.reputationScore),
       Math.round(after!.reputation * 10000),
       'the post-slash composite is published on-chain immediately',
+    );
+  } finally {
+    await h.stop();
+  }
+}
+
+/**
+ * Model manifest (Slice 9): the gateway pins model digests in a signed manifest and
+ * the network converges on it from both sides.
+ *
+ *  B. A daemon whose models all fail the pin refuses to BOOT (self-check) — the
+ *     operator learns at startup, with the expected digest in the log, instead of
+ *     silently never receiving jobs.
+ *  C. A node that skips the self-check (pre-Slice-9 / adversarial: raw GatewayClient)
+ *     and offers a mismatched model is dropped at HANDSHAKE — the gateway is the
+ *     security boundary, the pool stays empty, and chat reports no capacity (503).
+ *  A. With a matching digest everything serves, and GET /v1/models/manifest returns
+ *     a manifest any third party can verify OFFLINE: EIP-191 recovery matches the
+ *     signer field, and the signer is the same settler address /v1/credit/info
+ *     advertises (the address requesters already trust with spending caps).
+ */
+export async function runModelManifestCase(): Promise<void> {
+  const goodDigest = mockModelDigest('mock-model'); // what MockBackend really reports
+  const poisoned = { 'mock-model': { digest: `sha256:${'f'.repeat(64)}`, note: 'e2e poison' } };
+
+  // B. Self-check: every served model fails the pin → the daemon refuses to boot.
+  await assert.rejects(
+    startHarness({ modelManifest: poisoned }),
+    /fail the gateway's model manifest/,
+    'a daemon whose only model fails the pin must refuse to boot',
+  );
+
+  // C. Gateway-side enforcement: bring up the gateway alone, then connect a raw
+  // GatewayClient (no self-check — stands in for a lying or pre-Slice-9 node)
+  // honestly reporting a digest that does not match the pin.
+  const hc = await startHarness({ modelManifest: poisoned, noDaemon: true });
+  const silent = pino({ level: 'silent' });
+  let adversary: GatewayClient | undefined;
+  try {
+    const nodeWallet = makeWalletClient(hc.deployment.rpcUrl, KEYS.node, hc.deployment.chainId);
+    adversary = new GatewayClient({
+      wsUrl: `${hc.baseUrl.replace('http://', 'ws://')}/node`,
+      walletClient: nodeWallet, // already registered+staked by earlier scenarios
+      nodeId: deriveNodeId(KEYS.node),
+      models: [{ model: 'mock-model', pricePerTokenWei: '1', tokensPerSecond: 0 }],
+      modelDigests: { 'mock-model': goodDigest },
+      backend: new MockBackend(['mock-model']),
+      logger: silent,
+    });
+    adversary.start();
+
+    // The handshake must be REJECTED: the pool never grows past 0.
+    const watchUntil = Date.now() + 2_500;
+    while (Date.now() < watchUntil) {
+      const health = (await (await fetch(`${hc.baseUrl}/health`)).json()) as { nodes: number };
+      assert.equal(health.nodes, 0, 'a mismatched-digest node must never join the pool');
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    // And with no surviving capacity, chat degrades honestly: 503 no_eligible_nodes.
+    const res = await chat(hc.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'anyone home?' }],
+      max_tokens: 10,
+    });
+    assert.equal(res.status, 503, 'no surviving capacity → 503');
+    const body = (await res.json()) as { error: { type: string } };
+    assert.equal(body.error.type, 'no_eligible_nodes', 'the OpenAI-style error names the cause');
+  } finally {
+    adversary?.stop();
+    await hc.stop();
+  }
+
+  // A. Recovery: pin the digest the backend actually has → everything serves again.
+  const h = await startHarness({
+    modelManifest: { 'mock-model': { digest: goodDigest } },
+  });
+  try {
+    const res = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'manifest says hello' }],
+      max_tokens: 20,
+    });
+    assert.equal(res.status, 200, 'a matching digest serves jobs normally');
+
+    // The published manifest is verifiable OFFLINE (pure signature recovery, no RPC)
+    // and is bound to the settler identity requesters already trust.
+    const manifest = (await (
+      await fetch(`${h.baseUrl}/v1/models/manifest`)
+    ).json()) as SignedModelManifest;
+    assert.equal(manifest.models['mock-model']?.digest, goodDigest, 'the pin is published');
+    assert.equal(await verifyModelManifest(manifest), true, 'EIP-191 recovery matches the signer');
+    const info = (await (await fetch(`${h.baseUrl}/v1/credit/info`)).json()) as {
+      settler: string;
+    };
+    assert.equal(
+      manifest.signer.toLowerCase(),
+      info.settler.toLowerCase(),
+      'the manifest is signed by the settler requesters already trust',
     );
   } finally {
     await h.stop();

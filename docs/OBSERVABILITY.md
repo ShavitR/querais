@@ -89,7 +89,7 @@ Metric names worth knowing (all `querais_*`; full list = `curl /metrics`):
 |---|---|---|
 | `querais_jobs_settled_total{model=...}` / `_failed_total` | counter | settled (per-model labeled) / failed jobs |
 | `querais_job_duration_seconds` / `querais_job_ttft_seconds` | histogram | match→settle latency / time-to-first-token |
-| `querais_nodes_connected` | gauge | live WS nodes (`querais_nodes` is a legacy alias, removed in Slice 9) |
+| `querais_nodes_connected` | gauge | live WS nodes (the `querais_nodes` legacy alias was removed in Slice 9) |
 | `querais_pending_debits` / `_debit_value_qais` / `querais_oldest_pending_debit_age_seconds` | gauge | the unsettled-liability ledger |
 | `querais_gas_balance_wei` / `querais_hot_wallet_qais` / `querais_faucet_qais` / `querais_faucet_eth_wei` | gauge | money levels (refreshed by the alert sweep — absent until the first sweep) |
 | `querais_open_flags` | gauge | unreviewed review-queue depth |

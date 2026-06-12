@@ -39,6 +39,20 @@ export class OllamaBackend implements InferenceBackend {
     return (body.models ?? []).map((m) => m.name ?? '').filter(Boolean);
   }
 
+  /** Slice 9: model → blob digest from /api/tags (Ollama reports bare 64-hex; normalize
+   *  to the manifest's "sha256:…" form). */
+  async modelDigests(): Promise<Record<string, string>> {
+    const res = await fetch(`${this.baseUrl}/api/tags`, { method: 'GET' });
+    if (!res.ok) throw new Error(`Ollama /api/tags failed: ${res.status}`);
+    const body = (await res.json()) as { models?: Array<{ name?: string; digest?: string }> };
+    const out: Record<string, string> = {};
+    for (const m of body.models ?? []) {
+      if (!m.name || !m.digest) continue;
+      out[m.name] = m.digest.startsWith('sha256:') ? m.digest : `sha256:${m.digest}`;
+    }
+    return out;
+  }
+
   /** Pull the model if it isn't already present (streams + drains pull progress). */
   async ensureModel(model: string): Promise<void> {
     const present = await this.listModels();

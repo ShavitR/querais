@@ -1,7 +1,27 @@
 {
   "name": "@querais/sdk",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
+  "license": "MIT",
+  "description": "TypeScript client + CLI for QueraIS, the decentralized AI inference marketplace. OpenAI-shaped chat/streaming plus QueraIS extras: nodes, stats, batched-settlement sessions.",
+  "keywords": [
+    "querais",
+    "ai",
+    "llm",
+    "inference",
+    "openai-compatible",
+    "decentralized",
+    "arbitrum",
+    "web3"
+  ],
+  "homepage": "https://github.com/ShavitR/querais/tree/main/packages/sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShavitR/querais.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/ShavitR/querais/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +33,18 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/.tsbuildinfo",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "tsc -b",

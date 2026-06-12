@@ -13,6 +13,7 @@ import { ensureRegistered } from './registry.js';
 import { GatewayClient } from './gateway-client.js';
 import { computeAutoPrice } from './pricing.js';
 import { ensureFunded, faucetUrlFromGatewayWs } from './auto-fund.js';
+import { httpBaseFromGatewayWs, manifestSelfCheck } from './manifest-check.js';
 
 /**
  * Wire the daemon together: verify the inference backend, decide which models to
@@ -50,6 +51,40 @@ export async function startDaemon(
     );
   }
 
+  // Slice 9: collect blob digests for the served models so a manifest-enforcing
+  // gateway can verify them at handshake. Best-effort — a backend without digests
+  // still serves, but manifest-pinned models would be dropped by such a gateway.
+  let modelDigests: Record<string, string> | undefined;
+  if (infer.modelDigests) {
+    try {
+      const all = await infer.modelDigests();
+      const entries = served.filter((m) => all[m]).map((m) => [m, all[m]!] as const);
+      if (entries.length) modelDigests = Object.fromEntries(entries);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'could not read model digests — a manifest-enforcing gateway may drop our models',
+      );
+    }
+  }
+
+  // Slice 9 self-verify (best-effort): ask the gateway for its signed manifest and
+  // skip models that would fail enforcement — the operator finds out at boot, with
+  // the expected digest in the log, instead of silently never receiving jobs.
+  const { skipped } = await manifestSelfCheck({
+    gatewayHttpBase: httpBaseFromGatewayWs(config.gatewayWsUrl),
+    served,
+    ...(modelDigests ? { modelDigests } : {}),
+    logger,
+  });
+  const activeServed = served.filter((m) => !skipped.includes(m));
+  if (activeServed.length === 0) {
+    throw new Error(
+      `All served models fail the gateway's model manifest (${skipped.join(', ')}) — ` +
+        `re-pull the pinned versions (see the warnings above for expected digests)`,
+    );
+  }
+
   // Auto-price: at startup we have no live load and start at the onboarding
   // reputation (0.70); the price is the market estimate adjusted + electricity-floored.
   const priceWei = computeAutoPrice({
@@ -58,7 +93,7 @@ export async function startDaemon(
     reputationBps: 7000,
     electricityCostPerTokenWei: config.electricityCostPerTokenWei,
   });
-  const models: NodeModelOffer[] = served.map((model) => ({
+  const models: NodeModelOffer[] = activeServed.map((model) => ({
     model,
     pricePerTokenWei: priceWei.toString(),
     tokensPerSecond: 0,
@@ -90,7 +125,7 @@ export async function startDaemon(
     config.stakeWei,
   );
   logger.info(
-    { wallet: walletClient.account.address, alreadyRegistered, models: served },
+    { wallet: walletClient.account.address, alreadyRegistered, models: activeServed },
     'node ready on-chain',
   );
 
@@ -99,6 +134,7 @@ export async function startDaemon(
     walletClient,
     nodeId: config.nodeId,
     models,
+    ...(modelDigests ? { modelDigests } : {}),
     backend: infer,
     logger,
   });

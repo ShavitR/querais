@@ -303,7 +303,7 @@ Now there's something worth hosting. Stand up the real service and bring the wor
   < 5 min**; status page reflects an induced outage.
 - **Maps to:** P3.4.
 
-### Slice 9 — DX, node polish & growth · Effort L · Risk L
+### Slice 9 — DX, node polish & growth · Effort L · Risk L · ✅ DONE (full plan + as-built record: `Slice9.md` in the repo root)
 - **Build:** **signed installers / prebuilt release artifacts** (onboarding skips the source
   build); **model registry** with SHA256 verification; publish the **Python SDK** +
   **LangChain/LlamaIndex** providers; beta-cohort recruitment + leaderboard campaign.

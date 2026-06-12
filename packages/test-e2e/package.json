@@ -2,12 +2,14 @@
   "name": "@querais/test-e2e",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "e2e": "tsx src/run-e2e.ts",
+    "smoke:bundle": "tsx src/smoke-bundle.ts",
     "live:sepolia": "tsx src/live-sepolia.ts",
     "gateway:sepolia": "tsx src/gateway-sepolia.ts",
     "prepare:vm-node": "tsx src/prepare-vm-node.ts",
@@ -20,6 +22,7 @@
     "@querais/node-daemon": "workspace:*",
     "@querais/sdk": "workspace:*",
     "@querais/shared": "workspace:*",
+    "pino": "^9.6.0",
     "viem": "^2.52.2"
   },
   "devDependencies": {

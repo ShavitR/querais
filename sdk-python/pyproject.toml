@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "querais"
+version = "0.1.0"
+description = "Python client for QueraIS, the decentralized AI inference marketplace. OpenAI-shaped chat/streaming plus QueraIS extras: nodes, stats, model manifest."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "QueraIS contributors" }]
+keywords = [
+  "querais",
+  "ai",
+  "llm",
+  "inference",
+  "openai-compatible",
+  "decentralized",
+  "arbitrum",
+  "web3",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["httpx>=0.27"]
+
+[project.optional-dependencies]
+# Integrations return the OFFICIAL LangChain / LlamaIndex OpenAI classes pointed at
+# the gateway — nothing is reimplemented, and `pip install querais` stays light.
+langchain = ["langchain-openai>=0.2"]
+llamaindex = ["llama-index-llms-openai-like>=0.3"]
+dev = ["pytest>=8", "ruff>=0.8", "build>=1.2"]
+
+[project.urls]
+Homepage = "https://github.com/ShavitR/querais/tree/main/sdk-python#readme"
+Repository = "https://github.com/ShavitR/querais"
+Issues = "https://github.com/ShavitR/querais/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/querais"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Defaults (pyflakes + pycodestyle errors) plus import sorting, bugbear, pyupgrade.
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

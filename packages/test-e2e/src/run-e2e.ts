@@ -1,11 +1,12 @@
 /**
  * Self-contained end-to-end acceptance gate (`pnpm test:e2e`).
  *
- * Spins up a fresh Hardhat node, deploys the contracts, then runs the full slice
- * twice: a success case (real mock completion + 95/5 on-chain settlement, job
- * VERIFIED) and a failure case (Layer-B rejects a garbage result → 502 + full
- * refund). Tears the chain down at the end. Uses the MockBackend so it runs without
- * Ollama; the live-inference path is covered by the node-daemon smoke + `pnpm demo`.
+ * Spins up a fresh Hardhat node, deploys the contracts, then runs every scenario —
+ * from the slice-0 success case (real mock completion + 95/5 on-chain settlement)
+ * through hardening, reputation, verification, disputes, treasury, observability,
+ * and the Slice 9 model manifest. Tears the chain down at the end. Uses the
+ * MockBackend so it runs without Ollama; the live-inference path is covered by the
+ * node-daemon smoke + `pnpm demo`.
  */
 import { startChainAndDeploy } from './chain.js';
 import {
@@ -25,6 +26,7 @@ import {
   runIncentivesCase,
   runGracefulShutdownCase,
   runObservabilityCase,
+  runModelManifestCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -102,6 +104,12 @@ async function main(): Promise<void> {
     );
     await runObservabilityCase();
     console.log('✅ observability case passed');
+
+    console.log(
+      '▶  model manifest case: poisoned pin → boot refusal + handshake drop; matching pin serves…',
+    );
+    await runModelManifestCase();
+    console.log('✅ model manifest case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

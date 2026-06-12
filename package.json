@@ -2,6 +2,7 @@
   "name": "querais",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "QueraIS — decentralized P2P AI inference marketplace (MVP vertical slice)",
   "type": "module",
   "engines": {
@@ -24,6 +25,8 @@
     "test:contracts": "pnpm --filter @querais/contracts test",
     "test:unit": "pnpm -r --filter \"./packages/**\" --filter \"!@querais/contracts\" --filter \"!@querais/test-e2e\" test",
     "test:e2e": "pnpm --filter @querais/test-e2e e2e",
+    "bundle:daemon": "node scripts/bundle-daemon.mjs",
+    "smoke:bundle": "pnpm --filter @querais/test-e2e smoke:bundle",
     "live:sepolia": "pnpm --filter @querais/test-e2e live:sepolia",
     "gateway:sepolia": "pnpm --filter @querais/test-e2e gateway:sepolia",
     "ops:pause": "pnpm --filter @querais/contracts pause",
@@ -34,6 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/node": "^22.10.5",
+    "esbuild": "^0.28.0",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",

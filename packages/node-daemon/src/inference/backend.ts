@@ -39,6 +39,12 @@ export interface InferenceBackend {
   isAvailable(): Promise<boolean>;
   /** Backend-native model ids currently ready to serve. */
   listModels(): Promise<string[]>;
+  /**
+   * Slice 9: model → blob digest ("sha256:" + 64 hex) for the models listModels()
+   * reports. A manifest-enforcing gateway verifies these at handshake. Optional —
+   * backends without it can't serve manifest-pinned models on such gateways.
+   */
+  modelDigests?(): Promise<Record<string, string>>;
   /** Ensure a model is downloaded/ready before serving (e.g. `ollama pull`). Optional. */
   ensureModel?(model: string): Promise<void>;
   /**
