@@ -53,13 +53,15 @@ checked by a human.
 
 ## 3. User actions after the flip (publishing)
 
-`release.yml` **auto-detects** `NPM_TOKEN` / `PYPI_TOKEN`: add the secrets and the next
-tag publishes for real; until then every tag is a safe dry-run / build-only rehearsal.
-**No workflow edits are needed** — just the secrets.
+`release.yml` publishes the SDKs on a `v*` tag. **npm** auto-detects `NPM_TOKEN` — set the
+secret and the next tag publishes for real, otherwise it dry-runs. **PyPI** uses
+**Trusted Publishing (OIDC)** — no stored token; once a pending publisher is registered
+for this repo + `release.yml`, every tag publishes the Python SDK for real.
+**No workflow edits are needed** — just the secret (npm) and the publisher registration (PyPI).
 
 - [x] **Enable GitHub secret scanning + push protection** — done 2026-06-12 via
       `gh api` (see §2; the repo was already public).
-- [ ] **npm**: create the `querais` org/scope on npmjs.com; generate a
+- [x] **npm**: create the `querais` org/scope on npmjs.com; generate a
       granular **Automation** token (bypasses 2FA in CI); add it as the
       `NPM_TOKEN` repo secret (`gh secret set NPM_TOKEN -R ShavitR/querais`).
       The workflow runs `pnpm publish -r`, which publishes all three public
@@ -67,10 +69,12 @@ tag publishes for real; until then every tag is a safe dry-run / build-only rehe
       → `@querais/sdk` (`@querais/matching` is private, skipped) — and rewrites
       each `workspace:*` range to the real version. (Publishing `shared` without
       `contracts`, which it depends on, would break every install.)
-- [ ] **PyPI**: create the `querais` project (or reserve the name); generate a
-      project-scoped API token; add it as the `PYPI_TOKEN` repo secret. Trusted
-      Publishing (OIDC) is an alternative — register a pending publisher and add
-      `id-token: write` perms instead of a long-lived token.
+- [x] **PyPI** (Trusted Publishing — no stored token): register a pending
+      publisher at https://pypi.org/manage/account/publishing/ for project
+      `querais`, owner `ShavitR`, repo `querais`, workflow `release.yml`. The
+      workflow authenticates via OIDC (`id-token: write` + `pypa/gh-action-pypi-publish`)
+      — done in this change; no `PYPI_TOKEN` secret is needed. The `querais`
+      project is created automatically on the first publish.
 - [ ] **Tag the next version** (e.g. `v0.2.1` — `v0.2.0` is already drafted, and
       npm/PyPI permanently reject re-publishing a version) → the workflow publishes
       the SDKs and opens a fresh draft GitHub Release → review → publish it.
