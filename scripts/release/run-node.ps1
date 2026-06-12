@@ -6,8 +6,15 @@ Set-Location $PSScriptRoot
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error 'QueraIS needs Node.js >= 22.13 - install it from https://nodejs.org'
 }
-node -e 'const [maj, min] = process.versions.node.split(".").map(Number); if (maj < 22 || (maj === 22 && min < 13)) { console.error(`QueraIS needs Node >= 22.13 (found ${process.versions.node})`); process.exit(1); }'
-if ($LASTEXITCODE -ne 0) { exit 1 }
+# Parse the version in PowerShell — do NOT shell out to `node -e "..."`: PowerShell strips the
+# embedded double quotes when passing the script to node, which corrupts it (split(".") -> split(.)).
+$nodeVersion = (& node --version).TrimStart('v')   # e.g. "26.2.0"
+$parts = $nodeVersion.Split('.')
+$maj = [int]$parts[0]
+$min = [int]$parts[1]
+if ($maj -lt 22 -or ($maj -eq 22 -and $min -lt 13)) {
+    Write-Error "QueraIS needs Node >= 22.13 (found $nodeVersion)"
+}
 
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env
