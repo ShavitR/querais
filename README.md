@@ -1,21 +1,39 @@
-# QueraIS
+<div align="center">
 
-**BitTorrent for AI inference.** An OpenAI-compatible API served by independent GPU nodes that
-earn `$QAIS` for running LLM jobs. Every job settles on-chain — **95% to the node, 5% protocol fee**.
+# ⚡ QueraIS
 
-> ⚠️ **Testnet only** (Arbitrum Sepolia) — tokens have **no real value**. Your prompts run on
+### BitTorrent for AI inference
+
+An **OpenAI-compatible API** served by independent GPU nodes that earn `$QAIS` for running LLM jobs.
+Every job settles on-chain — **95% to the node · 5% protocol fee**.
+
+[![CI](https://github.com/ShavitR/querais/actions/workflows/ci.yml/badge.svg)](https://github.com/ShavitR/querais/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/%40querais%2Fsdk?label=%40querais%2Fsdk&color=cb3837)](https://www.npmjs.com/package/@querais/sdk)
+[![PyPI](https://img.shields.io/pypi/v/querais?label=querais&color=3775a9)](https://pypi.org/project/querais/)
+[![Network](https://img.shields.io/badge/network-Arbitrum%20Sepolia-28a0f0)](#deployed-contracts-arbitrum-sepolia)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[🌐 Live status](https://querais-gateway.fly.dev/status)** ·
+**[📦 npm](https://www.npmjs.com/org/querais)** ·
+**[🐍 PyPI](https://pypi.org/project/querais/)** ·
+**[📚 Docs](#project-docs)**
+
+</div>
+
+> [!WARNING]
+> **Testnet only** (Arbitrum Sepolia) — tokens have **no real value**. Your prompts run on
 > strangers' machines and ~5% are re-run for verification, so **don't send anything secret**.
-> [Terms](docs/TERMS.md) · [Privacy](docs/PRIVACY.md).
+> [Terms](docs/TERMS.md) · [Privacy](docs/PRIVACY.md)
 
 ---
 
-## Pick your path
+## 🧭 Pick your path
 
 | You want to… | Go here | Time |
 |---|---|---|
-| 🤖 **Use the AI** — call the API from your code | [Use the hosted gateway](#use-the-live-testnet-gateway-fastest-path) | 2 min |
-| 💸 **Earn `$QAIS`** — run a GPU node | [Run a node](#run-a-node-and-earn-testnet-qais) | ~5 min |
-| 🛠️ **Hack on it** — run the whole stack locally | [60-second demo](#60-second-demo) | 5 min |
+| 🤖 **Use the AI** — call the API from your code | [Use the hosted gateway](#use-the-live-testnet-gateway-fastest-path) | ⏱️ 2 min |
+| 💸 **Earn `$QAIS`** — run a GPU node | [Run a node](#run-a-node-and-earn-testnet-qais) | ⏱️ ~5 min |
+| 🛠️ **Hack on it** — run the whole stack locally | [60-second demo](#60-second-demo) | ⏱️ 5 min |
 
 It's **live today**: gateway up 24/7 at `querais-gateway.fly.dev`, SDKs on
 [npm](https://www.npmjs.com/org/querais) + [PyPI](https://pypi.org/project/querais/), contracts on
@@ -27,10 +45,12 @@ Arbitrum Sepolia. The trust model is a single trusted gateway for now —
 <a id="project-status"></a>
 
 <details>
-<summary><strong>Project status</strong> — 10 build slices shipped (click to expand)</summary>
+<summary><strong>📊 Project status — 10 build slices shipped ✅</strong> <em>(click to expand)</em></summary>
+
+<br/>
 
 | Slice | What it delivers | Status |
-|------|------------------|--------|
+|:-----:|------------------|:------:|
 | 0 | CI green-bar gate (build · typecheck · lint · test · e2e) + Solidity lint + Slither | ✅ |
 | 1 | Durable gateway state on `node:sqlite` (API keys, faucet claims, job history) | ✅ |
 | 2 | **Batched settlement** — deposit once, sign one EIP-712 cap, settle thousands of jobs per tx | ✅ |
@@ -51,7 +71,9 @@ reputation). Next: Stage D (web app, arbitration panel, scale, mainnet gate). Li
 
 ---
 
-## Use the live testnet gateway (fastest path)
+<a id="use-the-live-testnet-gateway-fastest-path"></a>
+
+## 🚀 Use the live testnet gateway (fastest path)
 
 No clone, no build — just point an OpenAI client at the hosted gateway. **Do this:**
 
@@ -105,12 +127,15 @@ pip install querais            # Python — add [langchain] or [llamaindex] for 
 npm i -g @querais/sdk          # TypeScript SDK + the `querais` CLI
 ```
 
+> [!TIP]
 > Want to **serve** jobs instead? Skip to [Run a node](#run-a-node-and-earn-testnet-qais) —
 > a prebuilt release runs in ~5 minutes with just Node 22 + Ollama.
 
 ---
 
-## Prerequisites
+<a id="prerequisites"></a>
+
+## 🧰 Prerequisites
 
 | Tool | Version | Why |
 |------|---------|-----|
@@ -120,13 +145,16 @@ npm i -g @querais/sdk          # TypeScript SDK + the `querais` CLI
 
 Check your Node version first: `node -v` — it must print `v22.13` or higher.
 
+> [!NOTE]
 > The unit tests and the e2e gate use a **mock** inference backend, so you can run
 > `pnpm test` / `pnpm test:e2e` **without Ollama**. You only need Ollama for `pnpm demo`
 > and for running a real node.
 
 ---
 
-## 60-second demo
+<a id="60-second-demo"></a>
+
+## ⏱️ 60-second demo
 
 This spins up a throwaway local blockchain, deploys all contracts, starts a gateway **and** a
 node, runs a **real streaming completion**, prints the protocol fee earned on-chain, and leaves
@@ -157,7 +185,9 @@ and the signed model manifest.
 
 ---
 
-## Call it from your code (OpenAI drop-in)
+<a id="call-it-from-your-code-openai-drop-in"></a>
+
+## 🔌 Call it from your code (OpenAI drop-in)
 
 The gateway is OpenAI-compatible — point the **official OpenAI client** at it and change one
 line (the base URL). You need a gateway running with a node connected; the simplest way is the
@@ -196,13 +226,14 @@ querais models         # models available on the network
 querais nodes          # active nodes + their reputation
 ```
 
+> [!NOTE]
 > **Which API key?** It's whatever the gateway was configured with.
 > `pnpm dev:gateway` reads `GATEWAY_API_KEYS` from `.env` (default `sk-querais-dev`);
 > `pnpm gateway:sepolia` uses `sk-host`; `pnpm demo` uses `sk-test`.
 
 ---
 
-## Batched settlement: pay once, run thousands of jobs
+## 💳 Batched settlement: pay once, run thousands of jobs
 
 By default every API call costs an on-chain transaction. **Batched settlement** removes that:
 the requester deposits `$QAIS` into the `CreditAccount` contract **once**, signs a single
@@ -240,7 +271,9 @@ requester transactions**, with the 95/5 split landing on-chain.
 
 ---
 
-## Run the full stack manually
+<a id="run-the-full-stack-manually"></a>
+
+## 🛠️ Run the full stack manually
 
 For development you can run each piece in its own terminal (so the gateway stays up for you to
 hit from code). From the repo root:
@@ -268,7 +301,9 @@ Now hit `http://127.0.0.1:8787/v1` with the [drop-in examples above](#call-it-fr
 
 ---
 
-## Run a node and earn testnet QAIS
+<a id="run-a-node-and-earn-testnet-qais"></a>
+
+## 💸 Run a node and earn testnet QAIS
 
 Join an existing network as a provider. The node generates an **encrypted wallet** on first
 run, **auto-funds itself** (gas + stake) from the gateway's faucet, stakes, and registers — no
@@ -303,13 +338,14 @@ and **Ollama**, nothing else.
 `handshake accepted by gateway`. The faucet covers gas + stake automatically; from then on the
 node competes for jobs and earns the 95% provider share of each one it serves.
 
+> [!TIP]
 > **Prefer Docker?** Use `scripts/install-node.sh` + `docker-compose.yml`.
 > **Ultra one-liner:** set `$env:QUERAIS_GATEWAY` then
 > `irm <raw-url>/scripts/bootstrap.ps1 | iex` — clones, sets up, and starts in one shot.
 
 ---
 
-## Host your own gateway on Sepolia
+## 🌐 Host your own gateway on Sepolia
 
 To operate a network others can join (the contracts are already deployed on Sepolia — you
 reuse them):
@@ -324,6 +360,7 @@ command to open port 8787. Nodes then join with the scripts above pointed at
 `ws://<your-host>:8787/node`. `pnpm prepare:vm-node` helps pre-fund a node key for a second
 machine / VM.
 
+> [!NOTE]
 > Deploying the contracts yourself instead of reusing the existing ones:
 > `pnpm deploy:sepolia` (full suite) or `pnpm deploy:credit:sepolia` (add only the
 > `CreditAccount` to an existing deployment). Both write to
@@ -331,23 +368,29 @@ machine / VM.
 
 ---
 
-## How a request flows
+## 🔄 How a request flows
 
-```
-requester ──POST /v1/chat/completions──▶ gateway ──match──▶ node ──Ollama──▶ tokens
-                                            │                                    │
-                                            ◀──────────── streamed back ─────────┘
-                                            │
-                                            ├─ verify (Layer-B: non-empty, length,
-                                            │   no loops, resultHash matches forwarded text)
-                                            │
-                                            └─ settle ▼
-        ┌───────────────────────────────────────────────────────────────────┐
-        │  No credit session  → JobEscrow: createJob → assignJob →            │
-        │                        verifyAndRelease  (1 tx/job: 95% / 5% / refund)│
-        │  Active credit session → record a signed debit; flush a batch of    │
-        │                        them in ONE CreditAccount.batchSettle tx      │
-        └───────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as 🧑‍💻 Requester
+    participant G as 🛡️ Gateway
+    participant N as 🖥️ GPU Node
+    participant C as ⛓️ Arbitrum
+
+    R->>G: POST /v1/chat/completions (Bearer key)
+    G->>G: normalize → JobSpec (deterministic jobId)<br/>score nodes on price + reputation
+    G->>N: dispatch job
+    N->>N: real inference (Ollama)
+    N-->>G: stream tokens + resultHash
+    G-->>R: stream proxied tokens (counted independently)
+    G->>G: Layer-B verify — non-empty, length,<br/>no loops, resultHash matches forwarded text
+    alt No credit session — 1 tx per job
+        G->>C: JobEscrow — createJob → assignJob → verifyAndRelease (95% / 5% / refund)
+    else Active credit session — batched
+        G->>G: record a signed debit
+        G->>C: CreditAccount.batchSettle — a whole batch in ONE tx
+    end
 ```
 
 1. The gateway authenticates the Bearer API key → requester wallet, normalizes the request into
@@ -363,7 +406,7 @@ requester ──POST /v1/chat/completions──▶ gateway ──match──▶ 
 
 ---
 
-## Repository layout
+## 🗂️ Repository layout
 
 ```
 packages/
@@ -393,7 +436,7 @@ querais_*.md    the 7 original design/whitepaper documents (vision, architecture
 
 ---
 
-## All commands
+## 📋 All commands
 
 ```bash
 # setup & quality
@@ -433,19 +476,21 @@ merge.
 
 ---
 
-## Deployed contracts (Arbitrum Sepolia)
+<a id="deployed-contracts-arbitrum-sepolia"></a>
+
+## 📜 Deployed contracts (Arbitrum Sepolia)
 
 `chainId 421614` — committed in `packages/contracts/deployments/addresses.arbitrumSepolia.json`.
 
 | Contract | Address | Role |
 |----------|---------|------|
-| QUAISToken        | `0x5532663d4d4560d9923e30fb7230b82edcb25531` | ERC-20 `$QAIS` (fixed supply, burnable) |
-| NodeRegistry      | `0xe9674474f7450b8fdc88895f7646d0d5fc34e99a` | node registration, staking, reputation |
-| JobEscrow         | `0x9a8be9ad9f980e828757163780aea1ca46303267` | per-job lock + 95/5 settlement |
-| CreditAccount     | `0xc148e3d305a35876d9df211dbc9ef944ab4c8191` | deposits + EIP-712 caps + batched settlement |
-| DisputeResolution | `0x546b548bf5401aad0a21e85ce750aad5e58d8013` | commit-reveal arbitration + slashing |
-| ProtocolTreasury  | `0x83acf7b9a8182a6398c1fd80d0e237011e903fa2` | fee accrual + 60/20/20 sweep + burn |
-| StakingRewards    | `0x8fa6ec119ae18f0793d1ec0eb0525e9f6f6b648f` | staker reward distribution |
+| QUAISToken        | [`0x5532663d4d4560d9923e30fb7230b82edcb25531`](https://sepolia.arbiscan.io/address/0x5532663d4d4560d9923e30fb7230b82edcb25531) | ERC-20 `$QAIS` (fixed supply, burnable) |
+| NodeRegistry      | [`0xe9674474f7450b8fdc88895f7646d0d5fc34e99a`](https://sepolia.arbiscan.io/address/0xe9674474f7450b8fdc88895f7646d0d5fc34e99a) | node registration, staking, reputation |
+| JobEscrow         | [`0x9a8be9ad9f980e828757163780aea1ca46303267`](https://sepolia.arbiscan.io/address/0x9a8be9ad9f980e828757163780aea1ca46303267) | per-job lock + 95/5 settlement |
+| CreditAccount     | [`0xc148e3d305a35876d9df211dbc9ef944ab4c8191`](https://sepolia.arbiscan.io/address/0xc148e3d305a35876d9df211dbc9ef944ab4c8191) | deposits + EIP-712 caps + batched settlement |
+| DisputeResolution | [`0x546b548bf5401aad0a21e85ce750aad5e58d8013`](https://sepolia.arbiscan.io/address/0x546b548bf5401aad0a21e85ce750aad5e58d8013) | commit-reveal arbitration + slashing |
+| ProtocolTreasury  | [`0x83acf7b9a8182a6398c1fd80d0e237011e903fa2`](https://sepolia.arbiscan.io/address/0x83acf7b9a8182a6398c1fd80d0e237011e903fa2) | fee accrual + 60/20/20 sweep + burn |
+| StakingRewards    | [`0x8fa6ec119ae18f0793d1ec0eb0525e9f6f6b648f`](https://sepolia.arbiscan.io/address/0x8fa6ec119ae18f0793d1ec0eb0525e9f6f6b648f) | staker reward distribution |
 
 All are OpenZeppelin-based (`AccessControl`, `ReentrancyGuard`, `SafeERC20`, `Pausable`) and
 verified on the block explorer. The manifest is the source of truth — the code reads it via
@@ -453,7 +498,9 @@ verified on the block explorer. The manifest is the source of truth — the code
 
 ---
 
-## Trust & security model
+<a id="trust--security-model"></a>
+
+## 🔐 Trust & security model
 
 This is **Phase 1: hybrid hub-and-spoke**. One trusted **gateway** does matching, holds the
 `ORACLE` / `MATCHING_ENGINE` / `SLASHER` / `SETTLER` roles, and pays settlement gas.
@@ -478,7 +525,9 @@ clearing the Slither baseline, and the Phase-2 decentralization work.
 
 ---
 
-## What's not built yet (limitations)
+<a id="whats-not-built-yet-limitations"></a>
+
+## 🚧 What's not built yet (limitations)
 
 Being honest about the edges so nobody is surprised. Today's system works end-to-end, but it is
 **Phase 1**, and these are deliberately not done yet:
@@ -509,40 +558,39 @@ See [Trust & security model](#trust--security-model) for the security framing an
 
 ---
 
-## Environment gotchas (read if something breaks)
+## 🩹 Environment gotchas (read if something breaks)
 
-- **`ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`** → your Node is < 22.13. Upgrade. This is the
-  single most common setup failure.
-- **`.env` not loading** → if you created it with Notepad it may be saved as `.env.txt` with a
-  BOM. Create it with `cp .env.example .env` (or save as UTF-8 without BOM).
-- **Windows / PowerShell** is a first-class shell here. If you use the git-bash side, use
-  forward-slash paths (`/c/Users/...`) — git-bash silently drops `cd C:\...`.
-- **Ollama errors in the demo** → make sure `ollama serve` is running and the model is pulled
-  (`ollama pull gemma3:4b`). On a low-RAM machine a 4B model leans on swap and is slow.
-- **`pnpm demo` / imports fail right after clone** → you skipped `pnpm build`. The packages
-  import each other's built `dist/`, so build once before running.
+| Symptom | Fix |
+|---------|-----|
+| `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite` | Your Node is < 22.13 — upgrade. This is the single most common setup failure. |
+| `.env` not loading | If you created it with Notepad it may be saved as `.env.txt` with a BOM. Create it with `cp .env.example .env` (or save as UTF-8 without BOM). |
+| Windows / git-bash path issues | **PowerShell is a first-class shell here.** If you use the git-bash side, use forward-slash paths (`/c/Users/...`) — git-bash silently drops `cd C:\...`. |
+| Ollama errors in the demo | Make sure `ollama serve` is running and the model is pulled (`ollama pull gemma3:4b`). On a low-RAM machine a 4B model leans on swap and is slow. |
+| `pnpm demo` / imports fail right after clone | You skipped `pnpm build`. The packages import each other's built `dist/`, so build once before running. |
 
 ---
 
-## Project docs
+<a id="project-docs"></a>
+
+## 📚 Project docs
 
 Read these for the full picture (in the repo root and `docs/`):
 
-- **`HANDOFF.md`** — current status, what's built, how to run/verify, and the next milestone.
-- **`docs/TERMS.md`**, **`docs/PRIVACY.md`** — terms of service and the privacy notice
-  (what gets sampled for verification, what's hashed vs. stored). **`SECURITY.md`** — how to
-  report vulnerabilities.
-- **`docs/EXECUTION_PLAN.md`** — the live, slice-by-slice roadmap.
-- **`docs/NODE_RELEASE_INSTALL.md`** — run a node from a prebuilt release in ~5 minutes.
-- **`docs/BETA_PLAYBOOK.md`** — beta-cohort recruitment + leaderboard/competition campaign
-  materials. **`docs/REPO_PUBLIC_CHECKLIST.md`** — the (irreversible) go-public gate.
-- **`docs/SLICE1_PLAN.md`**, **`docs/SLICE2_PLAN.md`**, **`Slice8.md`**, **`Slice9.md`** —
-  per-slice plans/records.
-- **`querais_overview.md`**, **`querais_protocol_architecture.md`**, `querais_token_economics.md`,
-  `querais_reputation_system.md`, `querais_smart_contracts.md`, `querais_node_design.md`,
-  `querais_go_to_market.md` — the original vision and specifications.
+| Doc | What's inside |
+|-----|---------------|
+| **[`HANDOFF.md`](HANDOFF.md)** | Current status, what's built, how to run/verify, and the next milestone — **read this first** |
+| [`docs/EXECUTION_PLAN.md`](docs/EXECUTION_PLAN.md) | The live, slice-by-slice roadmap |
+| [`docs/NODE_RELEASE_INSTALL.md`](docs/NODE_RELEASE_INSTALL.md) | Run a node from a prebuilt release in ~5 minutes |
+| [`docs/TERMS.md`](docs/TERMS.md) · [`docs/PRIVACY.md`](docs/PRIVACY.md) | Terms of service and the privacy notice (what gets sampled for verification, what's hashed vs. stored) |
+| [`SECURITY.md`](SECURITY.md) | How to report vulnerabilities |
+| [`docs/BETA_PLAYBOOK.md`](docs/BETA_PLAYBOOK.md) | Beta-cohort recruitment + leaderboard/competition campaign materials |
+| [`docs/REPO_PUBLIC_CHECKLIST.md`](docs/REPO_PUBLIC_CHECKLIST.md) | The (irreversible) go-public gate |
+| `docs/SLICE1_PLAN.md` · `docs/SLICE2_PLAN.md` · `Slice8.md` · `Slice9.md` | Per-slice plans/records |
+| `querais_overview.md` + 6 more `querais_*.md` | The original vision and specifications (architecture, tokenomics, reputation, contracts, node design, go-to-market) |
 
 ---
 
-*QueraIS is testnet software under active development. No token has launched and nothing here
-has real-world monetary value.*
+<div align="center">
+<sub><em>QueraIS is testnet software under active development. No token has launched and nothing here
+has real-world monetary value.</em></sub>
+</div>
