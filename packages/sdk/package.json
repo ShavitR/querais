@@ -1,6 +1,6 @@
 {
   "name": "@querais/sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT",
   "description": "TypeScript client + CLI for QueraIS, the decentralized AI inference marketplace. OpenAI-shaped chat/streaming plus QueraIS extras: nodes, stats, batched-settlement sessions.",
   "keywords": [

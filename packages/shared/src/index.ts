@@ -6,7 +6,7 @@
  * viem chain bindings. Imported by gateway, matching (types only), node-daemon, sdk.
  */
 
-export const SHARED_VERSION = '0.2.0';
+export const SHARED_VERSION = '0.2.1';
 
 export * from './errors.js';
 export * from './ids.js';
