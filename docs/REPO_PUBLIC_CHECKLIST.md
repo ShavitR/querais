@@ -37,35 +37,43 @@ checked by a human.
 
 ## 2. User actions before the flip (in order)
 
-- [ ] **Enable GitHub secret scanning + push protection** — repo Settings →
-      Code security and analysis → enable both *before* the repo is public so
-      they're armed from the first public second. (Secret scanning is free for
-      public repos; enabling it while private may require GHAS — if so, enable
-      immediately after the flip instead.)
-- [ ] **Review this checklist + the scan output above.** If anything in the
-      history has changed since 2026-06-12, re-run the scan locally:
+> The repo is **already public** (flipped by the user) and secret scanning + push
+> protection are **enabled** (2026-06-12). This section is retained as the record.
+
+- [x] **Enable GitHub secret scanning + push protection** — enabled 2026-06-12 via
+      `gh api -X PATCH repos/ShavitR/querais` (both `secret_scanning` and
+      `secret_scanning_push_protection` → `enabled`). Free for public repos.
+- [x] **Review this checklist + the scan output above.** If anything in the
+      history changes, re-run the scan locally:
       `gitleaks git --log-opts="--all" --config .gitleaks.toml .`
-- [ ] **Skim the non-code surface** — README, docs/, planning `querais_*.md`
-      files — for anything you don't want public (internal URLs, names,
-      economics you'd rather not commit to). Code is covered by the scan;
+- [x] **Skim the non-code surface** — README, docs/, planning `querais_*.md`
+      files — for anything you don't want public. Code is covered by the scan;
       prose is a judgment call only you can make.
-- [ ] **Flip visibility** — repo Settings → Danger Zone → Change visibility →
-      Public. *Irreversible in practice; your call alone.*
+- [x] **Flip visibility** — done; the repo is public.
 
 ## 3. User actions after the flip (publishing)
 
+`release.yml` **auto-detects** `NPM_TOKEN` / `PYPI_TOKEN`: add the secrets and the next
+tag publishes for real; until then every tag is a safe dry-run / build-only rehearsal.
+**No workflow edits are needed** — just the secrets.
+
+- [x] **Enable GitHub secret scanning + push protection** — done 2026-06-12 via
+      `gh api` (see §2; the repo was already public).
 - [ ] **npm**: create the `querais` org/scope on npmjs.com; generate a
-      granular automation token; add it as the `NPM_TOKEN` repo secret.
-      Note the dependency chain: `@querais/sdk` → `@querais/shared` →
-      `@querais/contracts`, so all three publish together (use
-      `pnpm publish -r` — pnpm rewrites the `workspace:*` ranges to real
-      versions; plain `npm publish` would ship a broken `workspace:*` range).
+      granular **Automation** token (bypasses 2FA in CI); add it as the
+      `NPM_TOKEN` repo secret (`gh secret set NPM_TOKEN -R ShavitR/querais`).
+      The workflow runs `pnpm publish -r`, which publishes all three public
+      packages in topological order — `@querais/contracts` → `@querais/shared`
+      → `@querais/sdk` (`@querais/matching` is private, skipped) — and rewrites
+      each `workspace:*` range to the real version. (Publishing `shared` without
+      `contracts`, which it depends on, would break every install.)
 - [ ] **PyPI**: create the `querais` project (or reserve the name); generate a
-      project-scoped API token; add it as the `PYPI_TOKEN` repo secret.
-- [ ] **Switch dry-runs to real publishes** in `.github/workflows/release.yml`
-      (one-line edits, marked `TODO(user)` in the workflow).
-- [ ] **Tag `v0.2.0`** → review the draft GitHub Release the workflow opens →
-      publish it when satisfied.
+      project-scoped API token; add it as the `PYPI_TOKEN` repo secret. Trusted
+      Publishing (OIDC) is an alternative — register a pending publisher and add
+      `id-token: write` perms instead of a long-lived token.
+- [ ] **Tag the next version** (e.g. `v0.2.1` — `v0.2.0` is already drafted, and
+      npm/PyPI permanently reject re-publishing a version) → the workflow publishes
+      the SDKs and opens a fresh draft GitHub Release → review → publish it.
 - [ ] **(Optional) Code signing** — Windows EV certificate / Apple Developer
       ID notarization for the release archives. Until then, releases ship with
       `SHA256SUMS` and install docs tell operators to verify checksums.

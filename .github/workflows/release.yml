@@ -1,9 +1,17 @@
 name: Release
 
 # Tag `vX.Y.Z` → full green bar → bundle the daemon → smoke the actual bundle →
-# package the SDKs (dry-run / build only) → DRAFT GitHub Release with artifacts.
-# Drafts publish nothing: the release stays invisible until a human presses the
-# button. SDK publishes are dry-run until the user adds registry tokens (see TODOs).
+# publish the SDKs → DRAFT GitHub Release with artifacts.
+#
+# SDK publishing AUTO-DETECTS the registry secrets: when NPM_TOKEN / PYPI_TOKEN are
+# set as repo secrets the SDKs publish for real; until then each step runs a dry-run
+# (npm) / build-only (PyPI) so a tag is always a safe rehearsal. The GitHub Release is
+# always a DRAFT — it stays invisible until a human presses publish.
+#
+# One-time operator setup to switch on live publishing (no workflow edits needed):
+#   1. npm:  create the @querais org → mint an Automation token → `gh secret set NPM_TOKEN`
+#   2. PyPI: create the `querais` project / token → `gh secret set PYPI_TOKEN`
+# After that, the FIRST real publish of a version is permanent — bump versions per release.
 
 on:
   push:
@@ -21,6 +29,10 @@ jobs:
     name: Green bar → bundle → smoke → draft release
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      # Resolve to '' when the secret is absent — the publish steps branch on these.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -56,20 +68,37 @@ jobs:
       - name: Smoke the bundle (the artifact itself serves a job on a local chain)
         run: pnpm smoke:bundle
 
-      # ── SDK packaging (no live publish — drafts + dry-runs only) ──
-      # TODO(user): real npm publish needs the @querais scope + NPM_TOKEN secret;
-      # then change --dry-run to a real `pnpm publish` (shared first, then sdk).
-      - name: npm publish --dry-run (@querais/shared, @querais/sdk)
+      # ── SDK packaging — real publish iff the registry secret is set, else rehearse ──
+      # `pnpm publish -r` walks the workspace in TOPOLOGICAL order (contracts → shared
+      # → sdk; @querais/matching is private and skipped) and rewrites each `workspace:*`
+      # range to the real version — a plain `npm publish` would ship a broken range, and
+      # publishing `shared` without `contracts` (which it depends on) breaks installs.
+      - name: npm publish (@querais/contracts → shared → sdk)
         run: |
-          pnpm --filter @querais/shared publish --dry-run --no-git-checks
-          pnpm --filter @querais/sdk publish --dry-run --no-git-checks
-      # TODO(user): real PyPI publish needs the `querais` project + PYPI_TOKEN secret;
-      # then add `twine upload` after the build.
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+            pnpm publish -r --access public --no-git-checks
+          else
+            echo "NPM_TOKEN not set — dry-run only (set the secret to publish for real)"
+            pnpm publish -r --access public --no-git-checks --dry-run
+          fi
       - name: Build the Python SDK (sdist + wheel)
         working-directory: sdk-python
         run: |
           pip install build
           python -m build
+      # PyPI permanently rejects re-uploading a version — bump sdk-python/pyproject.toml
+      # before each real release. Trusted Publishing (OIDC) is an alternative to the
+      # token: add `id-token: write` perms + pypa/gh-action-pypi-publish.
+      - name: Publish the Python SDK to PyPI
+        if: env.PYPI_TOKEN != ''
+        working-directory: sdk-python
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          pip install twine
+          twine upload dist/*
 
       # ── Draft release: a human reviews and presses publish ──
       - name: Draft GitHub Release with all artifacts
