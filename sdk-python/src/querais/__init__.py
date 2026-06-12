@@ -5,8 +5,15 @@ helpers. LangChain / LlamaIndex users: see ``querais.langchain`` /
 ``querais.llamaindex`` (optional extras).
 """
 
-from .client import ChatResult, Message, QueraisClient, QueraisError
+from .client import ChatResult, Message, QueraisClient, QueraisConnectionError, QueraisError
 
 __version__ = "0.2.1"
 
-__all__ = ["ChatResult", "Message", "QueraisClient", "QueraisError", "__version__"]
+__all__ = [
+    "ChatResult",
+    "Message",
+    "QueraisClient",
+    "QueraisConnectionError",
+    "QueraisError",
+    "__version__",
+]

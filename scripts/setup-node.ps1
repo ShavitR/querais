@@ -16,6 +16,10 @@ if (-not (Have node)) {
   Write-Host 'Node installed. Close this window, open a NEW PowerShell, and re-run this script.' -ForegroundColor Yellow
   exit 0
 }
+$nodeOk = & node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.stdout.write(a>22||(a===22&&b>=13)?"ok":"old")'
+if ($nodeOk -ne 'ok') {
+  Write-Error "QueraIS needs Node >= 22.13 (found $(node -v)). Update from https://nodejs.org, then re-run."
+}
 if (-not (Have pnpm)) {
   corepack enable 2>$null
   if (-not (Have pnpm)) { npm install -g pnpm }
@@ -45,4 +49,5 @@ DAEMON_MODELS=$Model
 Write-Host ''
 Write-Host 'Setup complete. Start your node with:' -ForegroundColor Green
 Write-Host '  ./scripts/start-node.ps1'
-Write-Host 'The first run generates a wallet and auto-funds it from the gateway faucet.'
+Write-Host 'First run generates a wallet and prints its address. If the gateway has a faucet'
+Write-Host 'enabled it auto-funds gas + stake; otherwise fund that address before it can register.'

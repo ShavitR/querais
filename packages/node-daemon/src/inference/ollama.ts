@@ -56,7 +56,10 @@ export class OllamaBackend implements InferenceBackend {
   /** Pull the model if it isn't already present (streams + drains pull progress). */
   async ensureModel(model: string): Promise<void> {
     const present = await this.listModels();
-    if (present.includes(model)) return;
+    // Ollama lists an untagged model as `<name>:latest`; treat the two as equal so we
+    // don't redundantly re-pull `llama3.2` when `llama3.2:latest` is already present.
+    const tagged = model.includes(':') ? model : `${model}:latest`;
+    if (present.includes(model) || present.includes(tagged)) return;
 
     const res = await fetch(`${this.baseUrl}/api/pull`, {
       method: 'POST',

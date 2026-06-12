@@ -22,7 +22,7 @@ npm install @querais/sdk
 import { QueraisClient } from '@querais/sdk';
 
 const client = new QueraisClient({
-  baseUrl: 'https://querais-gateway.fly.dev',
+  baseUrl: 'https://querais-gateway.fly.dev', // optional — this is the default
   apiKey: 'sk-querais-…', // issued by the gateway operator
 });
 

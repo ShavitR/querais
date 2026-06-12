@@ -1,8 +1,8 @@
 import { buildSignedSession, type ChatMessage } from '@querais/shared';
 
 export interface QueraisClientOptions {
-  /** Gateway base URL, e.g. http://127.0.0.1:8787 */
-  baseUrl: string;
+  /** Gateway base URL. Defaults to the hosted gateway (`DEFAULT_GATEWAY_URL`). */
+  baseUrl?: string;
   /** Bearer API key. */
   apiKey: string;
   /** Optional requester private key — only needed to open a batched-settlement session. */
@@ -64,16 +64,48 @@ export interface NodeInfo {
   models: Array<{ model: string; pricePerTokenWei: string; tokensPerSecond: number }>;
 }
 
+/** The hosted QueraIS gateway — the default target when no base URL is supplied. */
+export const DEFAULT_GATEWAY_URL = 'https://querais-gateway.fly.dev';
+
 /**
  * A tiny OpenAI-shaped client for the QueraIS gateway. The gateway is itself
  * OpenAI-compatible, so this is convenience sugar (plus QueraIS-specific helpers
  * like nodes()/stats()); the official `openai` SDK also works against the gateway.
  */
 export class QueraisClient {
-  constructor(private readonly opts: QueraisClientOptions) {}
+  private readonly baseUrl: string;
+
+  constructor(private readonly opts: QueraisClientOptions) {
+    this.baseUrl = opts.baseUrl ?? DEFAULT_GATEWAY_URL;
+  }
 
   private headers(): Record<string, string> {
     return { 'content-type': 'application/json', authorization: `Bearer ${this.opts.apiKey}` };
+  }
+
+  /**
+   * fetch() against the gateway, but with a legible error when the host can't be
+   * reached. Node's fetch throws a bare `TypeError: fetch failed` on a refused or
+   * unknown host; we rewrite it to name the URL and point at QUERAIS_BASE_URL so the
+   * cause is obvious instead of cryptic. (Only connection failures throw here — a
+   * reachable gateway returning an HTTP error resolves normally and is handled per call.)
+   */
+  private async request(path: string, init?: RequestInit): Promise<Response> {
+    try {
+      return await fetch(`${this.baseUrl}${path}`, init);
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.cause instanceof Error
+          ? err.cause.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      throw new Error(
+        `QueraIS: could not reach the gateway at ${this.baseUrl} — ` +
+          `check it is running and QUERAIS_BASE_URL is correct (${reason})`,
+        { cause: err },
+      );
+    }
   }
 
   private body(messages: ChatMessage[], opts: ChatOptions, stream: boolean): string {
@@ -92,7 +124,7 @@ export class QueraisClient {
 
   /** Buffered chat completion. */
   async chat(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/chat/completions`, {
+    const res = await this.request('/v1/chat/completions', {
       method: 'POST',
       headers: this.headers(),
       body: this.body(messages, opts, false),
@@ -111,7 +143,7 @@ export class QueraisClient {
 
   /** Streaming chat completion — yields content deltas as they arrive. */
   async *chatStream(messages: ChatMessage[], opts: ChatOptions): AsyncGenerator<string> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/chat/completions`, {
+    const res = await this.request('/v1/chat/completions', {
       method: 'POST',
       headers: this.headers(),
       body: this.body(messages, opts, true),
@@ -132,37 +164,50 @@ export class QueraisClient {
         buf = buf.slice(i + 2);
         const data = frame.replace(/^data: /, '').trim();
         if (!data || data === '[DONE]') continue;
+        let j: {
+          error?: { message?: string };
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
         try {
-          const j = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-          const delta = j.choices?.[0]?.delta?.content;
-          if (delta) yield delta;
+          j = JSON.parse(data);
         } catch {
-          /* ignore keep-alives / non-JSON frames */
+          continue; // keep-alive / non-JSON frame
         }
+        // The gateway reports mid-stream failures (e.g. no eligible node) as an in-band
+        // error frame on an otherwise-200 SSE stream — surface it instead of ending
+        // silently (the bare stream would just yield nothing and look like an empty reply).
+        if (j.error) {
+          throw new Error(`QueraIS chat stream error: ${j.error.message ?? 'unknown error'}`);
+        }
+        const delta = j.choices?.[0]?.delta?.content;
+        if (delta) yield delta;
       }
     }
   }
 
   async models(): Promise<string[]> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/models`, { headers: this.headers() });
+    const res = await this.request('/v1/models', { headers: this.headers() });
+    if (!res.ok) throw new Error(`QueraIS models failed: HTTP ${res.status} ${await res.text()}`);
     const json = (await res.json()) as { data: Array<{ id: string }> };
     return json.data.map((m) => m.id);
   }
 
   async nodes(): Promise<NodeInfo[]> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/nodes`, { headers: this.headers() });
+    const res = await this.request('/v1/nodes', { headers: this.headers() });
+    if (!res.ok) throw new Error(`QueraIS nodes failed: HTTP ${res.status} ${await res.text()}`);
     const json = (await res.json()) as { data: NodeInfo[] };
     return json.data;
   }
 
   async stats(): Promise<unknown> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/stats`, { headers: this.headers() });
+    const res = await this.request('/v1/stats', { headers: this.headers() });
+    if (!res.ok) throw new Error(`QueraIS stats failed: HTTP ${res.status} ${await res.text()}`);
     return res.json();
   }
 
   /** Fetch the data needed to build + sign a spending cap (chainId, contract, settler). */
   async creditInfo(): Promise<CreditInfo> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/credit/info`, { headers: this.headers() });
+    const res = await this.request('/v1/credit/info', { headers: this.headers() });
     if (!res.ok) throw new Error(`QueraIS credit info failed: HTTP ${res.status}`);
     return (await res.json()) as CreditInfo;
   }
@@ -184,7 +229,7 @@ export class QueraisClient {
       chainId: info.chainId,
       verifyingContract: info.creditAccount,
     });
-    const res = await fetch(`${this.opts.baseUrl}/v1/sessions`, {
+    const res = await this.request('/v1/sessions', {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(wire),
@@ -201,7 +246,7 @@ export class QueraisClient {
    * the gateway would still accept right now (null without an active session).
    */
   async sessionStatus(): Promise<SessionStatus> {
-    const res = await fetch(`${this.opts.baseUrl}/v1/sessions`, { headers: this.headers() });
+    const res = await this.request('/v1/sessions', { headers: this.headers() });
     if (!res.ok) {
       throw new Error(`QueraIS sessionStatus failed: HTTP ${res.status} ${await res.text()}`);
     }
