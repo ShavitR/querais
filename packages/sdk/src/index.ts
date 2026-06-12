@@ -9,6 +9,7 @@ export const SDK_VERSION = '0.2.2';
 
 export {
   QueraisClient,
+  DEFAULT_GATEWAY_URL,
   type QueraisClientOptions,
   type ChatOptions,
   type ChatResult,
