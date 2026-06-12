@@ -82,6 +82,14 @@ jobs:
       # range to the real version — a plain `npm publish` would ship a broken range, and
       # publishing `shared` without `contracts` (which it depends on) breaks installs.
       - name: npm publish (@querais/contracts → shared → sdk)
+        env:
+          # We enable `id-token: write` for PyPI Trusted Publishing, but pnpm 11.5+ then
+          # auto-attempts npm OIDC trusted publishing too — which isn't configured for
+          # @querais/*, so it 404s the token exchange and breaks the publish. Hide the
+          # OIDC request env from THIS step only so pnpm uses NPM_TOKEN; the PyPI step
+          # below still sees it and authenticates via OIDC.
+          ACTIONS_ID_TOKEN_REQUEST_URL: ''
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ''
         run: |
           if [ -n "$NPM_TOKEN" ]; then
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc

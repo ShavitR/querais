@@ -7,7 +7,10 @@ provider. Payment settles on-chain in the `$QAIS` token with a 95% provider / 5%
 
 This repository is a **real, working implementation** — not a mockup. The contracts are deployed
 and verified on Arbitrum Sepolia, real `gemma3:4b` inference runs through it, and a job has
-settled on-chain end-to-end across two machines.
+settled on-chain end-to-end across two machines. The repo is public; the client SDKs ship on
+[npm](https://www.npmjs.com/org/querais) (`@querais/sdk`) and [PyPI](https://pypi.org/project/querais/)
+(`querais`), and the node daemon ships as a prebuilt archive on the
+[Releases page](https://github.com/ShavitR/querais/releases).
 
 > **Testnet only — no real value.** Everything runs on Arbitrum Sepolia (chainId `421614`).
 > The current architecture is **hybrid hub-and-spoke** (a trusted gateway does matching and
@@ -34,8 +37,9 @@ settled on-chain end-to-end across two machines.
 12. [All commands](#all-commands)
 13. [Deployed contracts](#deployed-contracts-arbitrum-sepolia)
 14. [Trust & security model](#trust--security-model)
-15. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
-16. [Project docs](#project-docs)
+15. [What's not built yet (limitations)](#whats-not-built-yet-limitations)
+16. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
+17. [Project docs](#project-docs)
 
 ---
 
@@ -106,9 +110,15 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 Your prompt is matched to an independent GPU node, served with real local inference, and
 the job settles on-chain — watch it live at
 [`https://querais-gateway.fly.dev/status`](https://querais-gateway.fly.dev/status).
-`GET /v1/models` lists what the connected nodes currently serve; there's also a
-[Python SDK](sdk-python/) (`querais` on PyPI, with LangChain/LlamaIndex helpers) and a
-[TS SDK + CLI](packages/sdk/) (`@querais/sdk`) if you want sessions and node/stats helpers.
+`GET /v1/models` lists what the connected nodes currently serve.
+
+Prefer a typed client over the raw OpenAI SDK? Both QueraIS SDKs are published — they wrap the
+official OpenAI client and add the QueraIS extras (sessions, `nodes`, `stats`, model manifest):
+
+```bash
+pip install querais            # Python — add [langchain] or [llamaindex] for those integrations
+npm i -g @querais/sdk          # TypeScript SDK + the `querais` CLI
+```
 
 > Want to **serve** jobs instead? Skip to [Run a node](#run-a-node-and-earn-testnet-qais) —
 > a prebuilt release runs in ~5 minutes with just Node 22 + Ollama.
@@ -194,7 +204,7 @@ console.log(r.choices[0].message.content);
 Streaming (`stream: true`), `models.list()`, and the usage object all work — drop-in parity is
 enforced by the e2e suite, which runs the real `openai` SDK against the gateway.
 
-**Or the bundled `querais` CLI** (`@querais/sdk`):
+**Or the bundled `querais` CLI** (`npm i -g @querais/sdk`):
 ```bash
 querais chat "Hello"   # streams a completion
 querais models         # models available on the network
@@ -281,8 +291,9 @@ manual funding, no Docker required. It connects *out* to the gateway, so **no in
 needed on your machine.
 
 **Easiest: install from a release archive (no clone, no build).** Download
-`querais-node-vX.Y.Z.tar.gz` from the GitHub Releases page, verify the checksum, extract,
-and run the launcher — the whole daemon is bundled into one file. Full walkthrough:
+`querais-node-vX.Y.Z.tar.gz` from the [Releases page](https://github.com/ShavitR/querais/releases),
+verify the checksum against the published `SHA256SUMS`, extract, and run the launcher — the whole
+daemon is bundled into one file. Full walkthrough:
 [`docs/NODE_RELEASE_INSTALL.md`](docs/NODE_RELEASE_INSTALL.md). Requirements: **Node ≥ 22.13**
 and **Ollama**, nothing else.
 
@@ -308,7 +319,7 @@ and **Ollama**, nothing else.
 node competes for jobs and earns the 95% provider share of each one it serves.
 
 > **Prefer Docker?** Use `scripts/install-node.sh` + `docker-compose.yml`.
-> **Ultra one-liner** (once the repo is public): set `$env:QUERAIS_GATEWAY` then
+> **Ultra one-liner:** set `$env:QUERAIS_GATEWAY` then
 > `irm <raw-url>/scripts/bootstrap.ps1 | iex` — clones, sets up, and starts in one shot.
 
 ---
@@ -443,13 +454,17 @@ merge.
 
 | Contract | Address | Role |
 |----------|---------|------|
-| QUAISToken    | `0x1e89e050e68e81c32980205ec0db444ede3f4e2c` | ERC-20 `$QAIS` (fixed supply, burnable) |
-| NodeRegistry  | `0x6d13d0f94ef912c6817a74c632a378997eacf776` | node registration, staking, reputation |
-| JobEscrow     | `0x60c87b02db5aabd27ff5f72a447b9fba4fbbd6b0` | per-job lock + 95/5 settlement |
-| CreditAccount | `0x1e44f2ce56d90f764121b82bc3571b08a1d15522` | deposits + EIP-712 caps + batched settlement |
+| QUAISToken        | `0x5532663d4d4560d9923e30fb7230b82edcb25531` | ERC-20 `$QAIS` (fixed supply, burnable) |
+| NodeRegistry      | `0xe9674474f7450b8fdc88895f7646d0d5fc34e99a` | node registration, staking, reputation |
+| JobEscrow         | `0x9a8be9ad9f980e828757163780aea1ca46303267` | per-job lock + 95/5 settlement |
+| CreditAccount     | `0xc148e3d305a35876d9df211dbc9ef944ab4c8191` | deposits + EIP-712 caps + batched settlement |
+| DisputeResolution | `0x546b548bf5401aad0a21e85ce750aad5e58d8013` | commit-reveal arbitration + slashing |
+| ProtocolTreasury  | `0x83acf7b9a8182a6398c1fd80d0e237011e903fa2` | fee accrual + 60/20/20 sweep + burn |
+| StakingRewards    | `0x8fa6ec119ae18f0793d1ec0eb0525e9f6f6b648f` | staker reward distribution |
 
 All are OpenZeppelin-based (`AccessControl`, `ReentrancyGuard`, `SafeERC20`, `Pausable`) and
-verified on the block explorer.
+verified on the block explorer. The manifest is the source of truth — the code reads it via
+`loadAddresses()`, so always trust the JSON over any address copy-pasted elsewhere.
 
 ---
 
@@ -461,15 +476,51 @@ This is **Phase 1: hybrid hub-and-spoke**. One trusted **gateway** does matching
 - **What the gateway can't do:** steal deposited principal. It can only settle jobs at the
   prices the node agreed to, and batched settlement is bounded by the requester's *signed* cap.
 - **What protects providers:** token counts are `min(node, gateway)`; bad results are slashed.
+- **Layer-A semantic verification exists but is operator-gated and centralized:** the gateway
+  oracle re-runs ~5% of jobs and flags anomalies, but it's off unless `GATEWAY_ORACLE_OLLAMA_URL`
+  is set, and the oracle is the gateway itself — not yet a decentralized committee.
 - **What's deliberately deferred:** removing the trusted gateway (libp2p mesh + on-chain auction
-  + decentralized oracle), full dispute arbitration, semantic (Layer-A) verification, and prompt
-  privacy. These are Phase 4/5 — see the design docs.
+  + decentralized oracle), the full dispute-arbitration UX, and prompt privacy. These are Phase
+  4/5 — see [What's not built yet](#whats-not-built-yet-limitations) and the design docs.
 
 **Contracts** follow checks-effects-interactions on every fund-moving function, use custom
-errors and a strict job state machine, and are covered by **48 Solidity tests** including a
-reentrancy-attacker mock, fuzzed conservation invariants, EIP-712 signature/replay guards, and a
-gas-per-job benchmark. Before any **mainnet** use: external audit, a Slither pass (currently
-deferred — Hardhat 3 framework support is pending), and the Phase-2 decentralization work.
+errors and a strict job state machine, and are covered by a comprehensive Solidity test suite
+including a reentrancy-attacker mock, fuzzed conservation invariants, EIP-712 signature/replay
+guards, and a gas-per-job benchmark. **Slither** static analysis runs in CI as a non-gating job
+(it uses a scratch-dir workaround because crytic-compile can't yet drive Hardhat 3; triage lives
+in `packages/contracts/slither.config.json`). Before any **mainnet** use: an external audit,
+clearing the Slither baseline, and the Phase-2 decentralization work.
+
+---
+
+## What's not built yet (limitations)
+
+Being honest about the edges so nobody is surprised. Today's system works end-to-end, but it is
+**Phase 1**, and these are deliberately not done yet:
+
+- **Self-serve API keys** — keys are issued by the operator during the beta; there's no signup
+  portal. Ask in the project channel or open an issue.
+- **A trusted gateway, not a mesh** — one gateway does matching, settlement, and holds the
+  oracle/slasher roles. The decentralized libp2p mesh + on-chain auction (so no single operator
+  is in the path) is Phase 4.
+- **Verification is partial.** Layer-B (structural: non-empty, length, loop, `resultHash`) always
+  runs. Layer-A (semantic re-run sampling) exists but is **off unless the operator configures an
+  oracle endpoint**, and even then the oracle is the gateway, not a decentralized committee. GPU
+  attestation / proof-of-correct-execution is not built.
+- **Disputes are on-chain but bare.** `DisputeResolution` (commit-reveal + slashing) is deployed
+  and wired to a challenge hook, but there's no arbitrator-facing UI/panel yet.
+- **No prompt privacy.** Prompts are sent in plaintext to independent operators and ~5% may be
+  re-run on verification infra. Don't send secrets. No encryption / TEE.
+- **No web app.** The only UI is the gateway-served dashboard (`/`) and the public `/status`
+  page. The standalone web app and marketing/docs site are Stage D / Slice 10 (planned).
+- **One inference backend.** Ollama (llama.cpp) is wired; vLLM is listed as optional in the
+  design docs but not implemented.
+- **Testnet only, no mainnet.** Arbitrum Sepolia, no token launch, no real value. Mainnet is
+  gated on an external audit, clearing the Slither baseline, and the Phase-2 decentralization
+  work. Release archives ship with `SHA256SUMS` but are not yet code-signed/notarized.
+
+See [Trust & security model](#trust--security-model) for the security framing and
+`docs/EXECUTION_PLAN.md` for what lands next.
 
 ---
 
