@@ -36,7 +36,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
 Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ✅ 6 Tokenomics (6A #33 · 6B #34 · 6C #35)
-Stage C — Operate           ✅ 7 Deploy (7A #37 code · 7B LIVE: querais-gateway.fly.dev)   ✅ 8 Observability   ⬜ 9 DX/growth
+Stage C — Operate           ✅ 7 Deploy (7A #37 code · 7B LIVE: querais-gateway.fly.dev)   ✅ 8 Observability   ✅ 9 DX/growth
 ```
 
 **Working rhythm (established, stick to it):** one **branch + PR per slice** (big slices
@@ -44,13 +44,15 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**STAGES A AND B COMPLETE; Slices 7 AND 8 COMPLETE — the gateway is LIVE on Fly.io
-(`querais-gateway.fly.dev`) against the full Stage-B Sepolia contract set, with the
-Slice 8 paging loop / metrics / status page built.** Immediate next actions:
+**STAGES A, B AND C COMPLETE (Slices 0–9) — the gateway is LIVE on Fly.io
+(`querais-gateway.fly.dev`), observable, and the DX/release/growth layer is built.**
+Immediate next actions:
 1. **Slice 8 rollout (OPERATOR, minutes):** arm the alert webhook + fire the test alert —
    step-by-step in **`docs/OBSERVABILITY.md`**; runbook = `docs/RUNBOOK_ALERTS.md`.
-2. **Slice 9 — DX, node polish & growth** (scope below + EXECUTION_PLAN). Includes the
-   repo-public gate (secret-scan + user sign-off) for the one-liner installer.
+2. **Slice 9 rollout (OPERATOR):** walk `docs/REPO_PUBLIC_CHECKLIST.md` — enable secret
+   scanning, **flip the repo public** (irreversible, user's call alone), create the npm
+   scope + PyPI project + tokens, tag `v0.2.0`, publish the draft release. Then the beta
+   campaign per `docs/BETA_PLAYBOOK.md`.
 3. Then Stage D (web app, arbitration, scale, mainnet gate).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
@@ -60,7 +62,7 @@ this repo (no local-machine files are required; see §12 for what remote agents 
 
 ## 3. Status: done / in-progress / deferred
 
-**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33 → #34 → #35 → #37):**
+**Merged to `main` (PR trail: #1 → #15 → #16 → #18 → #19 → #21 → #22 → #23 → #24 → #25 → #26 → #27 → #28 → #29 → #30 → #31 → #32 → #33 → #34 → #35 → #37 → #38 → #39):**
 - **Slice 0** — CI green-bar gate (blocking build/typecheck/lint/test/test:e2e), solhint
   (blocking), coverage + audit (non-gating), Dependabot monthly/grouped/no-npm-majors.
   *Slither was deferred here* (solc `--allow-paths` breaks under pnpm's symlinked store;
@@ -320,7 +322,7 @@ root). Closes the loop: signal → alert → human with a runbook attached. All 
 - **Metrics enrichment**: latency histograms (duration + TTFT), per-model counters,
   money gauges (pending debits count/value/oldest-age, gas/hot-wallet/faucet balances
   refreshed by the sweep — no extra RPC), keeper timestamps, alert pipeline counters.
-  `querais_nodes` is a legacy alias of `querais_nodes_connected` (remove in Slice 9).
+  (The `querais_nodes` legacy alias of `querais_nodes_connected` was removed in Slice 9.)
 - **Public status page**: `GET /v1/status` (5 s cache; no balances/wallets/flag details)
   + `GET /status` HTML; `degraded` = RPC down or 0 nodes with recent jobs.
 - **Channel check**: `POST /v1/admin/alerts/test` fires a synthetic alert through the
@@ -330,9 +332,43 @@ root). Closes the loop: signal → alert → human with a runbook attached. All 
   `docs/OBSERVABILITY.md`. 17th e2e scenario: induced anomaly → webhook delivery,
   review-queue lifecycle, stuck-debits fire + recover, status page + gauges live.
 
+**Slice 9 — DX, release engineering & growth.** Full plan + as-built record: **`Slice9.md`**
+(repo root). Decisions locked with the user: MIT license, prepare+dry-run publishing (no
+live npm/PyPI until the user adds tokens), off-chain signed model manifest (no new contract):
+- **Repo-public gate**: LICENSE (MIT) + `SECURITY.md`; `.gitleaks.toml` (allowlists ONLY
+  verifiable public constants) + a gating gitleaks CI job; full-history scan run + recorded
+  verbatim in **`docs/REPO_PUBLIC_CHECKLIST.md`** (zero unallowlisted findings). The flip
+  itself is the user's, never an agent's.
+- **Disclosures before the first key**: `docs/TERMS.md` + `docs/PRIVACY.md` (testnet/no-value
+  framing; the three Layer-A facts up front — ~5% oracle re-runs, in-memory processing/
+  hashes-only persistence, anomalies can trigger disputes). `POST /v1/keys` cannot answer
+  without `terms`/`privacy` URLs in the body (route test enforces it); dashboard + README link.
+- **Model manifest with SHA256 verification (off-chain, opt-in)**: gateway loads an
+  operator-authored manifest file (`GATEWAY_MODEL_MANIFEST`), serves it EIP-191-signed at
+  `GET /v1/models/manifest`; daemons report per-model digests in the WS handshake (Ollama
+  `/api/tags`; deterministic fakes for mock backends) and self-verify at boot against the
+  `settler` address. Gateway drops manifest-mismatched models from a node's advertised set
+  (logged, never slashed); zero-model nodes are refused. **No manifest configured = behavior
+  bit-identical to Slice 8** (the live Fly gateway ships without one).
+- **SDKs publishable on demand**: TS SDK metadata complete + `npm publish --dry-run` in CI;
+  **`sdk-python/`** = `querais` on PyPI (QueraisClient with chat/streaming, `querais.langchain`
+  / `querais.llamaindex` returning configured official classes behind optional extras; own
+  toolchain — ruff + pytest on mock transports + `python -m build`, CI `python-sdk` job).
+- **Prebuilt node releases**: `scripts/bundle-daemon.mjs` (esbuild single-file ESM daemon +
+  launchers + deployments + tar.gz + SHA256SUMS into `release/`), tag-triggered `release.yml`
+  (green bar → bundle → **smoke the actual artifact** (`pnpm smoke:bundle` serves a real job
+  on a local chain via `DAEMON_BACKEND=mock`) → SDK dry-runs → DRAFT GitHub Release), and
+  `docs/NODE_RELEASE_INSTALL.md` (operator install <5 min, only Node ≥22.13 + Ollama).
+- **Campaign materials**: `docs/BETA_PLAYBOOK.md` (recruitment scripts, leaderboard cadence
+  on `/v1/nodes`, Top-Node competition rules paying through `ops:allocate` purpose strings,
+  guardrails). Running the campaign = operator.
+- 18th e2e scenario: manifest-verified node serves; poisoned manifest → model dropped +
+  no-capacity; manifest removed → recovery.
+
 **Deferred (do NOT assume these exist):**
-- Slice 9 (DX/release/growth; repo is still private), Stage D (web app, STANDARD-track
-  arbitration panel, scale, mainnet gate).
+- Stage D (web app, STANDARD-track arbitration panel, scale, mainnet gate). The repo is
+  still **private** until the user walks `docs/REPO_PUBLIC_CHECKLIST.md`; npm/PyPI publishes
+  stay dry-run until tokens exist.
 - Hosted Prometheus/Grafana/log aggregation — Slice 8 ships `/metrics` + example configs
   (`ops/`), the operator brings the stack.
 - Phase 4/5: libp2p, on-chain auction, decentralized oracle, TEE privacy, mainnet/TGE, DAO.
@@ -364,10 +400,19 @@ packages/
                 auto-faucet, auto-reconnect. 19 tests.
   sdk/          @querais/sdk — OpenAI-shaped client (+ `openSession`, `sessionStatus`)
                 + `querais` CLI. 6 tests.
-  test-e2e/     harness + 17-scenario acceptance gate + live/ops scripts.
+  test-e2e/     harness + 18-scenario acceptance gate + the release-bundle smoke
+                (smoke-bundle.ts) + live/ops scripts.
+sdk-python/     `querais` on PyPI — QueraisClient + langchain/llamaindex modules. OWN
+                toolchain (ruff/pytest/build — not in the pnpm workspace; CI job python-sdk).
+scripts/        bundle-daemon.mjs (esbuild release bundler) + release/ (launchers,
+                env.example) + node setup scripts. Tag-triggered .github/workflows/release.yml.
 apps/dashboard/ placeholder (the live dashboard is served by the gateway at `/`)
 ops/                     example Prometheus scrape config + Grafana starter dashboard
 docs/EXECUTION_PLAN.md   the live roadmap (what we're following)
+docs/REPO_PUBLIC_CHECKLIST.md  the go-public gate (scan recorded; user-only items listed)
+docs/NODE_RELEASE_INSTALL.md   operator install-from-release walkthrough (<5 min)
+docs/BETA_PLAYBOOK.md    beta campaign materials (recruitment, leaderboard, competition)
+docs/TERMS.md · PRIVACY.md     the disclosures POST /v1/keys links on every response
 docs/RUNBOOK_KEYS.md     key custody + emergency pause runbook (2am copy-pasteable)
 docs/RUNBOOK_ALERTS.md   per-alert-rule 2am runbook (every alert links its section)
 docs/OBSERVABILITY.md    alert webhook + Prometheus/Grafana + status page setup
@@ -383,7 +428,8 @@ querais_*.md             the 7 original design/whitepaper docs — read for inte
 (match → venue choice → stream → verify → settle), `gateway/src/batched-settlement.ts`
 (ledger/flush/reconcile/canAccrue), `gateway/src/reputation.ts` (the 5-dimension oracle),
 `gateway/src/quota.ts`, `gateway/src/alerts.ts` + `alert-rules.ts` (the Slice 8 paging
-loop), `gateway/src/db/migrations.ts`
+loop), `gateway/src/model-manifest.ts` (the Slice 9 integrity seam — canonical JSON +
+EIP-191 sign/verify; the daemon's verify must keep mirroring it), `gateway/src/db/migrations.ts`
 (**7 migrations** — append-only, never edit released ones), `test-e2e/src/e2e.ts`.
 
 ---
@@ -580,8 +626,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 
 ## 12. Loose ends / current runtime state
 
-- **Stages A–C through Slice 8 complete** — the gateway is LIVE on Fly.io against the
-  Stage-B Sepolia contract set. Next: **Slice 9 DX/growth** (scope in §2).
+- **Stages A–C complete (Slices 0–9)** — the gateway is LIVE on Fly.io against the
+  Stage-B Sepolia contract set. Next: the **Slice 9 operator rollout** (§2 item 2 —
+  repo-public flip, tokens, `v0.2.0` tag), then **Stage D**.
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have changed state since this file was written.
 - **Remote agents (no local files): what you can and cannot do.**
@@ -602,9 +649,11 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   never scale above 1: single-writer SQLite + single-owner timers). The maintainer's VM
   node connects to it; the VM restart recipe is in the maintainer's notes. Alerting is
   armed only once the operator sets `GATEWAY_ALERT_WEBHOOK_URL` (docs/OBSERVABILITY.md).
-- The "ultra one-liner" installer still needs the repo (ShavitR/querais, private) to go
-  public — a user decision, likely Slice 9.
-- Counts that tests assert or reports cite: e2e = **17 scenarios**,
+- The repo (ShavitR/querais) is **still private**. Everything mechanical for going public
+  is done (LICENSE, SECURITY.md, recorded gitleaks scan, gating CI job); the flip + npm/
+  PyPI tokens + the `v0.2.0` tag are user-only steps in `docs/REPO_PUBLIC_CHECKLIST.md`.
+  Until the flip, GitHub release links and the public install path 404 by design.
+- Counts that tests assert or reports cite: e2e = **18 scenarios**,
   migrations = **7** (`MIGRATION_COUNT` tracks automatically). Unit-test totals move
   every slice — read them off the latest `pnpm test` run instead of trusting a doc.
 
@@ -615,9 +664,11 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 1. Read this file + `docs/EXECUTION_PLAN.md`.
 2. `git fetch; git log origin/main --oneline -5; gh pr list` — confirm open-PR state.
 3. From the repo root: `cp .env.example .env; pnpm install; pnpm build; pnpm test` → green.
-4. `pnpm test:e2e` → 17 scenarios pass (self-contained, ~70s).
+4. `pnpm test:e2e` → 18 scenarios pass (self-contained, ~75s).
 5. Skim `dispatcher.ts`, `batched-settlement.ts`, `reputation.ts`, `alerts.ts` +
-   `alert-rules.ts` (the Slice 8 paging loop), `CreditAccount.sol`, `e2e.ts`, and
+   `alert-rules.ts` (the Slice 8 paging loop), `model-manifest.ts` (the Slice 9
+   integrity seam), `CreditAccount.sol`, `e2e.ts`, and
    `docs/RUNBOOK_KEYS.md` + `docs/RUNBOOK_ALERTS.md`.
-6. Plan Slice 9 (scope in §2 + EXECUTION_PLAN), confirm it with the user, then follow
-   the rhythm in §2.
+6. Next work: the Slice 9 operator rollout is user-side (§2 item 2); code-side, plan
+   Stage D / Slice 10 (EXECUTION_PLAN), confirm it with the user, then follow the
+   rhythm in §2.

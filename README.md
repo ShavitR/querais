@@ -21,20 +21,21 @@ settled on-chain end-to-end across two machines.
 ## Table of contents
 
 1. [What works today](#what-works-today)
-2. [Prerequisites](#prerequisites)
-3. [60-second demo](#60-second-demo) ← start here
-4. [Call it from your code (OpenAI drop-in)](#call-it-from-your-code-openai-drop-in)
-5. [Batched settlement: pay once, run thousands of jobs](#batched-settlement-pay-once-run-thousands-of-jobs)
-6. [Run the full stack manually](#run-the-full-stack-manually)
-7. [Run a node and earn testnet QAIS](#run-a-node-and-earn-testnet-qais)
-8. [Host your own gateway on Sepolia](#host-your-own-gateway-on-sepolia)
-9. [How a request flows](#how-a-request-flows)
-10. [Repository layout](#repository-layout)
-11. [All commands](#all-commands)
-12. [Deployed contracts](#deployed-contracts-arbitrum-sepolia)
-13. [Trust & security model](#trust--security-model)
-14. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
-15. [Project docs](#project-docs)
+2. [Use the live testnet gateway (fastest path)](#use-the-live-testnet-gateway-fastest-path)
+3. [Prerequisites](#prerequisites)
+4. [60-second demo](#60-second-demo)
+5. [Call it from your code (OpenAI drop-in)](#call-it-from-your-code-openai-drop-in)
+6. [Batched settlement: pay once, run thousands of jobs](#batched-settlement-pay-once-run-thousands-of-jobs)
+7. [Run the full stack manually](#run-the-full-stack-manually)
+8. [Run a node and earn testnet QAIS](#run-a-node-and-earn-testnet-qais)
+9. [Host your own gateway on Sepolia](#host-your-own-gateway-on-sepolia)
+10. [How a request flows](#how-a-request-flows)
+11. [Repository layout](#repository-layout)
+12. [All commands](#all-commands)
+13. [Deployed contracts](#deployed-contracts-arbitrum-sepolia)
+14. [Trust & security model](#trust--security-model)
+15. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
+16. [Project docs](#project-docs)
 
 ---
 
@@ -44,9 +45,16 @@ The project is built in **slices** against `docs/EXECUTION_PLAN.md`. Done and me
 
 | Slice | What it delivers | Status |
 |------|------------------|--------|
-| 0 | CI green-bar gate (build · typecheck · lint · test · e2e) + Solidity lint | ✅ |
+| 0 | CI green-bar gate (build · typecheck · lint · test · e2e) + Solidity lint + Slither | ✅ |
 | 1 | Durable gateway state on `node:sqlite` (API keys, faucet claims, job history) | ✅ |
 | 2 | **Batched session-deposit settlement** — deposit once, sign one EIP-712 cap, settle thousands of jobs in one tx | ✅ |
+| 3 | Hardened surface (quotas, faucet anti-drain, WS flood caps) + ops (pause CLI, cold-key split) | ✅ |
+| 4 | Full **5-dimension reputation** (accuracy/uptime/latency/longevity/stake) + daily on-chain snapshots | ✅ |
+| 5 | **Layer-A semantic verification** (oracle re-runs ~5% of jobs) + on-chain disputes with slashing | ✅ |
+| 6 | **Tokenomics live**: ProtocolTreasury 60/20/20 sweep + burn, StakingRewards, node incentive programs | ✅ |
+| 7 | Production deploy — the gateway is **live 24/7 at `querais-gateway.fly.dev`** | ✅ |
+| 8 | Observability: alert webhook + runbooks, review queue, metrics, public `/status` page | ✅ |
+| 9 | DX & release: signed model manifest, npm/PyPI-ready SDKs, prebuilt node releases, disclosures | ✅ |
 
 The end-to-end loop works in both directions:
 
@@ -54,7 +62,56 @@ The end-to-end loop works in both directions:
 - **Settlement**: per-job on-chain escrow **or** batched settlement against a pre-funded credit
   account — 95% provider / 5% treasury, with staking, slashing, and a reputation score.
 
-Next up is Slice 3 (hardening the public surface). See `HANDOFF.md` for the live status.
+Next up is Stage D (the web app, arbitration panel, scale, mainnet gate). See `HANDOFF.md`
+for the live status.
+
+---
+
+## Use the live testnet gateway (fastest path)
+
+A hosted gateway runs 24/7 at **`https://querais-gateway.fly.dev`** against the Arbitrum
+Sepolia contracts. You need an **API key** (issued by the operator during the beta — the
+self-serve portal is a later slice; ask in the project channel or open an issue). Then it's
+the official OpenAI client with one changed line — nothing to clone, nothing to build:
+
+**Python** (`pip install openai`):
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="https://querais-gateway.fly.dev/v1", api_key="sk-...your key...")
+stream = client.chat.completions.create(
+    model="gemma3:4b",
+    messages=[{"role": "user", "content": "Explain Arbitrum in one sentence."}],
+    stream=True,
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+**TypeScript** (`npm i openai`):
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({ baseURL: 'https://querais-gateway.fly.dev/v1', apiKey: 'sk-…' });
+const stream = await client.chat.completions.create({
+  model: 'gemma3:4b',
+  messages: [{ role: 'user', content: 'Explain Arbitrum in one sentence.' }],
+  stream: true,
+});
+for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
+```
+
+Your prompt is matched to an independent GPU node, served with real local inference, and
+the job settles on-chain — watch it live at
+[`https://querais-gateway.fly.dev/status`](https://querais-gateway.fly.dev/status).
+`GET /v1/models` lists what the connected nodes currently serve; there's also a
+[Python SDK](sdk-python/) (`querais` on PyPI, with LangChain/LlamaIndex helpers) and a
+[TS SDK + CLI](packages/sdk/) (`@querais/sdk`) if you want sessions and node/stats helpers.
+
+> Want to **serve** jobs instead? Skip to [Run a node](#run-a-node-and-earn-testnet-qais) —
+> a prebuilt release runs in ~5 minutes with just Node 22 + Ollama.
 
 ---
 
@@ -94,12 +151,14 @@ Open it to watch live nodes, balances, and to try your own prompts in the browse
 Want just the automated proof, no browser? Run the acceptance gate:
 
 ```bash
-pnpm test:e2e             # spins up its own chain, runs 7 end-to-end scenarios, tears down
+pnpm test:e2e             # spins up its own chain, runs 18 end-to-end scenarios, tears down
 ```
 
-It exercises: successful settlement (95/5), a failed-verification refund + slash, OpenAI-SDK
-parity, ops/rate-limiting, key onboarding, the faucet, and **batched settlement** (10 jobs → 1
-on-chain tx, 0 requester wallet txs).
+It exercises (among others): successful settlement (95/5), a failed-verification refund +
+slash, OpenAI-SDK parity, **batched settlement** (100 calls → 1 on-chain tx, 0 requester
+wallet txs), the pause drill, reputation snapshots, Layer-A cheater detection, an on-chain
+dispute slash, treasury sweep + burn, staking rewards, graceful drain, the alerting loop,
+and the signed model manifest.
 
 ---
 
@@ -221,6 +280,14 @@ run, **auto-funds itself** (gas + stake) from the gateway's faucet, stakes, and 
 manual funding, no Docker required. It connects *out* to the gateway, so **no inbound ports** are
 needed on your machine.
 
+**Easiest: install from a release archive (no clone, no build).** Download
+`querais-node-vX.Y.Z.tar.gz` from the GitHub Releases page, verify the checksum, extract,
+and run the launcher — the whole daemon is bundled into one file. Full walkthrough:
+[`docs/NODE_RELEASE_INSTALL.md`](docs/NODE_RELEASE_INSTALL.md). Requirements: **Node ≥ 22.13**
+and **Ollama**, nothing else.
+
+**From source** (this repo):
+
 > Replace `GATEWAY_HOST` with the gateway operator's address. Your machine needs **Node ≥ 22.13**
 > and **Ollama**; the setup script installs what's missing and pulls the model.
 
@@ -316,11 +383,14 @@ packages/
   node-daemon/  @querais/node-daemon — the provider: encrypted keystore, auto-funding,
                 auto-pricing, model auto-pull, auto-reconnect, real Ollama inference.
   sdk/          @querais/sdk — OpenAI-shaped client (+ openSession) and the `querais` CLI.
-  test-e2e/     @querais/test-e2e — the 7-scenario acceptance gate, the demo, and the
-                Sepolia ops scripts (gateway:sepolia, live:sepolia, prepare:vm-node).
+  test-e2e/     @querais/test-e2e — the 18-scenario acceptance gate, the demo, the release
+                smoke, and the Sepolia ops scripts (gateway:sepolia, live:sepolia, …).
+sdk-python/     querais on PyPI — QueraisClient + LangChain/LlamaIndex integration modules
+                (own toolchain: ruff + pytest + build; not part of the pnpm workspace).
+scripts/        bundle-daemon.mjs (release bundler) + release/ launchers + node setup scripts.
 apps/
   dashboard/    placeholder — the live dashboard is served by the gateway itself at `/`.
-docs/           EXECUTION_PLAN.md (the roadmap) · SLICE1_PLAN.md · SLICE2_PLAN.md · PHASE3_PLAN.md
+docs/           EXECUTION_PLAN.md (the roadmap) · runbooks · TERMS/PRIVACY · release/observability docs
 HANDOFF.md      current project status for the next contributor — read this first.
 querais_*.md    the 7 original design/whitepaper documents (vision, architecture, tokenomics…).
 ```
@@ -337,8 +407,12 @@ pnpm typecheck            # type-check everything
 pnpm format               # prettier --write .   (run before lint)
 pnpm lint                 # eslint + prettier --check
 pnpm test                 # all unit tests (uses a mock backend — no Ollama needed)
-pnpm test:e2e             # self-contained 7-scenario end-to-end gate
+pnpm test:e2e             # self-contained 18-scenario end-to-end gate
 pnpm test:coverage        # TS coverage report (non-gating)
+
+# release artifacts
+pnpm bundle:daemon        # esbuild the daemon into release/ (single file + tar.gz + SHA256SUMS)
+pnpm smoke:bundle         # prove the bundled artifact serves a job on a local chain
 
 # local chain & run
 pnpm chain                # start a local Hardhat node
@@ -423,8 +497,11 @@ Read these for the full picture (in the repo root and `docs/`):
   (what gets sampled for verification, what's hashed vs. stored). **`SECURITY.md`** — how to
   report vulnerabilities.
 - **`docs/EXECUTION_PLAN.md`** — the live, slice-by-slice roadmap.
-- **`docs/SLICE1_PLAN.md`**, **`docs/SLICE2_PLAN.md`** — detail on the persistence and
-  batched-settlement work.
+- **`docs/NODE_RELEASE_INSTALL.md`** — run a node from a prebuilt release in ~5 minutes.
+- **`docs/BETA_PLAYBOOK.md`** — beta-cohort recruitment + leaderboard/competition campaign
+  materials. **`docs/REPO_PUBLIC_CHECKLIST.md`** — the (irreversible) go-public gate.
+- **`docs/SLICE1_PLAN.md`**, **`docs/SLICE2_PLAN.md`**, **`Slice8.md`**, **`Slice9.md`** —
+  per-slice plans/records.
 - **`querais_overview.md`**, **`querais_protocol_architecture.md`**, `querais_token_economics.md`,
   `querais_reputation_system.md`, `querais_smart_contracts.md`, `querais_node_design.md`,
   `querais_go_to_market.md` — the original vision and specifications.
