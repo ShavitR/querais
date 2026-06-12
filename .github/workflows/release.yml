@@ -1,0 +1,83 @@
+name: Release
+
+# Tag `vX.Y.Z` → full green bar → bundle the daemon → smoke the actual bundle →
+# package the SDKs (dry-run / build only) → DRAFT GitHub Release with artifacts.
+# Drafts publish nothing: the release stays invisible until a human presses the
+# button. SDK publishes are dry-run until the user adds registry tokens (see TODOs).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the draft release + upload assets
+
+env:
+  NODE_VERSION: '22' # pnpm 11.5.2 needs Node >=22.13 (uses node:sqlite)
+  PNPM_VERSION: '11.5.2'
+
+jobs:
+  release:
+    name: Green bar → bundle → smoke → draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Seed .env from example
+        run: cp .env.example .env
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+
+      # ── The same green bar CI enforces — a release is never softer than a PR ──
+      - name: Build
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: E2E acceptance gate (18 scenarios)
+        run: pnpm test:e2e
+
+      # ── Node daemon release artifact ──
+      - name: Bundle the daemon (esbuild → single-file ESM + archive + SHA256SUMS)
+        run: node scripts/bundle-daemon.mjs --version ${{ github.ref_name }}
+      - name: Smoke the bundle (the artifact itself serves a job on a local chain)
+        run: pnpm smoke:bundle
+
+      # ── SDK packaging (no live publish — drafts + dry-runs only) ──
+      # TODO(user): real npm publish needs the @querais scope + NPM_TOKEN secret;
+      # then change --dry-run to a real `pnpm publish` (shared first, then sdk).
+      - name: npm publish --dry-run (@querais/shared, @querais/sdk)
+        run: |
+          pnpm --filter @querais/shared publish --dry-run --no-git-checks
+          pnpm --filter @querais/sdk publish --dry-run --no-git-checks
+      # TODO(user): real PyPI publish needs the `querais` project + PYPI_TOKEN secret;
+      # then add `twine upload` after the build.
+      - name: Build the Python SDK (sdist + wheel)
+        working-directory: sdk-python
+        run: |
+          pip install build
+          python -m build
+
+      # ── Draft release: a human reviews and presses publish ──
+      - name: Draft GitHub Release with all artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            release/*.tar.gz
+            release/SHA256SUMS
+            sdk-python/dist/*
