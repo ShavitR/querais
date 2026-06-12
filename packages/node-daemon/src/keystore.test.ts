@@ -14,9 +14,17 @@ test('encrypt → decrypt round-trips the private key', () => {
   assert.equal(decryptKey(ks, 'hunter2'), PK);
 });
 
-test('decrypt with the wrong password throws (auth tag)', () => {
+test('decrypt with the wrong password throws an actionable error, not a raw crypto trace', () => {
   const ks = encryptKey(PK, 'right');
-  assert.throws(() => decryptKey(ks, 'wrong'));
+  assert.throws(
+    () => decryptKey(ks, 'wrong'),
+    (e: Error) => {
+      assert.match(e.message, /wrong DAEMON_KEYSTORE_PASSWORD/);
+      assert.match(e.message, new RegExp(ks.address)); // names the wallet at risk
+      assert.doesNotMatch(e.message, /unable to authenticate data/); // raw crypto error hidden
+      return true;
+    },
+  );
 });
 
 test('loadOrCreateKey creates then reloads the same key', () => {

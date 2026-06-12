@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import type { ChatMessage } from '@querais/shared';
-import { QueraisClient } from './client.js';
+import { DEFAULT_GATEWAY_URL, QueraisClient } from './client.js';
 
-const baseUrl = process.env.QUERAIS_BASE_URL ?? 'http://127.0.0.1:8787';
+const baseUrl = process.env.QUERAIS_BASE_URL ?? DEFAULT_GATEWAY_URL;
 const apiKey = process.env.QUERAIS_API_KEY ?? 'sk-querais-dev';
 const model = process.env.QUERAIS_MODEL ?? 'gemma3:4b';
 
@@ -12,6 +12,8 @@ function usage(): void {
   console.log('  models             list available models');
   console.log('  nodes              list active nodes');
   console.log('  stats              network stats');
+  console.log('');
+  console.log(`  gateway: ${baseUrl}`);
   console.log('  env: QUERAIS_BASE_URL, QUERAIS_API_KEY, QUERAIS_MODEL');
 }
 

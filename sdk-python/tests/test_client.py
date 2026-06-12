@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from querais import ChatResult, QueraisClient, QueraisError
+from querais import ChatResult, QueraisClient, QueraisConnectionError, QueraisError
 
 BASE = "https://gw.test"
 
@@ -89,6 +89,37 @@ def test_chat_stream_raises_on_error_status():
         with pytest.raises(QueraisError) as exc:
             list(client.chat_stream([{"role": "user", "content": "hi"}], model="mock-model"))
     assert exc.value.status == 401
+
+
+def test_chat_stream_surfaces_in_band_error_frame():
+    # The gateway streams HTTP 200 then an in-band error frame when no node can serve;
+    # the SDK must surface it, not end silently with an empty reply.
+    sse = (
+        'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'
+        'data: {"error":{"message":"No eligible node can serve m"}}\n\n'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=sse.encode(), headers={"content-type": "text/event-stream"}
+        )
+
+    with make_client(handler) as client:
+        with pytest.raises(QueraisError) as exc:
+            list(client.chat_stream([{"role": "user", "content": "hi"}], model="m"))
+    assert "No eligible node" in str(exc.value)
+
+
+def test_connection_failure_is_wrapped_in_a_friendly_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with make_client(handler) as client:
+        with pytest.raises(QueraisConnectionError) as exc:
+            client.nodes()
+    assert "could not reach the gateway" in str(exc.value)
+    assert exc.value.status == 0
+    assert isinstance(exc.value, QueraisError)  # still catchable as the base error
 
 
 def test_models_nodes_stats_and_manifest():

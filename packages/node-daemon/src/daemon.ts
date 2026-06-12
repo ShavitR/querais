@@ -14,6 +14,7 @@ import { GatewayClient } from './gateway-client.js';
 import { computeAutoPrice } from './pricing.js';
 import { ensureFunded, faucetUrlFromGatewayWs } from './auto-fund.js';
 import { httpBaseFromGatewayWs, manifestSelfCheck } from './manifest-check.js';
+import { digestFor, selectServedModels } from './models.js';
 
 /**
  * Wire the daemon together: verify the inference backend, decide which models to
@@ -42,12 +43,13 @@ export async function startDaemon(
   }
 
   const available = await infer.listModels();
-  const served = config.servedModels.length
-    ? config.servedModels.filter((m) => available.includes(m))
-    : available;
+  // Match configured names against the backend's list, tolerating Ollama's implicit
+  // `:latest` tag (so DAEMON_MODELS=llama3.2 matches a pulled llama3.2:latest).
+  const served = selectServedModels(config.servedModels, available);
   if (served.length === 0) {
     throw new Error(
-      `No models available to serve (backend reported: ${available.join(', ') || 'none'})`,
+      `No models available to serve (configured: ${config.servedModels.join(', ') || '(any)'}; ` +
+        `backend reported: ${available.join(', ') || 'none'})`,
     );
   }
 
@@ -58,7 +60,9 @@ export async function startDaemon(
   if (infer.modelDigests) {
     try {
       const all = await infer.modelDigests();
-      const entries = served.filter((m) => all[m]).map((m) => [m, all[m]!] as const);
+      const entries = served
+        .map((m) => [m, digestFor(m, all)] as const)
+        .filter((e): e is readonly [string, string] => e[1] !== undefined);
       if (entries.length) modelDigests = Object.fromEntries(entries);
     } catch (err) {
       logger.warn(

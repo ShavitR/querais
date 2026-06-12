@@ -55,8 +55,10 @@ The release archive contains the entire daemon bundled into one file.
 3. If the gateway pins model digests (a signed **model manifest**), the daemon
    verifies its local models against it and refuses to advertise ones that would
    be rejected — the log names the expected digest so you can re-pull.
-4. On testnet, the daemon claims gas + stake from the gateway **faucet**
-   (`DAEMON_AUTO_FAUCET=true`), stakes QAIS, and registers on-chain.
+4. On testnet, if the gateway has a **faucet** enabled (`DAEMON_AUTO_FAUCET=true`),
+   the daemon claims gas + stake from it, stakes QAIS, and registers on-chain. If the
+   gateway has no faucet configured, fund the printed wallet address with testnet ETH
+   + QAIS yourself — until it's funded, on-chain registration can't complete.
 5. It connects to the gateway over WebSocket and starts serving jobs. Payment
    settles on-chain: **95% to you, 5% protocol fee**.
 
@@ -78,7 +80,9 @@ The release archive contains the entire daemon bundled into one file.
 | `QueraIS needs Node >= 22.13` | Upgrade Node (the bundle uses `node:sqlite`-era APIs). |
 | `All served models fail the gateway's model manifest` | The gateway pins different model builds — re-pull the tags named in the warnings (`ollama pull <model>`); the expected digest is in the log. |
 | `No deployment found at …deployments/addresses.<net>.json` | `NETWORK` in `.env` names a manifest that isn't in the archive's `deployments/` directory. |
-| Faucet errors on boot | The faucet throttles per-IP/per-address; wait and retry, or fund the wallet directly and set `DAEMON_AUTO_FAUCET=false`. |
+| `No models available to serve` | The models in `DAEMON_MODELS` aren't pulled. `ollama pull <model>` (run `ollama list` to see exact names). Bare names like `llama3.2` match Ollama's `llama3.2:latest`. |
+| `wrong DAEMON_KEYSTORE_PASSWORD` on boot | Use the password the keystore (`~/.querais/keystore.json`) was created with. The default is a well-known dev password; a custom one must match exactly. |
+| Faucet 404 / `faucet did not grant` on boot | The gateway has no faucet configured (or it's throttling/empty). Fund the printed wallet address with testnet ETH + QAIS directly and set `DAEMON_AUTO_FAUCET=false`. |
 
 ## Security notes
 

@@ -38,11 +38,23 @@ export function decryptKey(ks: Keystore, password: string): Hex {
   const key = scryptSync(password, Buffer.from(ks.salt, 'hex'), 32);
   const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ks.iv, 'hex'));
   decipher.setAuthTag(Buffer.from(ks.tag, 'hex'));
-  const plain = Buffer.concat([
-    decipher.update(Buffer.from(ks.ciphertext, 'hex')),
-    decipher.final(),
-  ]);
-  return plain.toString('utf8') as Hex;
+  try {
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(ks.ciphertext, 'hex')),
+      decipher.final(),
+    ]);
+    return plain.toString('utf8') as Hex;
+  } catch {
+    // AES-GCM auth failure (`decipher.final()`) ⇒ wrong password or a corrupt keystore.
+    // Replace the cryptic `Unsupported state or unable to authenticate data` stack trace
+    // with something an operator can act on.
+    throw new Error(
+      `Could not decrypt the node keystore for ${ks.address}: wrong DAEMON_KEYSTORE_PASSWORD ` +
+        `(or the keystore file is corrupt). Use the password the keystore was created with. ` +
+        `Deleting the keystore creates a fresh wallet but abandons ${ks.address} and any ` +
+        `stake/funds on it.`,
+    );
+  }
 }
 
 /**
