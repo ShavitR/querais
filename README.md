@@ -114,12 +114,27 @@ sha256sum -c SHA256SUMS                 # must say OK
 tar xzf querais-node-v*.tar.gz && cd querais-node-v*/
 ```
 
-**Step 2 — run the launcher twice:**
+**Step 2 — run the launcher from a terminal, twice** (first run creates `.env` and stops, second
+run starts the node):
+
+**Linux / macOS:**
 
 ```bash
-./run-node.sh        # Windows: .\run-node.ps1   — first run creates .env, then stops
-./run-node.sh        # second run starts the node
+./run-node.sh
+./run-node.sh
 ```
+
+**Windows** — open **PowerShell** (Start → type `PowerShell`) and run it there; **don't
+double-click** the file, or Windows just shows a "How do you want to open it?" dialog. The `.\`
+prefix is required:
+
+```powershell
+.\run-node.ps1
+.\run-node.ps1
+```
+
+> If PowerShell says *"running scripts is disabled on this system,"* run it this way instead (no
+> settings change): `powershell -ExecutionPolicy Bypass -File .\run-node.ps1`
 
 (The generated `.env` already points at the hosted gateway. Optionally edit `DAEMON_MODELS`
 first to pick which Ollama models you serve.)
