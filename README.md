@@ -1,82 +1,67 @@
 # QueraIS
 
-**A decentralized, peer-to-peer marketplace for AI inference compute — "BitTorrent for AI."**
-Anyone with a GPU can run a node and earn cryptocurrency by serving LLM inference; anyone who
-needs AI compute buys it through an OpenAI-compatible API without going through a centralized
-provider. Payment settles on-chain in the `$QAIS` token with a 95% provider / 5% protocol split.
+**BitTorrent for AI inference.** An OpenAI-compatible API served by independent GPU nodes that
+earn `$QAIS` for running LLM jobs. Every job settles on-chain — **95% to the node, 5% protocol fee**.
 
-This repository is a **real, working implementation** — not a mockup. The contracts are deployed
-and verified on Arbitrum Sepolia, real `gemma3:4b` inference runs through it, and a job has
-settled on-chain end-to-end across two machines. The repo is public; the client SDKs ship on
-[npm](https://www.npmjs.com/org/querais) (`@querais/sdk`) and [PyPI](https://pypi.org/project/querais/)
-(`querais`), and the node daemon ships as a prebuilt archive on the
-[Releases page](https://github.com/ShavitR/querais/releases).
-
-> **Testnet only — no real value.** Everything runs on Arbitrum Sepolia (chainId `421614`).
-> The current architecture is **hybrid hub-and-spoke** (a trusted gateway does matching and
-> settlement); the fully decentralized mesh is a later phase. See the design docs below.
-> By using the network you accept the [Terms of Service](docs/TERMS.md) — and read the
-> [Privacy Notice](docs/PRIVACY.md) first: ~5% of prompts are re-run on verification
-> infrastructure, and your prompts execute on independent operators' machines.
+> ⚠️ **Testnet only** (Arbitrum Sepolia) — tokens have **no real value**. Your prompts run on
+> strangers' machines and ~5% are re-run for verification, so **don't send anything secret**.
+> [Terms](docs/TERMS.md) · [Privacy](docs/PRIVACY.md).
 
 ---
 
-## Table of contents
+## Pick your path
 
-1. [What works today](#what-works-today)
-2. [Use the live testnet gateway (fastest path)](#use-the-live-testnet-gateway-fastest-path)
-3. [Prerequisites](#prerequisites)
-4. [60-second demo](#60-second-demo)
-5. [Call it from your code (OpenAI drop-in)](#call-it-from-your-code-openai-drop-in)
-6. [Batched settlement: pay once, run thousands of jobs](#batched-settlement-pay-once-run-thousands-of-jobs)
-7. [Run the full stack manually](#run-the-full-stack-manually)
-8. [Run a node and earn testnet QAIS](#run-a-node-and-earn-testnet-qais)
-9. [Host your own gateway on Sepolia](#host-your-own-gateway-on-sepolia)
-10. [How a request flows](#how-a-request-flows)
-11. [Repository layout](#repository-layout)
-12. [All commands](#all-commands)
-13. [Deployed contracts](#deployed-contracts-arbitrum-sepolia)
-14. [Trust & security model](#trust--security-model)
-15. [What's not built yet (limitations)](#whats-not-built-yet-limitations)
-16. [Environment gotchas (read if something breaks)](#environment-gotchas-read-if-something-breaks)
-17. [Project docs](#project-docs)
+| You want to… | Go here | Time |
+|---|---|---|
+| 🤖 **Use the AI** — call the API from your code | [Use the hosted gateway](#use-the-live-testnet-gateway-fastest-path) | 2 min |
+| 💸 **Earn `$QAIS`** — run a GPU node | [Run a node](#run-a-node-and-earn-testnet-qais) | ~5 min |
+| 🛠️ **Hack on it** — run the whole stack locally | [60-second demo](#60-second-demo) | 5 min |
+
+It's **live today**: gateway up 24/7 at `querais-gateway.fly.dev`, SDKs on
+[npm](https://www.npmjs.com/org/querais) + [PyPI](https://pypi.org/project/querais/), contracts on
+Arbitrum Sepolia. The trust model is a single trusted gateway for now —
+[what's built](#project-status) · [what's not](#whats-not-built-yet-limitations).
 
 ---
 
-## What works today
+<a id="project-status"></a>
 
-The project is built in **slices** against `docs/EXECUTION_PLAN.md`. Done and merged:
+<details>
+<summary><strong>Project status</strong> — 10 build slices shipped (click to expand)</summary>
 
 | Slice | What it delivers | Status |
 |------|------------------|--------|
 | 0 | CI green-bar gate (build · typecheck · lint · test · e2e) + Solidity lint + Slither | ✅ |
 | 1 | Durable gateway state on `node:sqlite` (API keys, faucet claims, job history) | ✅ |
-| 2 | **Batched session-deposit settlement** — deposit once, sign one EIP-712 cap, settle thousands of jobs in one tx | ✅ |
+| 2 | **Batched settlement** — deposit once, sign one EIP-712 cap, settle thousands of jobs per tx | ✅ |
 | 3 | Hardened surface (quotas, faucet anti-drain, WS flood caps) + ops (pause CLI, cold-key split) | ✅ |
-| 4 | Full **5-dimension reputation** (accuracy/uptime/latency/longevity/stake) + daily on-chain snapshots | ✅ |
-| 5 | **Layer-A semantic verification** (oracle re-runs ~5% of jobs) + on-chain disputes with slashing | ✅ |
-| 6 | **Tokenomics live**: ProtocolTreasury 60/20/20 sweep + burn, StakingRewards, node incentive programs | ✅ |
-| 7 | Production deploy — the gateway is **live 24/7 at `querais-gateway.fly.dev`** | ✅ |
-| 8 | Observability: alert webhook + runbooks, review queue, metrics, public `/status` page | ✅ |
-| 9 | DX & release: signed model manifest, npm/PyPI-ready SDKs, prebuilt node releases, disclosures | ✅ |
+| 4 | **5-dimension reputation** (accuracy/uptime/latency/longevity/stake) + daily on-chain snapshots | ✅ |
+| 5 | **Layer-A semantic verification** (~5% sampled) + on-chain disputes with slashing | ✅ |
+| 6 | **Tokenomics live**: ProtocolTreasury 60/20/20 sweep + burn, StakingRewards, incentives | ✅ |
+| 7 | Production deploy — gateway **live 24/7 at `querais-gateway.fly.dev`** | ✅ |
+| 8 | Observability: alerts + runbooks, review queue, metrics, public `/status` page | ✅ |
+| 9 | DX & release: signed model manifest, npm/PyPI SDKs, prebuilt node releases, disclosures | ✅ |
 
-The end-to-end loop works in both directions:
+The loop works both ways — **inference** (OpenAI request → match → real Ollama inference →
+streamed result) and **settlement** (per-job escrow or batched, 95/5, with staking, slashing,
+reputation). Next: Stage D (web app, arbitration panel, scale, mainnet gate). Live detail in
+`HANDOFF.md`.
 
-- **Inference**: OpenAI-compatible request → matching → real Ollama inference → streamed result.
-- **Settlement**: per-job on-chain escrow **or** batched settlement against a pre-funded credit
-  account — 95% provider / 5% treasury, with staking, slashing, and a reputation score.
-
-Next up is Stage D (the web app, arbitration panel, scale, mainnet gate). See `HANDOFF.md`
-for the live status.
+</details>
 
 ---
 
 ## Use the live testnet gateway (fastest path)
 
-A hosted gateway runs 24/7 at **`https://querais-gateway.fly.dev`** against the Arbitrum
-Sepolia contracts. You need an **API key** (issued by the operator during the beta — the
-self-serve portal is a later slice; ask in the project channel or open an issue). Then it's
-the official OpenAI client with one changed line — nothing to clone, nothing to build:
+No clone, no build — just point an OpenAI client at the hosted gateway. **Do this:**
+
+1. **Get an API key.** During the beta the operator issues them — ask in the project channel or
+   [open an issue](https://github.com/ShavitR/querais/issues). (Self-serve signup is coming.)
+2. **Install a client** — the official `openai` SDK works as-is, or use the QueraIS SDK for extras:
+   ```bash
+   pip install openai          # or: pip install querais   (typed client + nodes/stats/sessions)
+   ```
+3. **Change one line** — the base URL — and call it:
 
 **Python** (`pip install openai`):
 
