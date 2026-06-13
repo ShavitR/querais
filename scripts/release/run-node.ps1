@@ -6,8 +6,11 @@ Set-Location $PSScriptRoot
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error 'QueraIS needs Node.js >= 22.13 - install it from https://nodejs.org'
 }
-node -e 'const [maj, min] = process.versions.node.split(".").map(Number); if (maj < 22 || (maj === 22 && min < 13)) { console.error(`QueraIS needs Node >= 22.13 (found ${process.versions.node})`); process.exit(1); }'
-if ($LASTEXITCODE -ne 0) { exit 1 }
+$nodeVer = (& node -v).TrimStart('v')
+$p = $nodeVer.Split('.')
+if ([int]$p[0] -lt 22 -or ([int]$p[0] -eq 22 -and [int]$p[1] -lt 13)) {
+    Write-Error "QueraIS needs Node >= 22.13 (found $nodeVer) - update from https://nodejs.org"
+}
 
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env

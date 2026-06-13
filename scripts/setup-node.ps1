@@ -16,9 +16,10 @@ if (-not (Have node)) {
   Write-Host 'Node installed. Close this window, open a NEW PowerShell, and re-run this script.' -ForegroundColor Yellow
   exit 0
 }
-$nodeOk = & node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.stdout.write(a>22||(a===22&&b>=13)?"ok":"old")'
-if ($nodeOk -ne 'ok') {
-  Write-Error "QueraIS needs Node >= 22.13 (found $(node -v)). Update from https://nodejs.org, then re-run."
+$nodeVer = (& node -v).TrimStart('v')
+$p = $nodeVer.Split('.')
+if ([int]$p[0] -lt 22 -or ([int]$p[0] -eq 22 -and [int]$p[1] -lt 13)) {
+  Write-Error "QueraIS needs Node >= 22.13 (found $nodeVer). Update from https://nodejs.org, then re-run."
 }
 if (-not (Have pnpm)) {
   corepack enable 2>$null
