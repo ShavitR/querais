@@ -13,6 +13,7 @@ Every job settles on-chain — **95% to the node · 5% protocol fee**.
 [![Network](https://img.shields.io/badge/network-Arbitrum%20Sepolia-28a0f0)](#deployed-contracts-arbitrum-sepolia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+**[🖥️ Web dashboard](https://gateway.querais.xyz/)** ·
 **[🌐 Live status](https://gateway.querais.xyz/status)** ·
 **[📦 npm](https://www.npmjs.com/org/querais)** ·
 **[🐍 PyPI](https://pypi.org/project/querais/)** ·
@@ -31,6 +32,7 @@ Every job settles on-chain — **95% to the node · 5% protocol fee**.
 
 | You want to… | Go here | Time |
 |---|---|---|
+| 🖥️ **Just look around** — explore the live network in your browser | [Web dashboard](#web-dashboard) | ⏱️ instant |
 | 🤖 **Use the AI** — call the API from your code | [Use the hosted gateway](#use-the-live-testnet-gateway-fastest-path) | ⏱️ 2 min |
 | 💸 **Earn `$QAIS`** — run a GPU node | [Run a node](#run-a-node-and-earn-testnet-qais) | ⏱️ ~5 min |
 | 🛠️ **Hack on it** — run the whole stack locally | [60-second demo](#60-second-demo) | ⏱️ 5 min |
@@ -39,6 +41,30 @@ It's **live today**: gateway up 24/7 at `gateway.querais.xyz`, SDKs on
 [npm](https://www.npmjs.com/org/querais) + [PyPI](https://pypi.org/project/querais/), contracts on
 Arbitrum Sepolia. The trust model is a single trusted gateway for now —
 [what's built](#project-status) · [what's not](#whats-not-built-yet-limitations).
+
+---
+
+<a id="web-dashboard"></a>
+
+## 🖥️ Web dashboard
+
+A full browser UI is served by the gateway at **[gateway.querais.xyz](https://gateway.querais.xyz/)** —
+no install, no key needed to look around:
+
+| View | What it shows |
+|---|---|
+| **Explorer** | Live network stats + node leaderboard with the 5-dimension reputation breakdown |
+| **Playground** | Streaming chat with a model picker and a per-request cost readout |
+| **Credit** | Deposit `$QAIS`, **sign one EIP-712 spending cap in your wallet**, watch cap-spend / headroom / pending settle live, withdraw |
+| **Jobs / Usage** | Your settled jobs (with Arbiscan links) and usage against your tier |
+
+**Sign in** two ways: paste an **API key**, or **connect a wallet** (EIP-4361 "Sign-In with
+Ethereum"). The credit page is the one-screen demo of the marquee batched-settlement flow — deposit
+→ sign once → fire many completions with **zero per-call wallet transactions** → settle in one tx.
+The dashboard is same-origin with the API (no keys ever leave your browser in plaintext).
+
+> Built on Vite + React, served by the gateway itself. The marketing/docs site at the root
+> `querais.xyz` is coming separately.
 
 ---
 
@@ -64,8 +90,10 @@ Arbitrum Sepolia. The trust model is a single trusted gateway for now —
 
 The loop works both ways — **inference** (OpenAI request → match → real Ollama inference →
 streamed result) and **settlement** (per-job escrow or batched, 95/5, with staking, slashing,
-reputation). Next: Stage D (web app, arbitration panel, scale, mainnet gate). Live detail in
-`HANDOFF.md`.
+reputation). **Stage D is underway:** the [web dashboard](#web-dashboard) is live (explorer,
+playground, wallet sign-in + the EIP-712 credit flow); next up are the operator/admin console,
+the live network explorer, and the marketing/docs site, then the arbitration panel, scale, and
+the mainnet gate. Live detail in `HANDOFF.md`.
 
 </details>
 
