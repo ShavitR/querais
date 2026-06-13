@@ -51,7 +51,22 @@ export function registerFlags(app: FastifyInstance, deps: GatewayDeps): void {
       limit,
       offset,
     });
-    return reply.send({ flags, openCount: deps.nodeFlags.openCount() });
+    // Slice 10C: attach the Layer-A verdicts behind each layer-a flag so the reviewer sees
+    // the evidence (similarity score + verdict) without leaving the queue. Hashes/scores
+    // only — sampled prompt/output text is never persisted (privacy rule). Pattern and
+    // rapid-decline flags carry no per-job verdict, so they get an empty list.
+    const WINDOW_MS = 7 * 86_400_000;
+    const enriched = flags.map((f) => ({
+      ...f,
+      relatedVerdicts: f.kind.startsWith('layer-a')
+        ? deps.layerAChecks
+            .forProviderSince(f.wallet, f.createdAt - WINDOW_MS)
+            .filter((v) => v.verdict !== 'pass')
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .slice(0, 5)
+        : [],
+    }));
+    return reply.send({ flags: enriched, openCount: deps.nodeFlags.openCount() });
   });
 
   app.post('/v1/admin/flags/:id/review', async (request, reply) => {

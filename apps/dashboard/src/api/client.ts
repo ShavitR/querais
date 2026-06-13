@@ -4,11 +4,14 @@
  * 'include'` is explicit for clarity and for the standalone dev-server proxy case.
  */
 import type {
+  AdminFlagsResponse,
   CreditInfo,
   JobsResponse,
   Me,
   ModelsResponse,
+  NodeFlag,
   NodesResponse,
+  OperatorOverview,
   SessionStatus,
   SignedCapWire,
   Stats,
@@ -52,6 +55,30 @@ export const getCreditInfo = (): Promise<CreditInfo> => request<CreditInfo>('/v1
 export const getUsage = (): Promise<Usage> => request<Usage>('/v1/usage');
 export const getJobs = (): Promise<JobsResponse> => request<JobsResponse>('/v1/jobs');
 export const getSession = (): Promise<SessionStatus> => request<SessionStatus>('/v1/sessions');
+
+// --- Slice 10C: operator console (cookie) + admin review queue (x-admin-token) ---
+export const getOperatorOverview = (): Promise<OperatorOverview> =>
+  request<OperatorOverview>('/v1/operator/overview');
+
+export const getAdminFlags = (
+  adminToken: string,
+  status: 'open' | 'all' = 'open',
+): Promise<AdminFlagsResponse> =>
+  request<AdminFlagsResponse>(`/v1/admin/flags?status=${status}`, {
+    headers: { 'x-admin-token': adminToken },
+  });
+
+export const reviewFlag = (
+  adminToken: string,
+  id: number,
+  by: string,
+  note?: string,
+): Promise<{ flag: NodeFlag }> =>
+  request<{ flag: NodeFlag }>(`/v1/admin/flags/${id}/review`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-admin-token': adminToken },
+    body: JSON.stringify({ by, note }),
+  });
 
 /** Register a browser-signed EIP-712 spending cap (10B-2). */
 export const postSession = (cap: SignedCapWire): Promise<unknown> =>

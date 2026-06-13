@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Address } from 'viem';
 import { GatewayDb } from '../db/index.js';
 import { NodeFlagStore } from '../db/node-flags.js';
+import { LayerACheckStore } from '../db/layer-a-checks.js';
 import type { GatewayDeps } from '../deps.js';
 import { registerFlags } from './flags.js';
 
@@ -11,15 +12,22 @@ const NODE = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as Address;
 const OTHER = '0x90F79bf6EB2c4f870365E785982E1f101E93b906' as Address;
 const ADMIN = 'test-admin-token';
 
-/** The routes only touch config.adminToken + nodeFlags — a stub deps is enough. */
+/** The routes touch config.adminToken + nodeFlags + layerAChecks (verdict context) — stub those. */
 function fixture(adminToken: string | undefined = ADMIN): {
   app: FastifyInstance;
   flags: NodeFlagStore;
+  checks: LayerACheckStore;
 } {
-  const flags = new NodeFlagStore(new GatewayDb());
+  const db = new GatewayDb();
+  const flags = new NodeFlagStore(db);
+  const checks = new LayerACheckStore(db);
   const app = Fastify();
-  registerFlags(app, { config: { adminToken }, nodeFlags: flags } as unknown as GatewayDeps);
-  return { app, flags };
+  registerFlags(app, {
+    config: { adminToken },
+    nodeFlags: flags,
+    layerAChecks: checks,
+  } as unknown as GatewayDeps);
+  return { app, flags, checks };
 }
 
 test('admin flag routes refuse without the token (and when none is configured)', async () => {
@@ -83,6 +91,34 @@ test('GET /v1/admin/flags lists open by default, filters, paginates', async () =
     const res = await app.inject({ method: 'GET', url: `/v1/admin/flags?${bad}`, headers: auth });
     assert.equal(res.statusCode, 400, `expected 400 for ?${bad}`);
   }
+});
+
+test('GET /v1/admin/flags attaches Layer-A verdicts to layer-a flags only', async () => {
+  const { app, flags, checks } = fixture();
+  flags.add(NODE, 'layer-a:anomaly', 'low similarity');
+  flags.add(OTHER, 'pattern:truncation', 'always length');
+  checks.insert({
+    jobId: `0x${'ab'.repeat(32)}`,
+    provider: NODE,
+    similarityBps: 3600,
+    verdict: 'anomaly',
+    oracleRuns: 2,
+    createdAt: Date.now(),
+  });
+  const res = await app.inject({
+    method: 'GET',
+    url: '/v1/admin/flags?status=all',
+    headers: { 'x-admin-token': ADMIN },
+  });
+  const body = res.json() as {
+    flags: { kind: string; relatedVerdicts: { verdict: string }[] }[];
+  };
+  const laFlag = body.flags.find((f) => f.kind === 'layer-a:anomaly')!;
+  assert.equal(laFlag.relatedVerdicts.length, 1);
+  assert.equal(laFlag.relatedVerdicts[0]!.verdict, 'anomaly');
+  // Pattern/rapid-decline flags carry no per-job verdict.
+  const patternFlag = body.flags.find((f) => f.kind === 'pattern:truncation')!;
+  assert.equal(patternFlag.relatedVerdicts.length, 0);
 });
 
 test('POST /v1/admin/flags/:id/review marks once; 404 unknown, 409 repeat, 400 no reviewer', async () => {

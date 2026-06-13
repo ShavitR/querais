@@ -130,3 +130,74 @@ export interface SignedCapWire {
   deadline: string;
   signature: string;
 }
+
+// ── Slice 10C: operator console + admin review queue ──────────────────────────
+
+export type LayerAVerdict = 'pass' | 'soft' | 'anomaly';
+
+/** One on-chain reputation snapshot row (bps = basis points of [0,1]). */
+export interface ReputationSnapshot {
+  wallet: string;
+  compositeBps: number;
+  accuracyBps: number;
+  uptimeBps: number;
+  latencyBps: number;
+  longevityBps: number;
+  stakeBps: number;
+  txHash: string;
+  flagged: boolean;
+  createdAt: number;
+}
+
+/** A Layer-A verdict (hashes/scores only — never prompt text). */
+export interface LayerAVerdictRow {
+  jobId: string;
+  provider: string;
+  similarityBps: number;
+  verdict: LayerAVerdict;
+  oracleRuns: number;
+  createdAt: number;
+}
+
+/** A manual-review flag against a node. */
+export interface NodeFlag {
+  id: number;
+  wallet: string;
+  kind: string;
+  detail: string;
+  createdAt: number;
+  reviewedAt: number | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+}
+
+/** GET /v1/operator/overview — the signed-in node's own data. */
+export interface OperatorOverview {
+  wallet: string;
+  connected: boolean;
+  jobsServed: number | null;
+  models: { model: string; pricePerTokenWei: string; tokensPerSecond: number }[];
+  claimableRewardsWei: string;
+  reputation: {
+    composite: number;
+    accuracy: number;
+    uptime: number;
+    latency: number;
+    longevity: number;
+    stake: number;
+  };
+  reputationHistory: ReputationSnapshot[];
+  flags: NodeFlag[];
+  recentVerdicts: LayerAVerdictRow[];
+  ttftMs: number[];
+}
+
+/** A flag enriched with the Layer-A verdicts behind it (admin queue). */
+export interface AdminFlag extends NodeFlag {
+  relatedVerdicts: LayerAVerdictRow[];
+}
+
+export interface AdminFlagsResponse {
+  flags: AdminFlag[];
+  openCount: number;
+}

@@ -14,6 +14,7 @@ import type { SessionStore } from './db/sessions.js';
 import type { DebitLedgerStore } from './db/ledger.js';
 import type { BatchedSettlement } from './batched-settlement.js';
 import type { ReputationService } from './reputation.js';
+import type { ReputationSnapshotStore } from './db/reputation-snapshots.js';
 import type { NodeFlagStore } from './db/node-flags.js';
 import type { IncentiveService } from './incentives.js';
 import type { LayerACheckStore } from './db/layer-a-checks.js';
@@ -39,6 +40,8 @@ export interface GatewayDeps {
   credit?: BatchedSettlement;
   /** Slice 4: the 5-dimension reputation oracle (accuracy EMA + derived dimensions). */
   reputation: ReputationService;
+  /** Slice 4B: on-chain score-publish history (the operator console's reputation trend). */
+  snapshots: ReputationSnapshotStore;
   /** Slice 5: manual-review flags (Layer-A anomalies, output patterns) + sample trail. */
   nodeFlags: NodeFlagStore;
   /** Slice 6C: the node-incentive payout recommendation engine (read-only). */

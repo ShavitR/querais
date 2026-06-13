@@ -57,6 +57,7 @@ import { KeeperHealth } from './keeper-health.js';
 import { AlertSweeper, type SweepReads } from './alert-rules.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
+import { registerOperator } from './routes/operator.js';
 import { SessionAuth } from './session.js';
 
 export interface BuildOptions {
@@ -312,6 +313,7 @@ export async function buildGateway(
     ledger,
     credit,
     reputation,
+    snapshots,
     nodeFlags,
     layerAChecks,
     incentives,
@@ -512,6 +514,7 @@ export async function buildGateway(
   registerAuth(app, deps);
   registerKeys(app, deps);
   registerFlags(app, deps);
+  registerOperator(app, deps);
   registerAlertsAdmin(app, deps);
   registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);

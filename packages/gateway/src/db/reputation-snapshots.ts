@@ -93,4 +93,12 @@ export class ReputationSnapshotStore {
       .get(wallet.toLowerCase()) as SnapshotRow | undefined;
     return row ? decode(row) : undefined;
   }
+
+  /** A node's published score history, newest-first (Slice 10C operator console). */
+  listByWallet(wallet: Address, limit = 90): ReputationSnapshot[] {
+    const rows = this.db.conn
+      .prepare(`SELECT * FROM reputation_snapshots WHERE wallet=? ORDER BY created_at DESC LIMIT ?`)
+      .all(wallet.toLowerCase(), Math.max(1, Math.min(365, limit))) as unknown as SnapshotRow[];
+    return rows.map(decode);
+  }
 }
