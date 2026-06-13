@@ -1,5 +1,11 @@
 # Deploying the QueraIS gateway to Fly.io (Slice 7)
 
+> **Note — the live gateway no longer runs on Fly.** It is now self-hosted on the
+> operator's box and exposed via a free **Cloudflare Tunnel** at
+> `https://gateway.querais.xyz` (Fly was retired when its free trial ended). This Fly
+> guide is kept as one supported hosting option; the single-instance, single-volume,
+> backup, and drain principles below apply to any host.
+
 The gateway is a **single stateful instance** — its SQLite DB holds the pending-debit
 ledger (unsettled money owed to nodes) plus operational state. Hosting is custody of that
 state. This doc is the operator runbook; the code-side hardening (graceful drain, `/ready`,
@@ -58,8 +64,8 @@ to build):
 fly deploy . --config packages/gateway/fly.toml --strategy immediate
 fly scale count 1 --app querais-gateway
 fly status --app querais-gateway
-curl https://querais-gateway.fly.dev/health
-curl https://querais-gateway.fly.dev/ready
+curl https://gateway.querais.xyz/health
+curl https://gateway.querais.xyz/ready
 ```
 
 `fly scale count 1` is belt-and-suspenders on top of the single-volume guarantee; `fly

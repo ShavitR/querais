@@ -32,7 +32,7 @@ not to.
 | Gateway (`packages/gateway`) | Yes — auth, sessions, settlement batching, faucet, admin surface |
 | Node daemon (`packages/node-daemon`) | Yes — key handling, handshake, job signing |
 | SDKs (`packages/sdk`, `sdk-python`) | Yes — key handling, request signing |
-| The hosted gateway (`querais-gateway.fly.dev`) | Testnet only — please keep testing non-destructive (no DoS, no faucet draining for its own sake) |
+| The hosted gateway (`gateway.querais.xyz`) | Testnet only — please keep testing non-destructive (no DoS, no faucet draining for its own sake) |
 | Third-party dependencies | Report upstream first; tell us if we're exposed |
 
 ## Bug bounty

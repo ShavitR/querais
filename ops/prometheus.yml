@@ -13,7 +13,7 @@ scrape_configs:
     scheme: https
     static_configs:
       - targets:
-          - querais-gateway.fly.dev
+          - gateway.querais.xyz
         labels:
           network: arbitrum-sepolia
     # Self-hosted gateway instead? Swap in:

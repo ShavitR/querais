@@ -518,7 +518,7 @@ ambiguous, ask "does it need a wallet, a key, or a WebSocket?" — yes ⇒ app, 
 ```
 Stage A (foundation)      ✅ 0 CI/Slither → ✅ 1 Persistence → ✅ 2 Batched settlement ⭐ → ✅ 3 Harden surface
 Stage B (protocol depth)  ✅ 4 Reputation → ✅ 5 Layer-A verify → ✅ 6 Tokenomics (6A treasury+burn → 6B staker rewards → 6C incentives)
-Stage C (operate)         ✅ 7 Deploy (7A code #37 · 7B live: querais-gateway.fly.dev) → ✅ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
+Stage C (operate)         ✅ 7 Deploy (7A code #37 · 7B live: gateway.querais.xyz, self-hosted via Cloudflare Tunnel) → ✅ 8 Observability (close the review loop) → ⬜ 9 DX/public/growth
 Stage D (product)         ⬜ 10 Web app (10A foundation → 10B requester → 10C operator/review → 10D live explorer · 10E Next.js site)
                           ⬜ 11 Arbitration (STANDARD track) → ⬜ 12 Scale confidence → ⬜ 13 Mainnet go/no-go gate
 ```

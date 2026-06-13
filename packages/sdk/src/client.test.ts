@@ -173,7 +173,7 @@ test('read methods throw a typed HTTP error (not an opaque JSON parse) on a non-
 });
 
 test('DEFAULT_GATEWAY_URL points at the hosted gateway', () => {
-  assert.equal(DEFAULT_GATEWAY_URL, 'https://querais-gateway.fly.dev');
+  assert.equal(DEFAULT_GATEWAY_URL, 'https://gateway.querais.xyz');
 });
 
 test('baseUrl is optional and defaults to the hosted gateway', async () => {
