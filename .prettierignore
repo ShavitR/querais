@@ -11,6 +11,7 @@ packages/contracts/deployments/**
 packages/contracts/src/abis.ts
 pnpm-lock.yaml
 *.md
+*.svg
 # Python toolchain owns this tree (ruff format), incl. its local .venv
 sdk-python/**
 # generated release artifacts (scripts/bundle-daemon.mjs); anchored — scripts/release/ stays formatted

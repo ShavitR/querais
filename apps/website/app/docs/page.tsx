@@ -4,6 +4,7 @@ import { REPO_URL } from '../../lib/site';
 
 export const metadata: Metadata = {
   title: 'Docs',
+  alternates: { canonical: '/docs/' },
   description:
     'QueraIS documentation — quickstart, how it works, SDKs, and the full project README.',
 };
