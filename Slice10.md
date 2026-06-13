@@ -1,9 +1,9 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A MERGED (#53), 10B-1 MERGED (#54). **10B-2 BUILT** — wallet/SIWE sign-in +
-> the deposit/session/EIP-712 credit flow; green bar passing (21 e2e scenarios) on branch
-> `slice-10b2-sessions-wallet`, PR open. 10C–10E not started. (Plan approved 2026-06-13;
-> §5 + §10.7 decisions locked.)
+> **Status:** 10A (#53), 10B-1 (#54), 10B-2 (#55) MERGED; static-app fix (#56) MERGED; README
+> web-dashboard section (#57). **10C-1 BUILT** — operator console + admin review queue (read-only);
+> green bar passing (22 e2e scenarios) on branch `slice-10c1-operator-admin`, PR open. **10C-2**
+> (admin raise-dispute, money-moving) = plan in §11, awaiting sign-off. 10D/10E not started.
 > **Author:** prepared 2026-06-13 from the verified repo state (Slices 0–9 merged). This is
 > the planning doc; it becomes the as-built record as increments land (the `Slice8.md` /
 > `Slice9.md` convention).
@@ -479,3 +479,51 @@ open (Slice 6 rule). Money-moving in the browser → this plan gets your sign-of
   reflects it. **Green bar:** build/typecheck/lint/test (gateway 167) + **21 e2e scenarios** pass.
 - **Browser wallet UI** (`window.ethereum` deposit/sign/withdraw) isn't headless-testable, so the
   gateway side is fully covered by e2e/unit and the client wallet wrapper is kept thin + typed.
+
+---
+
+## 11. Slice 10C — operator console + admin review queue
+
+Split: **10C-1 (read-only) BUILT**; **10C-2 (admin raise-dispute, money-moving) = plan below,
+awaiting sign-off.**
+
+### 11.1 As-built — 10C-1 (branch `slice-10c1-operator-admin`)
+- **Gateway:** `requireWalletSession` helper; `ReputationSnapshotStore.listByWallet` (+ `snapshots`
+  added to deps); **`GET /v1/operator/overview`** — cookie-gated to the signed-in node's OWN data
+  (no `:wallet` param, so an operator can only ever see themselves): reputation (current + 90-snapshot
+  history), claimable rewards, TTFT samples (30d), flags against the node (incl. reviewed), and the
+  Layer-A verdicts on its jobs (hashes/scores only — privacy holds). **`GET /v1/admin/flags` enriched:**
+  each flag now carries `relatedVerdicts` (the Layer-A similarity+verdict behind it; empty for
+  pattern/rapid-decline). Existing `POST /v1/admin/flags/:id/review` unchanged.
+- **App:** `views/Operator.tsx` (wallet-gated: earnings, 5-dim reputation + composite-history
+  sparkline, TTFT trend, flags table) and `views/Admin.tsx` (admin-token in sessionStorage — never
+  persisted to disk — review queue with verdict evidence + one-click mark-reviewed). Nav: `operator`,
+  `admin`.
+- **Green bar:** build/typecheck/lint/test (gateway **168**) + **22 e2e scenarios**
+  (`runOperatorConsoleCase`: SIWE as the node → own-node overview; unauth → 401; admin queue
+  token-gated + every flag carries `relatedVerdicts`) + a flags-route unit test for the enrichment.
+
+### 11.2 Build-ready plan — 10C-2 (admin raise-dispute · MONEY-MOVING · awaiting sign-off)
+**Goal:** let an admin escalate a confirmed cheater from the review queue to an on-chain
+FAST-track dispute (5B `DisputeResolution.autoResolve` → 20%-stake slash split 50/30/20), and
+show operators/admins the dispute state + 24h counter-evidence countdown the contract already tracks.
+
+**Verified surface:** the gateway already holds the SLASHER path internally — `ChainClient.raiseDispute`,
+`autoResolveDispute`, `ensureDisputeAllowance`, `disputeContract()` (the Layer-A anomaly hook uses
+them when `GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY` is on). What's missing: a **read** (`ChainClient.getDispute(jobId)`
+→ state/deadline/bonds) and an **admin-triggered** raise endpoint.
+
+**Planned (small, gated):**
+- Gateway: `ChainClient.getDispute(jobId)` (read); `GET /v1/disputes/:jobId` (operator/admin
+  context — state + counter-evidence deadline); **`POST /v1/admin/disputes` `{ jobId, defendant }`**
+  (admin-token-gated) → `raiseDispute` + `autoResolve` over an existing flag's evidence hash. Auto-disabled
+  when no `DisputeResolution` is deployed (pre-5B manifests) — returns 409 with a clear message.
+- App: a **raise-dispute** action on confirmed flags in `Admin.tsx` (double-confirm — it slashes
+  real stake) and a dispute panel in `Operator.tsx` (notices + the 24h counter-evidence countdown,
+  unusable without a UI today).
+- e2e: extend the existing **dispute scenario** (already verifies the 50/30/20 split to the wei) to
+  raise via the admin endpoint instead of the internal anomaly hook.
+
+**Why sign-off first (standing rule, HANDOFF §11):** this UI/endpoint *moves money* — it slashes a
+node's stake on-chain. Everything it calls already exists and is tested (5B), but exposing an
+admin-triggered slash is the money-moving step that gets explicit approval before building.

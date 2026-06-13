@@ -1865,3 +1865,88 @@ export async function runWalletSessionCase(): Promise<void> {
     await h.stop();
   }
 }
+
+/**
+ * Slice 10C-1 operator console + admin review queue. A node operator signs in with the
+ * NODE's wallet (SIWE) and `GET /v1/operator/overview` returns THAT node's own data (scoped
+ * to the cookie wallet — no `:wallet` param). The admin queue is token-gated and each flag
+ * carries its Layer-A verdict context.
+ */
+export async function runOperatorConsoleCase(): Promise<void> {
+  const h = await startHarness(); // full — the node (KEYS.node) is connected
+  try {
+    const operator = privateKeyToAccount(KEYS.node);
+    const info = (await (await fetch(`${h.baseUrl}/v1/credit/info`)).json()) as { chainId: number };
+
+    // Operator signs in with the node's wallet (SIWE) → cookie.
+    const { nonce } = (await (
+      await fetch(`${h.baseUrl}/v1/auth/nonce`, { method: 'POST' })
+    ).json()) as { nonce: string };
+    const message = createSiweMessage({
+      domain: 'localhost',
+      address: operator.address,
+      statement: 'Operator sign-in',
+      uri: 'http://localhost',
+      version: '1',
+      chainId: info.chainId,
+      nonce,
+    });
+    const signature = await operator.signMessage({ message });
+    const signin = await fetch(`${h.baseUrl}/v1/auth/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message, signature }),
+    });
+    assert.equal(signin.status, 200, 'operator SIWE sign-in');
+    const cookie = signin.headers.get('set-cookie')!.split(';')[0]!;
+
+    // The overview is scoped to MY node and reflects that it's connected.
+    const ov = (await (
+      await fetch(`${h.baseUrl}/v1/operator/overview`, { headers: { cookie } })
+    ).json()) as {
+      wallet: string;
+      connected: boolean;
+      reputation: { composite: number };
+      models: { model: string }[];
+      flags: unknown[];
+      ttftMs: unknown[];
+    };
+    assert.equal(ov.wallet.toLowerCase(), operator.address.toLowerCase(), 'overview is my node');
+    assert.equal(ov.connected, true, 'my node is connected');
+    assert.ok(
+      ov.models.some((m) => m.model === 'mock-model'),
+      'serves mock-model',
+    );
+    assert.equal(typeof ov.reputation.composite, 'number', 'reputation present');
+    assert.ok(Array.isArray(ov.flags) && Array.isArray(ov.ttftMs), 'flags + ttft arrays');
+
+    // Operator data is private — no cookie → 401.
+    assert.equal(
+      (await fetch(`${h.baseUrl}/v1/operator/overview`)).status,
+      401,
+      'operator data requires sign-in',
+    );
+
+    // Admin review queue: token-gated, and every flag carries its Layer-A verdict context.
+    assert.equal(
+      (await fetch(`${h.baseUrl}/v1/admin/flags`)).status,
+      401,
+      'admin flags need the token',
+    );
+    const adminRes = await fetch(`${h.baseUrl}/v1/admin/flags?status=all`, {
+      headers: { 'x-admin-token': ADMIN_TOKEN },
+    });
+    assert.equal(adminRes.status, 200, 'admin flags with token');
+    const adminBody = (await adminRes.json()) as {
+      flags: { relatedVerdicts: unknown[] }[];
+      openCount: number;
+    };
+    assert.ok(Array.isArray(adminBody.flags), 'flags array');
+    assert.equal(typeof adminBody.openCount, 'number', 'openCount present');
+    for (const f of adminBody.flags) {
+      assert.ok(Array.isArray(f.relatedVerdicts), 'each flag carries relatedVerdicts');
+    }
+  } finally {
+    await h.stop();
+  }
+}

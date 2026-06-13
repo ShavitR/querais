@@ -34,3 +34,17 @@ export function resolveRequesterOrSession(
   if (claims) return claims.wallet;
   throw new AuthError('Missing Authorization header');
 }
+
+/**
+ * Slice 10C — require a web-app session cookie and return its wallet. Used by operator
+ * routes that scope strictly to the signed-in node's OWN data (no `:wallet` param, so a
+ * node operator can only ever see themselves). Throws {@link AuthError} if not signed in.
+ */
+export function requireWalletSession(
+  session: SessionAuth,
+  cookieToken: string | undefined,
+): Address {
+  const claims = session.verify(cookieToken);
+  if (!claims) throw new AuthError('Sign in (wallet or API key) to view operator data');
+  return claims.wallet;
+}
