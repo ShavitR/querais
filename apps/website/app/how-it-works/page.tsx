@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LifecycleDiagram } from '../../components/LifecycleDiagram';
 import { APP_URL } from '../../lib/site';
 
 export const metadata: Metadata = {
@@ -17,6 +18,10 @@ export default function HowItWorks() {
         A request becomes a matched job, real inference, two layers of verification, and an on-chain
         payment — in a couple of seconds.
       </p>
+
+      <div style={{ marginTop: 28 }}>
+        <LifecycleDiagram />
+      </div>
 
       <section className="block" style={{ borderTop: 'none', paddingTop: 24 }}>
         <ol className="steps">

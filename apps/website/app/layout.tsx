@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/react';
 import './globals.css';
 import { Nav } from '../components/Nav';
 import { Footer } from '../components/Footer';
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Footer />
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />
+        <Analytics />
       </body>
     </html>
   );

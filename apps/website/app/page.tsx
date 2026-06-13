@@ -2,51 +2,69 @@ import Link from 'next/link';
 import { APP_URL, getHeadline } from '../lib/site';
 import { JsonLd } from '../components/JsonLd';
 import { softwareApplicationSchema } from '../lib/jsonld';
+import { LifecycleDiagram } from '../components/LifecycleDiagram';
+import { ComparisonTable } from '../components/ComparisonTable';
+import { CtaLink } from '../components/CtaLink';
 
 export default async function Home() {
   const h = await getHeadline();
   return (
     <>
       <JsonLd data={softwareApplicationSchema} />
-      <div className="wrap hero">
-        <h1>BitTorrent for AI inference</h1>
-        <p className="lede">
-          An OpenAI-compatible API served by independent GPU nodes that earn <b>$QAIS</b>. Every job
-          settles on-chain — <b>95% to the node, 5% protocol fee</b>.
-        </p>
-        <div className="cta-row">
-          <a className="btn" href={APP_URL}>
-            Open the dashboard →
-          </a>
-          <Link className="btn ghost" href="/docs/quickstart/">
-            Quickstart
-          </Link>
-        </div>
-
-        <div className="stats">
-          <div className="stat">
-            <div className="n">{h.nodes}</div>
-            <div className="l">Active nodes</div>
-          </div>
-          <div className="stat">
-            <div className="n">{h.jobsSettled}</div>
-            <div className="l">Jobs settled</div>
-          </div>
-          <div className="stat">
-            <div className="n">{h.tokensServed}</div>
-            <div className="l">Tokens served</div>
-          </div>
-          <div className="stat">
-            <div className="n">{h.burned} 🔥</div>
-            <div className="l">$QAIS burned</div>
-          </div>
-        </div>
-        {!h.live ? (
-          <p className="muted" style={{ fontSize: 13 }}>
-            Live numbers appear when the site is built against the gateway.
+      <section className="herobg">
+        <div className="wrap hero">
+          <h1>BitTorrent for AI inference</h1>
+          <p className="lede">
+            An OpenAI-compatible API served by independent GPU nodes that earn <b>$QAIS</b>. Every
+            job settles on-chain — <b>95% to the node, 5% protocol fee</b>.
           </p>
-        ) : null}
-      </div>
+          <div className="cta-row">
+            <CtaLink event="open_app" href={APP_URL} className="btn">
+              Open the dashboard →
+            </CtaLink>
+            <CtaLink event="quickstart" href="/docs/quickstart/" className="btn ghost">
+              Quickstart
+            </CtaLink>
+          </div>
+
+          <div className="stats">
+            <div className="stat">
+              <div className="n">{h.nodes}</div>
+              <div className="l">Active nodes</div>
+            </div>
+            <div className="stat">
+              <div className="n">{h.jobsSettled}</div>
+              <div className="l">Jobs settled</div>
+            </div>
+            <div className="stat">
+              <div className="n">{h.tokensServed}</div>
+              <div className="l">Tokens served</div>
+            </div>
+            <div className="stat">
+              <div className="n">{h.burned} 🔥</div>
+              <div className="l">$QAIS burned</div>
+            </div>
+          </div>
+          {!h.live ? (
+            <p className="muted" style={{ fontSize: 13 }}>
+              Live numbers appear when the site is built against the gateway.
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="wrap">
+          <h2>How a job flows</h2>
+          <p className="muted">
+            Five stages from prompt to payment — coordinated by the gateway, settled on-chain.
+          </p>
+          <LifecycleDiagram />
+          <p className="muted" style={{ fontSize: 14 }}>
+            <Link href="/architecture/">See the full architecture →</Link>
+          </p>
+        </div>
+      </section>
 
       <section className="block">
         <div className="wrap">
@@ -66,7 +84,9 @@ export default async function Home() {
                 Got a GPU and Ollama? Install a prebuilt release in ~5 minutes, serve jobs, and earn
                 for every token you stream.
               </p>
-              <Link href="/for-node-operators/">Run a node →</Link>
+              <CtaLink event="run_node" href="/for-node-operators/">
+                Run a node →
+              </CtaLink>
             </div>
           </div>
         </div>
@@ -110,8 +130,38 @@ export default async function Home() {
           <p className="muted" style={{ marginTop: 20 }}>
             Trust model today: a single trusted gateway does matching + settlement (worst case is
             bounded — it can only settle at signed prices, never steal deposits). Removing it — P2P
-            mesh, on-chain auction, decentralized oracle — is the Phase-4 roadmap.
+            mesh, on-chain auction, decentralized oracle — is the{' '}
+            <Link href="/roadmap/">roadmap</Link>.
           </p>
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="wrap">
+          <h2>How we compare</h2>
+          <p className="muted">
+            Purpose-built for LLM inference — not general compute or rendering, and the only one
+            your OpenAI code can call unchanged.
+          </p>
+          <ComparisonTable />
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="wrap" style={{ textAlign: 'center' }}>
+          <h2>See the live network</h2>
+          <p className="lede" style={{ margin: '0 auto 24px' }}>
+            Browse active nodes, watch jobs settle, and try the playground — no install, no key
+            needed to look around.
+          </p>
+          <div className="cta-row">
+            <CtaLink event="open_app_explorer" href={APP_URL} className="btn">
+              Open the app →
+            </CtaLink>
+            <Link className="btn ghost" href="/roadmap/">
+              Roadmap
+            </Link>
+          </div>
         </div>
       </section>
     </>

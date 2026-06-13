@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ArchitectureDiagram } from '../../components/ArchitectureDiagram';
 import { SeeAlso } from '../../components/SeeAlso';
 
 export const metadata: Metadata = {
@@ -106,6 +107,10 @@ export default function Architecture() {
         node, 5% to the protocol. Here’s the whole machine, and how the trusted parts get removed
         over time.
       </p>
+
+      <div style={{ marginTop: 28 }}>
+        <ArchitectureDiagram />
+      </div>
 
       <section className="block" style={{ borderTop: 'none', paddingTop: 24 }}>
         <h2>The pieces</h2>
