@@ -137,6 +137,8 @@ th {
 }
 
 input,
+select,
+textarea,
 button {
   font: inherit;
   background: var(--bg);
@@ -144,6 +146,40 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+}
+
+.output {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 60px;
+  margin-top: 12px;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+}
+
+.nav a {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.nav a.active {
+  background: var(--panel);
+  color: var(--text);
 }
 
 button {

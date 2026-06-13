@@ -33,8 +33,20 @@ export class QuotaEnforcer {
     private readonly tiers: Record<string, QuotaTier>,
   ) {}
 
+  /** Quota for a Bearer API key (its tier comes from the key store). */
   check(apiKey: string, requester: Address): QuotaVerdict {
-    const tier = this.keys.tierOf(apiKey) ?? 'free';
+    return this.evaluate(this.keys.tierOf(apiKey) ?? 'free', requester);
+  }
+
+  /**
+   * Quota for a web-app session cookie (Slice 10B): the tier travels in the cookie claims,
+   * so there's no key to look up. Consumption is the same per-wallet rolling-window derivation.
+   */
+  checkWithTier(tier: string, requester: Address): QuotaVerdict {
+    return this.evaluate(tier, requester);
+  }
+
+  private evaluate(tier: string, requester: Address): QuotaVerdict {
     const budget = this.tiers[tier] ?? this.tiers['free'] ?? { dailyJobs: 0, dailyTokens: 0 };
     const usage = this.jobs.usageSince(requester, Date.now() - DAY_MS);
     const remainingJobs = Math.max(0, budget.dailyJobs - usage.jobs);

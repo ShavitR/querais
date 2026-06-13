@@ -69,3 +69,38 @@ export interface Me {
   wallet: string;
   tier: string;
 }
+
+/** One row from GET /v1/jobs (the requester's recent jobs, DB mirror). */
+export interface JobListItem {
+  jobId: string;
+  status: 'assigned' | 'verified' | 'failed';
+  model: string;
+  provider: string;
+  maxTokens: number;
+  actualTokens: number | null;
+  agreedPricePerToken: string;
+  providerPay: string | null;
+  protocolFee: string | null;
+  failureReason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface JobsResponse {
+  object: 'list';
+  data: JobListItem[];
+}
+
+/** GET /v1/models — OpenAI-shaped model list. */
+export interface ModelsResponse {
+  object: 'list';
+  data: { id: string; object: 'model'; owned_by: string }[];
+}
+
+/** GET /v1/credit/info — chain bindings (also gives us the chainId for explorer links). */
+export interface CreditInfo {
+  chainId: number;
+  creditAccount: string;
+  token: string;
+  settler: string;
+}

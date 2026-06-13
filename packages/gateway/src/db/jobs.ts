@@ -202,6 +202,14 @@ export class JobStore {
     return row ? decode(row) : undefined;
   }
 
+  /** A requester's recent jobs, newest first (Slice 10B jobs explorer). */
+  listForRequester(requester: Address, limit = 50): JobRecord[] {
+    const rows = this.db.conn
+      .prepare(`SELECT * FROM jobs WHERE requester=? ORDER BY created_at DESC LIMIT ?`)
+      .all(requester.toLowerCase(), Math.max(1, Math.min(200, limit))) as unknown as JobRow[];
+    return rows.map(decode);
+  }
+
   /** Aggregate a requester's settled jobs. wei is summed in JS (it overflows SQLite INTEGER). */
   usageFor(requester: Address): UsageSummary {
     const rows = this.db.conn

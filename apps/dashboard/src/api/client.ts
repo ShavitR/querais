@@ -3,7 +3,16 @@
  * app), so URLs are relative and the session cookie rides automatically; `credentials:
  * 'include'` is explicit for clarity and for the standalone dev-server proxy case.
  */
-import type { Me, NodesResponse, Stats, Status, Usage } from './types';
+import type {
+  CreditInfo,
+  JobsResponse,
+  Me,
+  ModelsResponse,
+  NodesResponse,
+  Stats,
+  Status,
+  Usage,
+} from './types';
 
 class ApiError extends Error {
   readonly status: number;
@@ -34,9 +43,66 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const getStats = (): Promise<Stats> => request<Stats>('/v1/stats');
 export const getNodes = (): Promise<NodesResponse> => request<NodesResponse>('/v1/nodes');
 export const getStatus = (): Promise<Status> => request<Status>('/v1/status');
+export const getModels = (): Promise<ModelsResponse> => request<ModelsResponse>('/v1/models');
+export const getCreditInfo = (): Promise<CreditInfo> => request<CreditInfo>('/v1/credit/info');
 
 // --- Authenticated (session cookie) ---
 export const getUsage = (): Promise<Usage> => request<Usage>('/v1/usage');
+export const getJobs = (): Promise<JobsResponse> => request<JobsResponse>('/v1/jobs');
+
+/**
+ * Stream a chat completion over SSE, invoking `onDelta` for each content chunk. Auth is the
+ * session cookie (same-origin). Surfaces the gateway's in-band SSE error frame
+ * (HTTP-200-with-`{error}`) as a throw, matching the SDK's behavior.
+ */
+export async function streamChat(
+  body: { model: string; messages: { role: string; content: string }[]; max_tokens?: number },
+  onDelta: (chunk: string) => void,
+): Promise<void> {
+  const res = await fetch('/v1/chat/completions', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...body, stream: true }),
+  });
+  if (!res.ok || !res.body) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const b = (await res.json()) as { error?: { message?: string } };
+      if (b.error?.message) message = b.error.message;
+    } catch {
+      /* keep status line */
+    }
+    throw new ApiError(res.status, message);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n\n')) !== -1) {
+      const frame = buf.slice(0, nl);
+      buf = buf.slice(nl + 2);
+      const payload = frame.replace(/^data: /, '').trim();
+      if (!payload || payload === '[DONE]') continue;
+      let parsed: {
+        error?: { message?: string };
+        choices?: { delta?: { content?: string } }[];
+      };
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        continue; // ignore non-JSON keepalives
+      }
+      if (parsed.error?.message) throw new ApiError(200, parsed.error.message);
+      const delta = parsed.choices?.[0]?.delta?.content;
+      if (delta) onDelta(delta);
+    }
+  }
+}
 
 // --- Auth lifecycle ---
 export const signInWithKey = (apiKey: string): Promise<Me> =>
