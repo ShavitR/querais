@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { APP_URL, getHeadline } from '../lib/site';
+import { JsonLd } from '../components/JsonLd';
+import { softwareApplicationSchema } from '../lib/jsonld';
 
 export default async function Home() {
   const h = await getHeadline();
   return (
     <>
+      <JsonLd data={softwareApplicationSchema} />
       <div className="wrap hero">
         <h1>BitTorrent for AI inference</h1>
         <p className="lede">

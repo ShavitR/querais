@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { APP_URL } from '../../../lib/site';
+import { JsonLd } from '../../../components/JsonLd';
+import { breadcrumbSchema } from '../../../lib/jsonld';
 
 export const metadata: Metadata = {
   title: 'Quickstart',
+  alternates: { canonical: '/docs/quickstart/' },
   description: 'Call the QueraIS API in 2 minutes, or run a GPU node and earn $QAIS in ~5 minutes.',
 };
 
@@ -26,6 +29,12 @@ ollama pull llama3.2
 export default function Quickstart() {
   return (
     <div className="wrap" style={{ paddingTop: 40, maxWidth: 820 }}>
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: 'Docs', path: '/docs/' },
+          { name: 'Quickstart', path: '/docs/quickstart/' },
+        ])}
+      />
       <h1>Quickstart</h1>
 
       <h2>Use the API (2 min)</h2>

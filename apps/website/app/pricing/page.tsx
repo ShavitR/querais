@@ -3,6 +3,7 @@ import { Calculator } from '../../components/Calculator';
 
 export const metadata: Metadata = {
   title: 'Pricing',
+  alternates: { canonical: '/pricing/' },
   description:
     'Nodes set their own per-token price; the protocol takes a flat 5%. Estimate any request with the cost calculator.',
 };

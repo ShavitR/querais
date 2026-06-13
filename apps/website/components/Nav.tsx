@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { APP_URL, REPO_URL } from '../lib/site';
+import { QueraisLogo } from './QueraisLogo';
 
 export function Nav() {
   return (
     <nav className="nav">
       <div className="wrap inner">
-        <Link href="/" className="brand">
-          ⚡ QueraIS
+        <Link href="/" className="brand" aria-label="QueraIS home">
+          <QueraisLogo size={22} />
         </Link>
         <Link href="/how-it-works/">How it works</Link>
         <Link href="/pricing/">Pricing</Link>

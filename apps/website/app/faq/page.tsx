@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
+import { JsonLd } from '../../components/JsonLd';
+import { faqPageSchema } from '../../lib/jsonld';
 
 export const metadata: Metadata = {
   title: 'FAQ',
+  alternates: { canonical: '/faq/' },
   description:
     'Common questions about QueraIS: is it real money, prompt privacy, models, running a node, anti-cheat, and decentralization.',
 };
@@ -40,6 +43,7 @@ const FAQS: { q: string; a: string }[] = [
 export default function FAQ() {
   return (
     <div className="wrap" style={{ paddingTop: 40 }}>
+      <JsonLd data={faqPageSchema(FAQS)} />
       <h1>FAQ</h1>
       <div className="faq" style={{ marginTop: 20, maxWidth: 760 }}>
         {FAQS.map((f) => (

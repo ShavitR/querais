@@ -4,7 +4,7 @@
   --panel: #111726;
   --line: #1d2738;
   --text: #d6e1ef;
-  --muted: #7d8aa3;
+  --muted: #98a7c0;
   --accent: #2563eb;
   --ok: #2ec26b;
   --warn: #e0b341;
@@ -20,12 +20,14 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font:
-    16px/1.6 ui-sans-serif,
+  font-size: 16px;
+  line-height: 1.6;
+  font-family:
+    var(--font-sans),
+    ui-sans-serif,
     system-ui,
     -apple-system,
     Segoe UI,
-    Roboto,
     sans-serif;
 }
 
@@ -37,8 +39,35 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Keyboard focus (WCAG): visible ring on every interactive element. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Skip-to-content link (hidden until focused). */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 0 0 8px 0;
+  z-index: 100;
+}
+.skip:focus {
+  left: 0;
+}
+
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   background: #0b0f17;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -52,7 +81,7 @@ pre {
   border-radius: 10px;
   padding: 16px;
   overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   line-height: 1.6;
 }

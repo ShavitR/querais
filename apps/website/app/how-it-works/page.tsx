@@ -4,6 +4,7 @@ import { APP_URL } from '../../lib/site';
 
 export const metadata: Metadata = {
   title: 'How it works',
+  alternates: { canonical: '/how-it-works/' },
   description:
     'How a QueraIS request flows: matching, real local inference, two-layer verification, and on-chain settlement (per-job escrow or batched).',
 };
