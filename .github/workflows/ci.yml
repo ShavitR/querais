@@ -78,6 +78,29 @@ jobs:
       - name: Build sdist + wheel
         run: python -m build
 
+  website:
+    name: Website (Next.js static export)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile
+      # The marketing/docs site is a separate static-export app (apps/website) deployed off
+      # the gateway. Build + typecheck it; it never touches the money path. Headline numbers
+      # bake at build time only when NEXT_PUBLIC_GATEWAY_URL is set (unset here = hermetic).
+      - name: Build (static export)
+        run: pnpm --filter @querais/website build
+      - name: Typecheck
+        run: pnpm --filter @querais/website typecheck
+
   gitleaks:
     name: Secret scan (gitleaks, gating)
     runs-on: ubuntu-latest

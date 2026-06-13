@@ -6,6 +6,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Next.js (apps/website)
+apps/website/.next/
+apps/website/out/
+
 # hardhat / contracts
 packages/contracts/artifacts/
 packages/contracts/cache/

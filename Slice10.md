@@ -1,8 +1,35 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A–10C all MERGED (#53–#59). **10D BUILT** — live network explorer (token-economics
-> panel + recent-jobs ticker); green bar passing (23 e2e scenarios) on branch `slice-10d-explorer`,
-> PR open. **10E** (Next.js marketing/docs site on the root `querais.xyz`) is the last increment.
+> **Status:** 10A–10D all MERGED (#53–#60). **10E BUILT** — Next.js marketing/docs site (static
+> export, separate from the gateway); green bar passing on branch `slice-10e-website`, PR open.
+> **🎉 SLICE 10 (the web app) COMPLETE after this** — the whole Stage-D web property is built.
+
+## 13. Slice 10E — marketing & docs site (as-built, branch `slice-10e-website`)
+- **`apps/website` — Next.js 15 (App Router), `output: 'export'`** (fully static → any CDN/Vercel).
+  Pages: landing (hero + headline numbers + the two paths + protocol highlights), how-it-works (the
+  job lifecycle), pricing (a client-side cost calculator + the 60/20/20 fee split), FAQ, docs index
+  + quickstart. Dark theme matching the app; SEO metadata + OpenGraph. Own toolchain (`next build`
+  type-checks; root eslint ignores it).
+- **Build-time headline numbers** (`lib/site.ts`): the landing page bakes nodes/jobs/burned from the
+  public `/v1/stats` + `/v1/network/economics` **only when `NEXT_PUBLIC_GATEWAY_URL` is set** — CI
+  builds stay hermetic (dashes), the operator's deploy gets real numbers. No client-side gateway
+  calls → no CORS; a gateway outage never affects the site (and vice versa).
+- **Wiring:** a gating `website` CI job (`next build` + typecheck); `apps/website` added to the root
+  eslint ignore; `.next`/`out` gitignored + prettier-ignored; `pnpm-workspace.yaml` allows the
+  `sharp` build (Next pulls it; `images.unoptimized` so it's unused at runtime).
+- **Deploy = operator** (like 7B): `apps/website/README.md` has the Vercel/CDN steps. The root
+  `querais.xyz` currently returns nothing; this fills it once deployed.
+- **Green bar:** the website build/typecheck pass; the main bar (build/typecheck/lint/test 168/e2e 23)
+  is unaffected — 10E touches no gateway code.
+
+---
+
+## Slice 10 — DONE ✅
+10A foundation · 10B requester console + wallet/EIP-712 · 10C operator/admin + disputes · 10D live
+explorer · 10E marketing/docs site. Plus the `forceCloseConnections` + `wildcard:true` fixes found
+along the way. The full product surface (Stage D, Slice 10 of `docs/EXECUTION_PLAN.md`) is built.
+**Next in Stage D: Slice 11 (STANDARD-track arbitration), Slice 12 (scale confidence), Slice 13
+(mainnet go/no-go gate).**
 
 ## 12. Slice 10D — live network explorer (as-built, branch `slice-10d-explorer`)
 - **Gateway (public, no auth):** `JobStore.recent(limit)` (network-wide job hashes + models + status,
