@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { APP_URL, PRIVACY_URL, REPO_URL, STATUS_URL, TERMS_URL } from '../lib/site';
+import { APP_URL, REPO_URL, STATUS_URL } from '../lib/site';
 import { QueraisLogo } from './QueraisLogo';
 
 export function Footer() {
@@ -18,6 +18,7 @@ export function Footer() {
             <Link href="/pricing/">Pricing</Link>
             <Link href="/tokenomics/">Tokenomics</Link>
             <Link href="/security/">Security</Link>
+            <Link href="/architecture/">Architecture</Link>
           </div>
 
           <div className="col">
@@ -25,12 +26,14 @@ export function Footer() {
             <Link href="/for-developers/">For developers</Link>
             <Link href="/docs/">Docs</Link>
             <Link href="/docs/quickstart/">Quickstart</Link>
+            <Link href="/docs/api/">API reference</Link>
             <a href={REPO_URL}>GitHub</a>
           </div>
 
           <div className="col">
             <h4>Network</h4>
             <Link href="/for-node-operators/">Run a node</Link>
+            <Link href="/roadmap/">Roadmap</Link>
             <a href={APP_URL}>Open app</a>
             <a href={STATUS_URL}>Status</a>
             <Link href="/faq/">FAQ</Link>
@@ -38,8 +41,8 @@ export function Footer() {
 
           <div className="col">
             <h4>Legal</h4>
-            <a href={TERMS_URL}>Terms</a>
-            <a href={PRIVACY_URL}>Privacy</a>
+            <Link href="/terms/">Terms</Link>
+            <Link href="/privacy/">Privacy</Link>
           </div>
         </div>
 

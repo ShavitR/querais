@@ -16,9 +16,14 @@ export const ROUTES: { path: string; priority: number }[] = [
   { path: '/pricing/', priority: 0.8 },
   { path: '/tokenomics/', priority: 0.8 },
   { path: '/security/', priority: 0.8 },
+  { path: '/architecture/', priority: 0.7 },
+  { path: '/roadmap/', priority: 0.6 },
   { path: '/faq/', priority: 0.6 },
   { path: '/docs/', priority: 0.7 },
   { path: '/docs/quickstart/', priority: 0.7 },
+  { path: '/docs/api/', priority: 0.7 },
+  { path: '/terms/', priority: 0.3 },
+  { path: '/privacy/', priority: 0.3 },
 ];
 
 /** The testnet chain the protocol is live on, and its block explorer. */
