@@ -10,9 +10,11 @@ import type {
   JobsResponse,
   Me,
   ModelsResponse,
+  NetworkEconomics,
   NodeFlag,
   NodesResponse,
   OperatorOverview,
+  RecentJob,
   SessionStatus,
   SignedCapWire,
   Stats,
@@ -51,6 +53,10 @@ export const getNodes = (): Promise<NodesResponse> => request<NodesResponse>('/v
 export const getStatus = (): Promise<Status> => request<Status>('/v1/status');
 export const getModels = (): Promise<ModelsResponse> => request<ModelsResponse>('/v1/models');
 export const getCreditInfo = (): Promise<CreditInfo> => request<CreditInfo>('/v1/credit/info');
+export const getRecentJobs = (): Promise<{ object: 'list'; data: RecentJob[] }> =>
+  request<{ object: 'list'; data: RecentJob[] }>('/v1/network/recent-jobs');
+export const getEconomics = (): Promise<NetworkEconomics> =>
+  request<NetworkEconomics>('/v1/network/economics');
 
 // --- Authenticated (session cookie) ---
 export const getUsage = (): Promise<Usage> => request<Usage>('/v1/usage');

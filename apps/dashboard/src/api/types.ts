@@ -202,6 +202,24 @@ export interface AdminFlagsResponse {
   openCount: number;
 }
 
+// ── Slice 10D: live network explorer ──────────────────────────────────────────
+
+/** One row in the public recent-jobs ticker (hashes + models only — privacy). */
+export interface RecentJob {
+  jobId: string;
+  model: string;
+  status: string;
+  createdAt: number;
+}
+
+/** GET /v1/network/economics — token-economics snapshot (wei strings). */
+export interface NetworkEconomics {
+  totalSupplyWei: string;
+  burnedWei: string;
+  treasuryBalanceWei: string;
+  stakerPoolWei: string;
+}
+
 /** GET /v1/disputes/:jobId — a job's on-chain dispute (Slice 10C-2). */
 export interface DisputeView {
   jobId: string;

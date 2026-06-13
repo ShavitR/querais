@@ -1704,6 +1704,18 @@ export async function runServedAppCase(): Promise<void> {
     const apiMissBody = (await apiMiss.json()) as { error?: { type?: string } };
     assert.match(apiMissBody.error?.type ?? '', /not_found/);
 
+    // 4b. Slice 10D public explorer endpoints (no auth).
+    const eco = await fetch(`${h.baseUrl}/v1/network/economics`);
+    assert.equal(eco.status, 200, 'economics endpoint serves');
+    const ecoBody = (await eco.json()) as { totalSupplyWei: string; burnedWei: string };
+    assert.ok(/^\d+$/.test(ecoBody.totalSupplyWei), 'economics returns a numeric supply');
+    assert.ok(/^\d+$/.test(ecoBody.burnedWei), 'economics returns burned');
+    const ticker = await fetch(`${h.baseUrl}/v1/network/recent-jobs`);
+    assert.equal(ticker.status, 200, 'recent-jobs endpoint serves');
+    const tickerBody = (await ticker.json()) as { object: string; data: unknown[] };
+    assert.equal(tickerBody.object, 'list', 'recent-jobs is a list');
+    assert.ok(Array.isArray(tickerBody.data), 'recent-jobs data is an array');
+
     // 5. Sign-in: API key → session cookie → /v1/auth/me resolves the wallet; the cookie
     //    authenticates /v1/usage exactly like the Bearer key would.
     const signin = await fetch(`${h.baseUrl}/v1/auth/session`, {

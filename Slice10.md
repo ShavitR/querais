@@ -1,9 +1,19 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A (#53), 10B-1 (#54), 10B-2 (#55), static-app fix (#56), README (#57), 10C-1 (#58)
-> all MERGED. **10C-2 BUILT** — admin raise-dispute (money-moving, signed off) + dispute reads +
-> operator dispute panel; green bar passing (23 e2e scenarios) on branch `slice-10c2-disputes`,
-> PR open. **Slice 10C complete after this.** 10D (live explorer) / 10E (Next.js site) not started.
+> **Status:** 10A–10C all MERGED (#53–#59). **10D BUILT** — live network explorer (token-economics
+> panel + recent-jobs ticker); green bar passing (23 e2e scenarios) on branch `slice-10d-explorer`,
+> PR open. **10E** (Next.js marketing/docs site on the root `querais.xyz`) is the last increment.
+
+## 12. Slice 10D — live network explorer (as-built, branch `slice-10d-explorer`)
+- **Gateway (public, no auth):** `JobStore.recent(limit)` (network-wide job hashes + models + status,
+  **no requester/prompt** — privacy); `ChainClient.totalSupply()`. Routes `GET /v1/network/recent-jobs`
+  and `GET /v1/network/economics` (totalSupply / burned = 1B − supply / treasury balance / staker pool;
+  graceful zeros where the 6A treasury/staking contracts are absent).
+- **App:** the Explorer (Overview) view gains a **Token economics** panel (supply/burned/treasury/staker)
+  and a **Recent jobs** ticker. Both public — no sign-in.
+- **Green bar:** build/typecheck/lint/test (gateway 168) + **23 e2e scenarios** (the served-app case now
+  asserts the two public endpoints return their shapes). Note: economics scans no logs (cheap reads);
+  `disputesAgainst` (10C-2) is the only log-scan and is operator-gated.
 > **Author:** prepared 2026-06-13 from the verified repo state (Slices 0–9 merged). This is
 > the planning doc; it becomes the as-built record as increments land (the `Slice8.md` /
 > `Slice9.md` convention).
