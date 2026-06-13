@@ -7,7 +7,7 @@ helpers. LangChain / LlamaIndex users: see ``querais.langchain`` /
 
 from .client import ChatResult, Message, QueraisClient, QueraisConnectionError, QueraisError
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 __all__ = [
     "ChatResult",
