@@ -629,6 +629,100 @@ footer.site .legal {
   letter-spacing: 0.5px;
 }
 
+/* hero gradient band */
+.herobg {
+  background:
+    radial-gradient(900px 380px at 50% -80px, rgba(37, 99, 235, 0.22), transparent 70%),
+    linear-gradient(180deg, #0d1320, var(--bg) 72%);
+  border-bottom: 1px solid var(--line);
+}
+
+/* diagrams */
+.diagram-wrap {
+  overflow-x: auto;
+  margin: 6px 0 10px;
+}
+.diagram {
+  width: 100%;
+  height: auto;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+.lifecycle {
+  min-width: 680px;
+}
+.arch {
+  min-width: 560px;
+  max-width: 760px;
+  display: block;
+  margin: 0 auto;
+}
+
+/* comparison table — highlight the QueraIS column */
+.table.compare th.mine,
+.table.compare td.mine {
+  background: #0e1730;
+  color: var(--text);
+  border-left: 1px solid #25408b;
+  border-right: 1px solid #25408b;
+}
+.table.compare th.mine {
+  color: #bcd2ff;
+}
+
+/* 404 */
+.notfound {
+  text-align: center;
+  padding: 84px 24px 64px;
+}
+.notfound .code404 {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  color: var(--accent);
+  line-height: 1;
+}
+.notfound h1 {
+  font-size: 30px;
+  margin: 12px 0 8px;
+}
+
+/* light motion — only when the visitor hasn't asked to reduce it */
+@media (prefers-reduced-motion: no-preference) {
+  .card,
+  .stat,
+  .seealso a {
+    transition:
+      transform 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .card:hover,
+  .stat:hover {
+    transform: translateY(-3px);
+    border-color: #2c3a55;
+  }
+  .btn {
+    transition:
+      transform 0.12s ease,
+      filter 0.12s ease;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+  }
+  .hero {
+    animation: rise 0.4s ease both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
 @media (max-width: 720px) {
   .hero h1 {
     font-size: 34px;
