@@ -3,13 +3,31 @@
 Serve AI inference jobs and earn QAIS — no repo clone, no pnpm, no build step.
 The release archive contains the entire daemon bundled into one file.
 
+## Easiest: one-line install
+
+One command installs Node.js if you don't have it, downloads + checksum-verifies the
+latest node, sets up a working config, and starts serving — nothing to edit:
+
+```powershell
+# Windows (PowerShell)
+iwr -useb https://querais.xyz/install.ps1 | iex
+```
+
+```sh
+# macOS / Linux
+curl -fsSL https://querais.xyz/install.sh | sh
+```
+
+It installs to `~/querais-node`. To restart later, re-run the launcher in that folder
+(`.\run-node.ps1` / `./run-node.sh`). The manual archive steps below do the same thing by hand.
+
 ## Requirements
 
-- **Node.js ≥ 22.13** — https://nodejs.org (the launcher checks and tells you)
+- **Node.js ≥ 22.13** — https://nodejs.org (the installer/launcher checks, and the one-liner installs it for you)
 - **Ollama** — https://ollama.com (runs the models). The launcher **installs + starts it for you if it's missing** (Windows via winget, Linux/macOS via the official install script).
 - A GPU helps but is not required for small models.
 
-## Install (≈5 minutes)
+## Manual install (≈5 minutes)
 
 1. **Download** the latest `querais-node-vX.Y.Z.tar.gz` and `SHA256SUMS` from the
    GitHub Releases page.
@@ -31,26 +49,23 @@ The release archive contains the entire daemon bundled into one file.
    cd querais-node-vX.Y.Z
    ```
 
-4. **First run** creates your config and stops:
+4. **Run it** — one command, no editing, no second run:
 
    ```sh
    ./run-node.sh        # Windows: .\run-node.ps1
    ```
 
-   Edit the generated `.env` — at minimum pick `DAEMON_MODELS` (Ollama tags you
-   want to serve, e.g. `llama3.2`). Defaults point at the public testnet gateway.
-
-5. **Run again** — this time it boots for real:
-
-   ```sh
-   ./run-node.sh        # Windows: .\run-node.ps1
-   ```
+   On the first run it writes a `.env` with working testnet defaults (public gateway,
+   models `llama3.2` + `gemma3:4b`, stake 2500 QAIS) and a freshly generated wallet
+   password, then boots straight into serving. Want to customize models or stake? Edit
+   the generated `.env` and re-run.
 
 ## What happens on first boot
 
 1. A wallet is generated and saved as an **encrypted keystore** at
-   `~/.querais/keystore.json` (set `DAEMON_KEYSTORE_PASSWORD` in `.env` first —
-   the default is a well-known dev password). Your key never leaves the machine.
+   `~/.querais/keystore.json`, encrypted with the `DAEMON_KEYSTORE_PASSWORD` the
+   launcher generated into `.env` on first run. Your key never leaves the machine —
+   keep `.env` private (or set your own `NODE_PRIVATE_KEY` to use an existing wallet).
 2. Missing models in `DAEMON_MODELS` are pulled from Ollama automatically.
 3. If the gateway pins model digests (a signed **model manifest**), the daemon
    verifies its local models against it and refuses to advertise ones that would

@@ -157,7 +157,8 @@ npm i -g @querais/sdk          # TypeScript SDK + the `querais` CLI
 
 > [!TIP]
 > Want to **serve** jobs instead? Skip to [Run a node](#run-a-node-and-earn-testnet-qais) —
-> a prebuilt release runs in ~5 minutes with just Node 22 + Ollama.
+> one command (`iwr -useb https://querais.xyz/install.ps1 | iex`) installs everything and starts
+> earning. Just Node 22 + Ollama.
 
 ---
 
@@ -338,10 +339,24 @@ run, **auto-funds itself** (gas + stake) from the gateway's faucet, stakes, and 
 manual funding, no Docker required. It connects *out* to the gateway, so **no inbound ports** are
 needed on your machine.
 
-**Easiest: install from a release archive (no clone, no build).** Download
-`querais-node-vX.Y.Z.tar.gz` from the [Releases page](https://github.com/ShavitR/querais/releases),
-verify the checksum against the published `SHA256SUMS`, extract, and run the launcher — the whole
-daemon is bundled into one file. Full walkthrough:
+**Easiest: one command (installs everything, nothing to edit).** It installs Node.js if missing,
+downloads + checksum-verifies the latest node release, sets up a working config, and starts
+serving:
+
+```powershell
+# Windows (PowerShell)
+iwr -useb https://querais.xyz/install.ps1 | iex
+```
+```bash
+# macOS / Linux
+curl -fsSL https://querais.xyz/install.sh | sh
+```
+
+**Prefer to do it by hand?** Download `querais-node-vX.Y.Z.tar.gz` from the
+[Releases page](https://github.com/ShavitR/querais/releases), verify the checksum against the
+published `SHA256SUMS`, extract, and run the launcher (`./run-node.sh` / `.\run-node.ps1`) — the
+whole daemon is bundled into one file, and the first run writes a working `.env` and boots straight
+into serving (no editing, no second run). Full walkthrough:
 [`docs/NODE_RELEASE_INSTALL.md`](docs/NODE_RELEASE_INSTALL.md). Requirements: **Node ≥ 22.13**
 and **Ollama**, nothing else.
 
@@ -367,9 +382,10 @@ and **Ollama**, nothing else.
 node competes for jobs and earns the 95% provider share of each one it serves.
 
 > [!TIP]
+> **One-liner (recommended):** `iwr -useb https://querais.xyz/install.ps1 | iex` (Windows) or
+> `curl -fsSL https://querais.xyz/install.sh | sh` (mac/Linux) — installs, configures, and starts
+> in one shot.
 > **Prefer Docker?** Use `scripts/install-node.sh` + `docker-compose.yml`.
-> **Ultra one-liner:** set `$env:QUERAIS_GATEWAY` then
-> `irm <raw-url>/scripts/bootstrap.ps1 | iex` — clones, sets up, and starts in one shot.
 
 ---
 
