@@ -9,6 +9,8 @@ import type {
   Me,
   ModelsResponse,
   NodesResponse,
+  SessionStatus,
+  SignedCapWire,
   Stats,
   Status,
   Usage,
@@ -49,6 +51,15 @@ export const getCreditInfo = (): Promise<CreditInfo> => request<CreditInfo>('/v1
 // --- Authenticated (session cookie) ---
 export const getUsage = (): Promise<Usage> => request<Usage>('/v1/usage');
 export const getJobs = (): Promise<JobsResponse> => request<JobsResponse>('/v1/jobs');
+export const getSession = (): Promise<SessionStatus> => request<SessionStatus>('/v1/sessions');
+
+/** Register a browser-signed EIP-712 spending cap (10B-2). */
+export const postSession = (cap: SignedCapWire): Promise<unknown> =>
+  request<unknown>('/v1/sessions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(cap),
+  });
 
 /**
  * Stream a chat completion over SSE, invoking `onDelta` for each content chunk. Auth is the
@@ -110,6 +121,17 @@ export const signInWithKey = (apiKey: string): Promise<Me> =>
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ apiKey }),
+  });
+
+/** EIP-4361 wallet sign-in (10B-2): fetch a nonce, then exchange a signed SIWE message. */
+export const getSiweNonce = (): Promise<{ nonce: string }> =>
+  request<{ nonce: string }>('/v1/auth/nonce', { method: 'POST' });
+
+export const signInWithWallet = (message: string, signature: string): Promise<Me> =>
+  request<Me>('/v1/auth/wallet', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message, signature }),
   });
 
 /** GET /v1/auth/me — resolves the cookie, or `null` when not signed in (401). */

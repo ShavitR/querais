@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import pino from 'pino';
 import { parseEther, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { createSiweMessage } from 'viem/siwe';
 import {
+  buildSignedSession,
   creditAccountAbi,
   jobEscrowAbi,
   makePublicClient,
@@ -1762,6 +1764,85 @@ export async function runRequesterConsoleCase(): Promise<void> {
     const mine = list.data.find((j) => j.jobId === jobId);
     assert.ok(mine, 'the job appears in GET /v1/jobs');
     assert.equal(mine.model, 'mock-model');
+  } finally {
+    await h.stop();
+  }
+}
+
+/**
+ * Slice 10B-2 wallet flow. EIP-4361 (SIWE) sign-in mints the session cookie; that cookie then
+ * registers a browser-signed EIP-712 spending cap via POST /v1/sessions (the browser path —
+ * no Bearer key), and the live status reflects it. (Full batched settlement is covered by
+ * runBatchedSettlementCase; this proves the new SIWE + cookie-session surface.)
+ */
+export async function runWalletSessionCase(): Promise<void> {
+  const h = await startHarness({ noDaemon: true });
+  try {
+    const requester = privateKeyToAccount(KEYS.requester);
+    const info = (await (await fetch(`${h.baseUrl}/v1/credit/info`)).json()) as {
+      chainId: number;
+      creditAccount: string;
+      settler: string;
+    };
+
+    // SIWE sign-in: nonce → sign → cookie.
+    const { nonce } = (await (
+      await fetch(`${h.baseUrl}/v1/auth/nonce`, { method: 'POST' })
+    ).json()) as { nonce: string };
+    const message = createSiweMessage({
+      domain: 'localhost',
+      address: requester.address,
+      statement: 'Sign in to QueraIS (testnet).',
+      uri: 'http://localhost',
+      version: '1',
+      chainId: info.chainId,
+      nonce,
+    });
+    const signature = await requester.signMessage({ message });
+    const walletRes = await fetch(`${h.baseUrl}/v1/auth/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message, signature }),
+    });
+    assert.equal(walletRes.status, 200, 'SIWE sign-in succeeds');
+    const who = (await walletRes.json()) as { wallet: string };
+    assert.equal(who.wallet.toLowerCase(), requester.address.toLowerCase(), 'cookie is the signer');
+    const cookie = walletRes.headers.get('set-cookie')!.split(';')[0]!;
+
+    // A valid signature from a DIFFERENT wallet (recovers a non-matching address) is rejected.
+    const foreignSig = await privateKeyToAccount(KEYS.node).signMessage({ message });
+    const bad = await fetch(`${h.baseUrl}/v1/auth/wallet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message, signature: foreignSig }),
+    });
+    assert.equal(bad.status, 401, 'a signature from another wallet is rejected');
+
+    // Register a browser-signed spending cap via the COOKIE (no Bearer).
+    const nowSec = Math.floor(Date.now() / 1000);
+    const wire = await buildSignedSession(KEYS.requester, {
+      maxSpendWei: parseEther('1000'),
+      nonce: BigInt(nowSec),
+      deadline: BigInt(nowSec + 3600),
+      settler: info.settler as Address,
+      chainId: info.chainId,
+      verifyingContract: info.creditAccount as Address,
+    });
+    const reg = await fetch(`${h.baseUrl}/v1/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify(wire),
+    });
+    assert.equal(reg.status, 200, 'the cookie registers the signed cap');
+
+    // The live status (cookie) reflects the active session.
+    const st = (await (
+      await fetch(`${h.baseUrl}/v1/sessions`, { headers: { cookie } })
+    ).json()) as {
+      session: { maxSpendWei: string } | null;
+    };
+    assert.ok(st.session, 'session is active');
+    assert.equal(st.session.maxSpendWei, parseEther('1000').toString(), 'cap recorded');
   } finally {
     await h.stop();
   }

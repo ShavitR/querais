@@ -47,6 +47,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      viem:
+        specifier: ^2.52.2
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
       '@eslint/js':
         specifier: ^9.18.0

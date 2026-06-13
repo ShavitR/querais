@@ -324,7 +324,15 @@ export async function buildGateway(
     logger,
   };
 
-  const app = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024 });
+  // forceCloseConnections: on app.close() (graceful shutdown / e2e teardown), force-close
+  // lingering keep-alive sockets instead of waiting for them to idle out — otherwise a
+  // client's pooled connection (e.g. undici keep-alive) can stall close() indefinitely,
+  // past the drain window. The onClose debit-flush still runs.
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 5 * 1024 * 1024,
+    forceCloseConnections: true,
+  });
   // Interval flush ("flush every N sec / M jobs"): a low-traffic requester's debits never
   // wait unboundedly for the threshold. unref() so the timer can't hold the process open.
   keepers.register('flush', opts.config.batchFlushIntervalSeconds * 1000);

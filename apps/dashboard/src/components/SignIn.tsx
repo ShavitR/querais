@@ -1,14 +1,17 @@
 /**
- * Sign-in control in the header. 10A: paste an API key → the gateway mints a session
- * cookie (the key is never stored in the browser). Signed in, shows the wallet + a
- * sign-out. Wallet (SIWE) sign-in arrives in 10B alongside the side that needs a wallet.
+ * Sign-in control in the header. Two paths, one cookie session:
+ *  - API key (10A) — paste a key; the gateway mints a cookie (the key is never stored).
+ *  - Wallet (10B-2) — EIP-4361 "Sign-In with Ethereum" via the browser wallet.
+ * Signed in, shows the wallet + a sign-out.
  */
 import { useState } from 'react';
 import { useSession } from '../auth/session';
+import { hasWallet } from '../lib/wallet';
 
 export function SignIn() {
-  const { me, signOut } = useSession();
-  const [open, setOpen] = useState(false);
+  const { me, error, signInWallet, signOut } = useSession();
+  const [mode, setMode] = useState<'idle' | 'key'>('idle');
+  const [busy, setBusy] = useState(false);
 
   if (me) {
     return (
@@ -24,12 +27,31 @@ export function SignIn() {
     );
   }
 
-  return open ? (
-    <KeyForm onDone={() => setOpen(false)} />
-  ) : (
-    <button className="ghost" onClick={() => setOpen(true)}>
-      sign in
-    </button>
+  if (mode === 'key') return <KeyForm onDone={() => setMode('idle')} />;
+
+  const connectWallet = async () => {
+    setBusy(true);
+    try {
+      await signInWallet();
+    } catch {
+      /* error surfaced via context */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="row">
+      <button className="ghost" onClick={() => setMode('key')}>
+        API key
+      </button>
+      {hasWallet() ? (
+        <button disabled={busy} onClick={() => void connectWallet()}>
+          {busy ? 'check wallet…' : 'connect wallet'}
+        </button>
+      ) : null}
+      {error ? <span className="error">{error}</span> : null}
+    </div>
   );
 }
 

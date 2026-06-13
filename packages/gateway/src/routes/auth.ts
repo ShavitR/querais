@@ -1,15 +1,16 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { recoverMessageAddress } from 'viem';
+import { parseSiweMessage, validateSiweMessage } from 'viem/siwe';
 import type { GatewayDeps } from '../deps.js';
 import { openAiError } from '../http.js';
 import { SESSION_COOKIE } from '../session.js';
 
 /**
- * Slice 10A — web-app sign-in. The browser posts an API key ONCE; the gateway validates it
- * against the key store and mints a stateless, httpOnly session cookie (the key is never
- * stored client-side). Bearer auth (SDK/CLI/curl) is unchanged and still wins where present.
- *
- * Wallet (SIWE) sign-in is 10B: it mints the SAME cookie via a signature proof, so this
- * route set grows a sibling but `/v1/auth/me` and the cookie format stay put.
+ * Web-app sign-in. Two proofs, ONE outcome — a stateless, httpOnly session cookie
+ * (`SessionAuth`); `/v1/auth/me` + `/v1/auth/logout` work the same regardless of how you
+ * signed in. Bearer auth (SDK/CLI/curl) is unchanged and still wins where present.
+ *  - Slice 10A: API key (`POST /v1/auth/session`) — the key is never stored client-side.
+ *  - Slice 10B-2: wallet via EIP-4361 SIWE (`POST /v1/auth/nonce` → sign → `POST /v1/auth/wallet`).
  */
 export function registerAuth(app: FastifyInstance, deps: GatewayDeps): void {
   const setCookie = (reply: FastifyReply, token: string): void => {
@@ -51,5 +52,56 @@ export function registerAuth(app: FastifyInstance, deps: GatewayDeps): void {
   app.post('/v1/auth/logout', async (_request, reply) => {
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return reply.send({ ok: true });
+  });
+
+  // --- Slice 10B-2: wallet sign-in via EIP-4361 (Sign-In with Ethereum) ---
+
+  // Step 1: hand out a single-use-ish nonce for the SIWE message (stateless, expiry-bound).
+  app.post('/v1/auth/nonce', async (_request, reply) => {
+    return reply.send({ nonce: deps.session.siweNonce() });
+  });
+
+  // Step 2: verify the signed SIWE message and mint the session cookie for its address.
+  app.post('/v1/auth/wallet', async (request, reply) => {
+    const body = request.body as { message?: string; signature?: string } | undefined;
+    const message = body?.message;
+    const signature = body?.signature as `0x${string}` | undefined;
+    if (!message || !signature) {
+      return reply
+        .code(400)
+        .send(openAiError('message and signature are required', 'invalid_request'));
+    }
+    const fields = parseSiweMessage(message);
+    if (!fields.address || !fields.nonce) {
+      return reply.code(400).send(openAiError('malformed SIWE message', 'invalid_request'));
+    }
+    // The nonce must be one we issued and unexpired (replay guard).
+    if (!deps.session.verifySiweNonce(fields.nonce)) {
+      return reply.code(401).send(openAiError('invalid or expired nonce', 'invalid_request'));
+    }
+    // Bind the message to THIS deployment's chain (prevents cross-chain replay).
+    if (fields.chainId !== deps.chain.deployment.chainId) {
+      return reply.code(400).send(openAiError('wrong chain for this gateway', 'invalid_request'));
+    }
+    // EIP-4361 time fields (issuedAt / expirationTime / notBefore) and address consistency.
+    if (!validateSiweMessage({ message: fields, address: fields.address })) {
+      return reply.code(401).send(openAiError('SIWE message failed validation', 'invalid_request'));
+    }
+    // Recover the EOA signer and require it match the claimed address.
+    let recovered: `0x${string}`;
+    try {
+      recovered = await recoverMessageAddress({ message, signature });
+    } catch {
+      return reply.code(401).send(openAiError('bad signature', 'invalid_request'));
+    }
+    if (recovered.toLowerCase() !== fields.address.toLowerCase()) {
+      return reply
+        .code(401)
+        .send(openAiError('signature does not match address', 'invalid_request'));
+    }
+    // A pure-wallet principal gets the free tier (10B-2 decision).
+    const wallet = recovered.toLowerCase() as `0x${string}`;
+    setCookie(reply, deps.session.mint(wallet, 'free'));
+    return reply.send({ wallet, tier: 'free' });
   });
 }

@@ -12,6 +12,7 @@ import { Overview } from './views/Overview';
 import { Playground } from './views/Playground';
 import { Jobs } from './views/Jobs';
 import { Usage } from './views/Usage';
+import { Sessions } from './views/Sessions';
 
 const TERMS_URL = 'https://github.com/ShavitR/querais/blob/main/docs/TERMS.md';
 const PRIVACY_URL = 'https://github.com/ShavitR/querais/blob/main/docs/PRIVACY.md';
@@ -19,6 +20,7 @@ const PRIVACY_URL = 'https://github.com/ShavitR/querais/blob/main/docs/PRIVACY.m
 const NAV = [
   { path: '/', label: 'explorer' },
   { path: '/playground', label: 'playground' },
+  { path: '/credit', label: 'credit' },
   { path: '/jobs', label: 'jobs' },
   { path: '/usage', label: 'usage' },
 ];
@@ -61,6 +63,8 @@ function Route({ route }: { route: string }) {
   switch (route) {
     case '/playground':
       return <Playground />;
+    case '/credit':
+      return <Sessions />;
     case '/jobs':
       return <Jobs />;
     case '/usage':
