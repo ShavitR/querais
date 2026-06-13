@@ -28,6 +28,7 @@ import {
   runObservabilityCase,
   runModelManifestCase,
   runServedAppCase,
+  runRequesterConsoleCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -115,6 +116,10 @@ async function main(): Promise<void> {
     console.log('▶  served-app case: gateway serves the web app at / + API-key cookie sign-in…');
     await runServedAppCase();
     console.log('✅ served-app case passed');
+
+    console.log('▶  requester-console case: cookie-auth chat + GET /v1/jobs list…');
+    await runRequesterConsoleCase();
+    console.log('✅ requester-console case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

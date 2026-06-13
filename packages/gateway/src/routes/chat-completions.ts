@@ -1,28 +1,44 @@
 import type { FastifyInstance } from 'fastify';
-import { buildChatCompletion, buildChunk, chatCompletionRequestSchema } from '@querais/shared';
+import {
+  AuthError,
+  buildChatCompletion,
+  buildChunk,
+  chatCompletionRequestSchema,
+} from '@querais/shared';
 import type { GatewayDeps } from '../deps.js';
 import { resolveRequester } from '../auth.js';
-import { validatePromptLimits } from '../quota.js';
+import { SESSION_COOKIE } from '../session.js';
+import { validatePromptLimits, type QuotaVerdict } from '../quota.js';
 import { openAiError, randomId, sendError, sseData } from '../http.js';
 
 /**
  * POST /v1/chat/completions — the OpenAI-compatible entrypoint. Supports both
- * buffered and streaming (SSE) responses. Auth via Bearer API key → requester wallet.
- * Slice 3: per-key daily quotas (429 + x-querais-quota-* headers) and prompt-abuse
- * limits run before any matching or chain interaction.
+ * buffered and streaming (SSE) responses. Auth via Bearer API key (SDK/CLI) OR the web-app
+ * session cookie (Slice 10B playground); Bearer wins. Slice 3: per-key daily quotas (429 +
+ * x-querais-quota-* headers) and prompt-abuse limits run before any matching or chain interaction.
  */
 export function registerChatCompletions(app: FastifyInstance, deps: GatewayDeps): void {
   app.post('/v1/chat/completions', async (request, reply) => {
+    // Resolve the requester + the quota tier from either credential. Bearer carries the key
+    // (tier from the key store); the cookie carries the tier in its claims (no key to look up).
     let requester;
-    try {
-      requester = resolveRequester(deps.keyStore, request.headers.authorization);
-    } catch (err) {
-      return sendError(reply, err);
+    let quota: QuotaVerdict;
+    const auth = request.headers.authorization;
+    if (auth) {
+      try {
+        requester = resolveRequester(deps.keyStore, auth);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+      const apiKey = auth.replace(/^Bearer\s+/i, '').trim();
+      quota = deps.quota.check(apiKey, requester);
+    } else {
+      const claims = deps.session.verify(request.cookies[SESSION_COOKIE]);
+      if (!claims) return sendError(reply, new AuthError('Missing Authorization header'));
+      requester = claims.wallet;
+      quota = deps.quota.checkWithTier(claims.tier, requester);
     }
 
-    // Per-key daily quota (jobs + tokens, derived from persisted job rows).
-    const apiKey = (request.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
-    const quota = deps.quota.check(apiKey, requester);
     reply.header('x-querais-quota-tier', quota.tier);
     reply.header('x-querais-quota-remaining-jobs', String(quota.remainingJobs));
     reply.header('x-querais-quota-remaining-tokens', String(quota.remainingTokens));

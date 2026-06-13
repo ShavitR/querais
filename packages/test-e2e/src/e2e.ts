@@ -1717,3 +1717,52 @@ export async function runServedAppCase(): Promise<void> {
     await h.stop();
   }
 }
+
+/**
+ * Slice 10B-1 requester console. The session cookie alone (no Bearer) drives a real chat
+ * completion (cookie-tier quota path) and lists the requester's jobs via GET /v1/jobs.
+ */
+export async function runRequesterConsoleCase(): Promise<void> {
+  const h = await startHarness(); // full harness — a node serves the completion
+  try {
+    // Sign in for a cookie (the playground/console credential).
+    const signin = await fetch(`${h.baseUrl}/v1/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ apiKey: API_KEY }),
+    });
+    assert.equal(signin.status, 200);
+    const cookie = signin.headers.get('set-cookie')!.split(';')[0]!;
+
+    // Unauthenticated jobs list → 401 (the app's read-only mode has no job history).
+    assert.equal((await fetch(`${h.baseUrl}/v1/jobs`)).status, 401, 'jobs list requires auth');
+
+    // A completion authenticated by the COOKIE only — proves cookie-auth chat + the
+    // cookie-tier quota path (no API key in the request).
+    const chatRes = await fetch(`${h.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        model: 'mock-model',
+        messages: [{ role: 'user', content: 'hi from the console' }],
+        max_tokens: 32,
+      }),
+    });
+    assert.equal(chatRes.status, 200, 'cookie authenticates /v1/chat/completions');
+    assert.match(chatRes.headers.get('x-querais-quota-tier') ?? '', /free/, 'cookie-tier quota');
+    const jobId = chatRes.headers.get('x-querais-job-id');
+    assert.ok(jobId, 'job id header present');
+
+    // The jobs explorer list (cookie auth) includes the job we just ran.
+    const list = (await (await fetch(`${h.baseUrl}/v1/jobs`, { headers: { cookie } })).json()) as {
+      object: string;
+      data: { jobId: string; model: string; status: string }[];
+    };
+    assert.equal(list.object, 'list');
+    const mine = list.data.find((j) => j.jobId === jobId);
+    assert.ok(mine, 'the job appears in GET /v1/jobs');
+    assert.equal(mine.model, 'mock-model');
+  } finally {
+    await h.stop();
+  }
+}

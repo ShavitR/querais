@@ -1,8 +1,9 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A BUILT — green bar passing on branch `slice-10a-app-foundation`, PR open,
-> awaiting the user's merge. 10B–10E not started. (Plan approved 2026-06-13; §5 decisions
-> locked.)
+> **Status:** 10A MERGED (#53). **10B-1 BUILT** — the requester console (playground / jobs /
+> usage) over the 10A cookie auth; green bar passing on branch `slice-10b-requester-console`,
+> PR open. 10B-2 (wallet/SIWE + deposit/session/EIP-712), 10C–10E not started. (Plan approved
+> 2026-06-13; §5 decisions locked.)
 > **Author:** prepared 2026-06-13 from the verified repo state (Slices 0–9 merged). This is
 > the planning doc; it becomes the as-built record as increments land (the `Slice8.md` /
 > `Slice9.md` convention).
@@ -223,15 +224,21 @@ All optional, defaulted, env-overridable (the `HARDENING_DEFAULTS` pattern):
 
 ## 4. Forward sketch — 10B / 10C / 10D / 10E (not built yet, scoped so 10A doesn't block them)
 
-- **10B — Requester console:** streaming **playground** (model picker + live per-request cost
-  readout), **keys & usage** (create/list keys with tier; usage + quota charts from `/v1/usage`
-  + `x-querais-quota-*` headers), **jobs explorer** (list + detail with Arbiscan settlement
-  link, batched-vs-escrow venue), and the **flagship sessions/credit flow**: deposit → **sign
-  the EIP-712 spending cap in the browser wallet** → watch live cap-spend / headroom / pending
-  debits from `GET /v1/sessions` → withdraw-after-notice. This is what finally makes Slice 2
-  (the marquee protocol work) demoable to a human. Adds **SIWE wallet sign-in** (§3.3).
-  *Acceptance:* deposit → session → 10 streamed completions → see the single `batchSettle`
-  land, entirely in the UI.
+- **10B — Requester console.** Split into two PRs:
+  - **10B-1 — BUILT (`slice-10b-requester-console`):** hash router + nav, **Playground**
+    (model picker, streamed output, best-effort per-request cost from the usage delta), **Jobs
+    explorer** (`GET /v1/jobs` list + Arbiscan provider links), **Usage** (settled totals +
+    tier). All over the **existing API-key session cookie** — no new wallet/contract surface.
+    Gateway: `/v1/chat/completions` + `GET /v1/jobs` now accept the cookie (Bearer still wins);
+    `QuotaEnforcer.checkWithTier` runs the cookie's tier; `JobStore.listForRequester`. 20th e2e
+    scenario (`runRequesterConsoleCase`: cookie-auth chat + jobs list). *Follow-ups noted:*
+    per-job **venue** (batched vs escrow) and **settlement-tx** links want extra persistence
+    (not stored today) — deferred; the jobs list shows status/tokens/95-5 split/provider.
+  - **10B-2 — NOT STARTED (the flagship, its own PR, confirm before building):** **SIWE wallet
+    sign-in** (§3.3) + the **deposit → sign the EIP-712 spending cap in the browser wallet →
+    live cap-spend / headroom / pending debits from `GET /v1/sessions` → withdraw** flow. This
+    is what finally makes Slice 2 demoable to a human. *Acceptance:* deposit → session → 10
+    streamed completions → see the single `batchSettle` land, entirely in the UI.
 - **10C — Operator console + admin review queue:** wallet-gated node view (earnings, the
   **5-dimension reputation breakdown** with history from `reputation_snapshots`, TTFT trend,
   stake, flags against the node, **dispute counter-evidence deadline countdown** — 5B's 24h
