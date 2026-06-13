@@ -58,7 +58,7 @@ export default async function Home() {
                 Point any OpenAI client at the gateway and call it — streaming, a model picker, and
                 pre-funded credit with a single signature.
               </p>
-              <a href={APP_URL}>Open the playground →</a>
+              <Link href="/for-developers/">For developers →</Link>
             </div>
             <div className="card">
               <h3>💸 Run a node, earn $QAIS</h3>
@@ -66,7 +66,7 @@ export default async function Home() {
                 Got a GPU and Ollama? Install a prebuilt release in ~5 minutes, serve jobs, and earn
                 for every token you stream.
               </p>
-              <Link href="/docs/quickstart/">Node quickstart →</Link>
+              <Link href="/for-node-operators/">Run a node →</Link>
             </div>
           </div>
         </div>
@@ -89,6 +89,7 @@ export default async function Home() {
                 Nodes stake $QAIS. A 5-dimension reputation score plus Layer-A semantic sampling
                 catch cheaters; disputes slash stake.
               </p>
+              <Link href="/security/">How verification works →</Link>
             </div>
             <div className="card">
               <h3>Deflationary token</h3>
@@ -96,6 +97,7 @@ export default async function Home() {
                 The 5% fee splits 60% ops / 20% stakers / <b>20% burned</b>. Fixed 1B supply, no
                 mint after launch.
               </p>
+              <Link href="/tokenomics/">Tokenomics →</Link>
             </div>
             <div className="card">
               <h3>Prompt privacy</h3>

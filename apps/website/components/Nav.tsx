@@ -10,9 +10,10 @@ export function Nav() {
           <QueraisLogo size={22} />
         </Link>
         <Link href="/how-it-works/">How it works</Link>
+        <Link href="/for-developers/">Developers</Link>
+        <Link href="/for-node-operators/">Run a node</Link>
         <Link href="/pricing/">Pricing</Link>
         <Link href="/docs/">Docs</Link>
-        <Link href="/faq/">FAQ</Link>
         <span className="spacer" />
         <a href={REPO_URL}>GitHub</a>
         <a className="btn" href={APP_URL}>
