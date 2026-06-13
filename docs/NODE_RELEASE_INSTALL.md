@@ -6,7 +6,7 @@ The release archive contains the entire daemon bundled into one file.
 ## Requirements
 
 - **Node.js ≥ 22.13** — https://nodejs.org (the launcher checks and tells you)
-- **Ollama** — https://ollama.com (runs the models; any OS)
+- **Ollama** — https://ollama.com (runs the models). The launcher **installs + starts it for you if it's missing** (Windows via winget, Linux/macOS via the official install script).
 - A GPU helps but is not required for small models.
 
 ## Install (≈5 minutes)
@@ -76,7 +76,7 @@ The release archive contains the entire daemon bundled into one file.
 
 | Symptom | Fix |
 | --- | --- |
-| `Inference backend 'ollama' unavailable` | Start Ollama; check `OLLAMA_URL`. |
+| `Inference backend 'ollama' unavailable` | The launcher auto-installs + starts Ollama; if it persists (e.g. no winget), install it from https://ollama.com and check `OLLAMA_URL`. |
 | `QueraIS needs Node >= 22.13` | Upgrade Node (the bundle uses `node:sqlite`-era APIs). |
 | `All served models fail the gateway's model manifest` | The gateway pins different model builds — re-pull the tags named in the warnings (`ollama pull <model>`); the expected digest is in the log. |
 | `No deployment found at …deployments/addresses.<net>.json` | `NETWORK` in `.env` names a manifest that isn't in the archive's `deployments/` directory. |
