@@ -41,10 +41,12 @@ One thread per community, adapted to local rules — never spam.
 > the node, 5% protocol fee) with staking + reputation keeping everyone honest. The
 > whole thing is real and running on Arbitrum Sepolia testnet today.
 >
-> **What we're asking.** Run a node through the beta: download a release archive, run
-> the launcher, keep it up. Your node auto-funds itself from the testnet faucet (gas +
-> stake), registers on-chain, and starts competing for jobs. Hardware floor is modest —
-> any machine that runs Ollama comfortably can serve small models.
+> **What we're asking.** Run a node through the beta — one command does it:
+> `iwr -useb https://querais.xyz/install.ps1 | iex` (Windows) or
+> `curl -fsSL https://querais.xyz/install.sh | sh` (mac/Linux), then keep it up. Your node
+> auto-funds itself from the testnet faucet (gas + stake), registers on-chain, and starts
+> competing for jobs. Hardware floor is modest — any machine that runs Ollama comfortably can
+> serve small models.
 >
 > **What you get.** Testnet QAIS earnings per served job (**no monetary value — no
 > token has launched**), launch bonuses for the earliest stable nodes, a spot on the
