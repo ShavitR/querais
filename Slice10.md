@@ -1,9 +1,9 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A MERGED (#53). **10B-1 BUILT** — the requester console (playground / jobs /
-> usage) over the 10A cookie auth; green bar passing on branch `slice-10b-requester-console`,
-> PR open. 10B-2 (wallet/SIWE + deposit/session/EIP-712), 10C–10E not started. (Plan approved
-> 2026-06-13; §5 decisions locked.)
+> **Status:** 10A MERGED (#53), 10B-1 MERGED (#54). **10B-2 BUILT** — wallet/SIWE sign-in +
+> the deposit/session/EIP-712 credit flow; green bar passing (21 e2e scenarios) on branch
+> `slice-10b2-sessions-wallet`, PR open. 10C–10E not started. (Plan approved 2026-06-13;
+> §5 + §10.7 decisions locked.)
 > **Author:** prepared 2026-06-13 from the verified repo state (Slices 0–9 merged). This is
 > the planning doc; it becomes the as-built record as increments land (the `Slice8.md` /
 > `Slice9.md` convention).
@@ -356,3 +356,126 @@ own PRs.
 > The working tree also carries an unrelated local edit to `start-gateway-sepolia.ps1` (an
 > operator helper, a public dev-key mapping) made by a parallel session — deliberately **left
 > unstaged**, not part of the 10A commit.
+
+---
+
+## 9. As-built record — 10B-1 (merged, PR #54 → main `7b87d82`)
+
+The requester console over the 10A session cookie — **no new wallet/contract surface**.
+- **App:** hash router + nav (`useHashRoute`); **Playground** (model picker, streamed output,
+  best-effort per-request cost from the usage delta); **Jobs explorer** (`GET /v1/jobs` list +
+  Arbiscan provider links); **Usage** (settled totals + tier); shared `lib/format`; client
+  additions (`getJobs`/`getModels`/`getCreditInfo`/`streamChat` — the last surfaces the in-band
+  SSE error frame like the SDK).
+- **Gateway:** `/v1/chat/completions` + new `GET /v1/jobs` accept the cookie (Bearer wins);
+  `QuotaEnforcer.checkWithTier` (cookie tier, per-wallet consumption); `JobStore.listForRequester`.
+- **Green bar:** build/typecheck/lint/test (gateway 165) + **20 e2e scenarios**
+  (`runRequesterConsoleCase`). **Follow-up:** per-job venue + settlement-tx links need extra
+  persistence (not stored) — deferred.
+
+---
+
+## 10. Build-ready plan — 10B-2 (the wallet + EIP-712 sessions flagship)
+
+> **Status:** PLAN — awaiting user sign-off before any build (money-adjacent: browser wallet
+> signing of an EIP-712 spending cap). Grounded in the verified contract/route surface below.
+
+**Goal (EXECUTION_PLAN 10B flagship):** make Slice 2 — batched session-deposit settlement —
+demoable to a human entirely in the UI. A requester connects a browser wallet, **deposits**
+QAIS into `CreditAccount`, **signs ONE EIP-712 spending cap**, fires streamed completions that
+batch-settle with **zero per-call wallet txs**, watches **cap-spend / headroom / pending debits**
+live, and **withdraws-after-notice**.
+
+### 10.2 Verified ground truth (what this builds on)
+- **EIP-712 cap** (`shared/src/spending-cap.ts`, mirrors `CreditAccount.sol`): struct
+  `SpendingCap { requester, settler, maxSpendWei, nonce, deadline }`, domain
+  `EIP712("QueraIS CreditAccount","1", chainId, creditAccount)`, types `SPENDING_CAP_TYPES`.
+  Helpers `signSpendingCap`, `toSignedSpendingCapWire` are pure and browser-safe (viem).
+- **CreditAccount.sol**: `deposit(uint256 amount)` (needs a prior QAIS `approve(creditAccount, amount)`),
+  `initiateWithdrawal()` then `completeWithdrawal()` after the on-chain notice delay.
+- **Gateway routes (exist):** `GET /v1/credit/info` → `{ chainId, creditAccount, token, settler }`;
+  `POST /v1/sessions` registers a signed cap (validates `cap.requester == authed wallet`,
+  `cap.settler == gateway`, deadline future, recovers signer == requester) — **today bearer-only**;
+  `GET /v1/sessions` → live `{ session, spentAgainstWei, creditBalanceWei, pendingDebitsWei,
+  pendingCount, … }` (already cookie-aware from 10A).
+
+### 10.3 Gateway work (small, additive)
+1. **SIWE wallet sign-in** (new, mints the SAME 10A cookie via a signature proof):
+   - `POST /v1/auth/nonce` → a **stateless** nonce (HMAC over `{addr, exp}`, no DB — thin-DB rule).
+   - `POST /v1/auth/wallet` `{ address, signature }` → verify an EIP-191 `personal_sign` over the
+     nonce message (viem `verifyMessage`, already a gateway dep), then `deps.session.mint(addr, 'free')`
+     and set the cookie. The cookie is already wallet-shaped (10A), so `/v1/auth/me` is unchanged.
+   - Tier for a pure-wallet principal defaults to `free` (no API key); a wallet that also owns a
+     key keeps its key tier when signing in by key. (Document the choice.)
+2. **`POST /v1/sessions` accepts the cookie** (extend with `resolveRequesterOrSession`, like
+   `GET /v1/sessions`/`/v1/usage`/chat) so a wallet-signed-in user can register their cap. Bearer
+   still wins. The existing `cap.requester == requester` check already binds the cap to the signer.
+3. No contract changes, no migrations.
+
+### 10.4 App work (`apps/dashboard`)
+- **Add `viem`** as an app dependency (the only web3 lib; tree-shaken). A `lib/wallet.ts`
+  wraps `window.ethereum` (EIP-1193) into a viem Wallet/Account: connect, `signTypedData` (cap),
+  `signMessage` (SIWE), `writeContract` (approve/deposit/withdraw), chain-guard (prompt to switch
+  to the deployment's `chainId` from `/v1/credit/info`). Graceful **no-wallet** state (link to a
+  wallet; the rest of the app is unaffected).
+- **Wallet sign-in** in `SignIn` (a second button next to API-key): connect → `/v1/auth/nonce`
+  → `signMessage` → `/v1/auth/wallet`. Reuses the existing session context unchanged.
+- **Sessions & credit view** (`views/Sessions.tsx`, new nav entry "credit"):
+  - **Deposit:** amount input → `approve` (if needed) → `deposit(amount)` (two txs, with a
+    progress/receipt UI). Reads balance/allowance via viem from `token`/`creditAccount`.
+  - **Open session:** pick `maxSpend` + `deadline` → build the cap (`shared` helper) →
+    **`signTypedData` in the wallet** → `POST /v1/sessions`. One signature, no gas.
+  - **Live status:** poll `GET /v1/sessions` → cap spent / **remaining** / headroom / pending
+    debits / credit balance (the math already lives server-side in `buildSessionStatus`).
+  - **Withdraw:** `initiateWithdrawal()` → countdown to `completeWithdrawal()` (notice from chain).
+- **Playground integration:** when a session is active, the cost readout notes "batched (0 gas)".
+
+### 10.5 Acceptance (EXECUTION_PLAN 10B)
+A new user goes **deposit → session → 10 streamed completions → sees the single `batchSettle`
+land**, entirely in the UI, no CLI. Plus: wallet sign-in works; withdraw-after-notice completes.
+
+### 10.6 Tests / green bar
+- e2e: a 21st scenario driving the **SIWE handshake** (nonce → sign → cookie) and **`POST /v1/sessions`
+  via the cookie** with a programmatically-signed cap (viem account in the harness, no browser),
+  then a batched completion settles — reusing the existing batched-settlement assertions.
+- Browser wallet calls (`window.ethereum`) aren't unit-testable headlessly; the **gateway** side
+  (SIWE verify, cookie-authed `POST /v1/sessions`) gets full e2e + unit coverage; the **client**
+  wallet wrapper is kept thin and typed.
+
+### 10.7 Decisions — LOCKED (confirmed 2026-06-13)
+1. **SIWE message format — ✅ Full EIP-4361** ("Sign-In with Ethereum"). Built with `viem/siwe`
+   (`createSiweMessage` in the app, `parseSiweMessage` + signature recover on the gateway —
+   viem ≥2.17 ships these; the repo's viem 2.52 has them). The nonce is a stateless,
+   alphanumeric, expiry-bound HMAC token (`gateway/src/siwe.ts`) — no nonce table (thin-DB);
+   documented 5-min replay window is the accepted testnet trade-off.
+2. **Wallet-principal tier — ✅ `free`** (pure-wallet sign-ins; revisit with 10C operator auth).
+3. **viem in the browser — ✅ the app's one web3 dep**, plus **`@querais/shared`** for the
+   spending-cap helpers + ABIs (no re-deriving the EIP-712 surface).
+
+### 10.8 Design rules that hold
+Same-origin/cookie auth (no CORS); **no private keys or signatures persisted** (the cap signature
+is stored as the session authorization, exactly as the SDK already does via `POST /v1/sessions`);
+the gateway only ever settles at the signed cap (on-chain enforced); pause leaves withdrawal/exit
+open (Slice 6 rule). Money-moving in the browser → this plan gets your sign-off before any code.
+
+### 10.9 As-built record — 10B-2 (branch `slice-10b2-sessions-wallet`)
+- **Gateway:** EIP-4361 SIWE — `SessionAuth.siweNonce`/`verifySiweNonce` (stateless expiry-bound
+  HMAC, EIP-4361-valid) + `POST /v1/auth/nonce` and `POST /v1/auth/wallet` (`viem/siwe`
+  `parseSiweMessage`/`validateSiweMessage` + `recoverMessageAddress`, chain-bound, mints the
+  same cookie, tier `free`). `POST /v1/sessions` accepts the cookie. 4 SIWE unit tests.
+- **App:** `viem` added; `lib/contracts.ts` (inlined ERC-20 + CreditAccount ABIs + the EIP-712
+  cap type/domain — kept identical to `shared/spending-cap.ts`); `lib/wallet.ts` (EIP-1193
+  connect / chain-guard / SIWE-sign / cap-sign / deposit+approve / withdraw / reads); wallet
+  "connect" in `SignIn`; `views/Sessions.tsx` (credit account + active session status from
+  `GET /v1/sessions`, deposit → sign-cap → live status → withdraw-after-notice); `credit` nav.
+- **Bug fixed in passing (real, not test-only): `forceCloseConnections: true`** on the Fastify
+  server. The bigger viem app bundle shifted the keep-alive connection lifecycle enough that
+  `app.close()` waited indefinitely on an idle pooled socket (Fastify's default never force-closes
+  it) — stalling graceful shutdown / e2e teardown past the drain window. Forcing idle sockets shut
+  lets `close()` complete and the onClose **debit-flush still runs** (graceful-shutdown e2e still
+  green). Diagnosed via per-step harness instrumentation; a latent shutdown-robustness gap, now closed.
+- **21st e2e scenario** (`runWalletSessionCase`): SIWE nonce → sign → cookie; a foreign-wallet
+  signature → 401; the cookie registers a browser-signed cap via `POST /v1/sessions`; live status
+  reflects it. **Green bar:** build/typecheck/lint/test (gateway 167) + **21 e2e scenarios** pass.
+- **Browser wallet UI** (`window.ethereum` deposit/sign/withdraw) isn't headless-testable, so the
+  gateway side is fully covered by e2e/unit and the client wallet wrapper is kept thin + typed.

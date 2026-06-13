@@ -43,6 +43,32 @@ export class SessionAuth {
     return createHmac('sha256', this.key).update(payload).digest('hex');
   }
 
+  /**
+   * Slice 10B-2 — a stateless SIWE (EIP-4361) nonce: an expiry-bound HMAC token. Pure
+   * lowercase hex (44 chars), so it satisfies EIP-4361's `[a-zA-Z0-9]{8,}` nonce rule with
+   * no nonce table (thin-DB). A captured signature is replayable only until `exp` (5 min) —
+   * the accepted testnet trade-off; the signature itself binds the address.
+   */
+  siweNonce(nowSeconds: number = Math.floor(Date.now() / 1000)): string {
+    const expHex = (nowSeconds + 300).toString(16).padStart(12, '0');
+    return expHex + this.siweSig(expHex);
+  }
+
+  verifySiweNonce(nonce: string, nowSeconds: number = Math.floor(Date.now() / 1000)): boolean {
+    if (!/^[0-9a-f]{44}$/.test(nonce)) return false;
+    const expHex = nonce.slice(0, 12);
+    const sig = nonce.slice(12);
+    const expected = this.siweSig(expHex);
+    if (sig.length !== expected.length) return false;
+    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+    return parseInt(expHex, 16) >= nowSeconds;
+  }
+
+  private siweSig(expHex: string): string {
+    // Domain-separated from the session-cookie MAC; truncated to keep the nonce short.
+    return createHmac('sha256', this.key).update(`siwe:${expHex}`).digest('hex').slice(0, 32);
+  }
+
   /** Mint a cookie value for a signed-in principal. `nowSeconds` is injectable for tests. */
   mint(wallet: Address, tier: string, nowSeconds: number = Math.floor(Date.now() / 1000)): string {
     const claims: SessionClaims = { wallet, tier, exp: nowSeconds + this.ttlSeconds };

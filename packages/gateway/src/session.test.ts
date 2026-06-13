@@ -34,3 +34,23 @@ test('an expired cookie is rejected', () => {
   assert.ok(s.verify(token, 4_000), 'valid before expiry');
   assert.equal(s.verify(token, 5_000), null, 'rejected after expiry');
 });
+
+test('SIWE nonce: issued nonce is EIP-4361-valid and verifies until it expires', () => {
+  const s = new SessionAuth('secret', 3600);
+  const nonce = s.siweNonce(1_000); // exp = 1300
+  assert.match(nonce, /^[a-zA-Z0-9]{8,}$/, 'EIP-4361 alphanumeric nonce');
+  assert.equal(s.verifySiweNonce(nonce, 1_200), true, 'valid before expiry');
+  assert.equal(s.verifySiweNonce(nonce, 2_000), false, 'rejected after expiry');
+});
+
+test('SIWE nonce: tampered or foreign-secret nonces are rejected', () => {
+  const s = new SessionAuth('secret-A', 3600);
+  const nonce = s.siweNonce(1_000);
+  assert.equal(s.verifySiweNonce(nonce.slice(0, -1) + '0', 1_100), false, 'mutated sig rejected');
+  assert.equal(s.verifySiweNonce('zz', 1_100), false, 'malformed rejected');
+  assert.equal(
+    new SessionAuth('secret-B', 3600).verifySiweNonce(nonce, 1_100),
+    false,
+    'foreign secret rejected',
+  );
+});

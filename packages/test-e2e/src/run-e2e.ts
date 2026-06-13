@@ -29,6 +29,7 @@ import {
   runModelManifestCase,
   runServedAppCase,
   runRequesterConsoleCase,
+  runWalletSessionCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -120,6 +121,10 @@ async function main(): Promise<void> {
     console.log('▶  requester-console case: cookie-auth chat + GET /v1/jobs list…');
     await runRequesterConsoleCase();
     console.log('✅ requester-console case passed');
+
+    console.log('▶  wallet-session case: EIP-4361 SIWE sign-in → cookie registers a signed cap…');
+    await runWalletSessionCase();
+    console.log('✅ wallet-session case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

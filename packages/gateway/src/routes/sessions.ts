@@ -7,7 +7,7 @@ import {
   type Address,
 } from '@querais/shared';
 import type { GatewayDeps } from '../deps.js';
-import { resolveRequester, resolveRequesterOrSession } from '../auth.js';
+import { resolveRequesterOrSession } from '../auth.js';
 import { SESSION_COOKIE } from '../session.js';
 import { openAiError, sendError } from '../http.js';
 import { buildSessionStatus } from '../session-status.js';
@@ -69,7 +69,14 @@ export function registerSessions(app: FastifyInstance, deps: GatewayDeps): void 
   app.post('/v1/sessions', async (request, reply) => {
     let requester: Address;
     try {
-      requester = resolveRequester(deps.keyStore, request.headers.authorization);
+      // Slice 10B-2: a wallet-signed-in user (cookie) registers their cap from the browser;
+      // Bearer (SDK/CLI) still wins. The cap.requester == requester check below binds it.
+      requester = resolveRequesterOrSession(
+        deps.keyStore,
+        deps.session,
+        request.headers.authorization,
+        request.cookies[SESSION_COOKIE],
+      );
     } catch (err) {
       return sendError(reply, err);
     }

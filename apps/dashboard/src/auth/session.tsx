@@ -7,14 +7,24 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createSiweMessage } from 'viem/siwe';
 import type { Me } from '../api/types';
-import { getMe, signInWithKey, signOut as apiSignOut } from '../api/client';
+import {
+  getCreditInfo,
+  getMe,
+  getSiweNonce,
+  signInWithKey,
+  signInWithWallet,
+  signOut as apiSignOut,
+} from '../api/client';
+import { connect, signMessage } from '../lib/wallet';
 
 interface SessionValue {
   me: Me | null;
   loading: boolean;
   error: string | null;
   signIn: (apiKey: string) => Promise<void>;
+  signInWallet: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -54,13 +64,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // EIP-4361 wallet sign-in: connect → nonce → sign a SIWE message → exchange for the cookie.
+  const signInWallet = useCallback(async () => {
+    setError(null);
+    try {
+      const { address } = await connect();
+      const info = await getCreditInfo();
+      const { nonce } = await getSiweNonce();
+      const message = createSiweMessage({
+        domain: window.location.host,
+        address,
+        statement: 'Sign in to QueraIS (testnet — no real value).',
+        uri: window.location.origin,
+        version: '1',
+        chainId: info.chainId,
+        nonce,
+      });
+      const signature = await signMessage(address, message);
+      setMe(await signInWithWallet(message, signature));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'wallet sign-in failed');
+      throw err;
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     await apiSignOut().catch(() => undefined);
     setMe(null);
   }, []);
 
   return (
-    <SessionContext.Provider value={{ me, loading, error, signIn, signOut }}>
+    <SessionContext.Provider value={{ me, loading, error, signIn, signInWallet, signOut }}>
       {children}
     </SessionContext.Provider>
   );

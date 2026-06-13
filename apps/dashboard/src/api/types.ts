@@ -104,3 +104,29 @@ export interface CreditInfo {
   token: string;
   settler: string;
 }
+
+/** GET /v1/sessions — the live session/credit/headroom view (Slice 2 / 3B). */
+export interface SessionStatus {
+  requester: string;
+  settler: string;
+  session: {
+    nonce: string;
+    maxSpendWei: string;
+    deadline: string;
+    spentAgainstWei: string;
+    capRemainingWei: string;
+  } | null;
+  credit: { balanceWei: string };
+  pendingDebits: { count: number; totalWei: string };
+  headroomWei: string | null;
+}
+
+/** The signed spending cap as POSTed to /v1/sessions (bigints as decimal strings). */
+export interface SignedCapWire {
+  requester: string;
+  settler: string;
+  maxSpendWei: string;
+  nonce: string;
+  deadline: string;
+  signature: string;
+}
