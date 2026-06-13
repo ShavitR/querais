@@ -1,9 +1,9 @@
 # Slice 10 — The web app (Stage D opener)
 
-> **Status:** 10A (#53), 10B-1 (#54), 10B-2 (#55) MERGED; static-app fix (#56) MERGED; README
-> web-dashboard section (#57). **10C-1 BUILT** — operator console + admin review queue (read-only);
-> green bar passing (22 e2e scenarios) on branch `slice-10c1-operator-admin`, PR open. **10C-2**
-> (admin raise-dispute, money-moving) = plan in §11, awaiting sign-off. 10D/10E not started.
+> **Status:** 10A (#53), 10B-1 (#54), 10B-2 (#55), static-app fix (#56), README (#57), 10C-1 (#58)
+> all MERGED. **10C-2 BUILT** — admin raise-dispute (money-moving, signed off) + dispute reads +
+> operator dispute panel; green bar passing (23 e2e scenarios) on branch `slice-10c2-disputes`,
+> PR open. **Slice 10C complete after this.** 10D (live explorer) / 10E (Next.js site) not started.
 > **Author:** prepared 2026-06-13 from the verified repo state (Slices 0–9 merged). This is
 > the planning doc; it becomes the as-built record as increments land (the `Slice8.md` /
 > `Slice9.md` convention).
@@ -503,7 +503,21 @@ awaiting sign-off.**
   (`runOperatorConsoleCase`: SIWE as the node → own-node overview; unauth → 401; admin queue
   token-gated + every flag carries `relatedVerdicts`) + a flags-route unit test for the enrichment.
 
-### 11.2 Build-ready plan — 10C-2 (admin raise-dispute · MONEY-MOVING · awaiting sign-off)
+### 11.2 As-built — 10C-2 (admin raise-dispute · MONEY-MOVING · signed off 2026-06-13 · branch `slice-10c2-disputes`)
+- **Gateway:** `ChainClient.getDispute(jobId)` (decodes the flattened mapping getter positionally
+  or by name — viem differs) + `disputesAgainst(defendant)` (DisputeRaised log scan). Routes:
+  public `GET /v1/disputes/:jobId`, cookie-gated `GET /v1/operator/disputes`, and admin-gated
+  **`POST /v1/admin/disputes` `{jobId, defendant}`** → `ensureDisputeAllowance` → `raiseDispute`
+  → `autoResolve(true)` (challenger/protocol wins → 20% slash, 50/30/20). 409 with no contract;
+  on-chain reverts (DisputeExists/NotANode) surface cleanly. Evidence = `keccak256(jobId)` (hash only).
+- **App:** Admin queue gains a per-verdict **⚔ dispute** button with a `window.confirm`
+  double-confirm spelling out the slash; Operator gains a **Disputes against your node** panel
+  (status + the 24h counter-evidence countdown).
+- **Green bar:** build/typecheck/lint/test (gateway 168) + **23 e2e scenarios** (`runAdminDisputeCase`:
+  401 without token → admin raise → exactly-20% slash → public read scoped to defendant → second
+  raise rejected). The 50/30/20 split itself stays pinned by the existing `runDisputeCase`.
+
+<details><summary>Original build-ready plan (for the record)</summary>
 **Goal:** let an admin escalate a confirmed cheater from the review queue to an on-chain
 FAST-track dispute (5B `DisputeResolution.autoResolve` → 20%-stake slash split 50/30/20), and
 show operators/admins the dispute state + 24h counter-evidence countdown the contract already tracks.
@@ -527,3 +541,5 @@ them when `GATEWAY_LAYER_A_DISPUTE_ON_ANOMALY` is on). What's missing: a **read*
 **Why sign-off first (standing rule, HANDOFF §11):** this UI/endpoint *moves money* — it slashes a
 node's stake on-chain. Everything it calls already exists and is tested (5B), but exposing an
 admin-triggered slash is the money-moving step that gets explicit approval before building.
+
+</details>

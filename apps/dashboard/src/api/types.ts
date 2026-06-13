@@ -201,3 +201,17 @@ export interface AdminFlagsResponse {
   flags: AdminFlag[];
   openCount: number;
 }
+
+/** GET /v1/disputes/:jobId — a job's on-chain dispute (Slice 10C-2). */
+export interface DisputeView {
+  jobId: string;
+  status: string; // none | open | countered | resolved
+  challenger: string;
+  defendant: string;
+  bondWei: string;
+  evidenceHash: string;
+  counterEvidenceHash: string;
+  raisedAt: number;
+  counterEvidenceDeadline: number;
+  challengerWon: boolean;
+}
