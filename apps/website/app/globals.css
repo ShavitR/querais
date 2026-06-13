@@ -568,6 +568,67 @@ footer.site .legal {
   align-items: center;
 }
 
+/* breadcrumbs */
+.crumbs {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.crumbs .sep {
+  margin: 0 8px;
+  opacity: 0.5;
+}
+.crumbs [aria-current='page'] {
+  color: var(--text);
+}
+
+/* rendered markdown (terms / privacy) */
+.prose {
+  max-width: 760px;
+  margin-top: 24px;
+}
+.prose h2 {
+  font-size: 22px;
+  margin: 32px 0 10px;
+}
+.prose h3 {
+  font-size: 18px;
+  margin: 24px 0 8px;
+}
+.prose p,
+.prose li {
+  color: var(--muted);
+}
+.prose ul,
+.prose ol {
+  padding-left: 22px;
+}
+.prose li {
+  margin-bottom: 6px;
+}
+.prose strong {
+  color: var(--text);
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0;
+  font-size: 14px;
+}
+.prose th,
+.prose td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.prose th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 @media (max-width: 720px) {
   .hero h1 {
     font-size: 34px;
