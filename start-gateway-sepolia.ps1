@@ -11,4 +11,14 @@ $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 $env:NETWORK = 'arbitrumSepolia'
 $env:RPC_URL = 'https://sepolia-rollup.arbitrum.io/rpc'
+# On Sepolia the operator wallet is the DEPLOYER (0xc80A…) — it holds the ORACLE/MATCHING/
+# SLASHER/SETTLER roles AND the QAIS supply. The repo .env's GATEWAY_PRIVATE_KEY is a localhost
+# Hardhat dev key (0x7099…), so use DEPLOYER_PRIVATE_KEY as the gateway + faucet distributor key
+# for the live gateway. (dotenv inside main.js won't override an already-set env var.)
+$depLine = (Select-String -Path .env -Pattern '^DEPLOYER_PRIVATE_KEY=' | Select-Object -First 1).Line
+if ($depLine) {
+  $dep = ($depLine -replace '^DEPLOYER_PRIVATE_KEY=', '' -replace '"', '').Trim()
+  $env:GATEWAY_PRIVATE_KEY = $dep
+  $env:GATEWAY_FAUCET_PRIVATE_KEY = $dep
+}
 node packages/gateway/dist/main.js *>> "$PSScriptRoot\gateway-data\gateway.service.log"
