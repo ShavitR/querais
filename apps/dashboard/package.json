@@ -4,8 +4,28 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Read-only QueraIS dashboard (Vite + React). Implemented in M6.",
+  "description": "QueraIS web app (Vite + React + TS) — served by the gateway at /. Slice 10A foundation.",
   "scripts": {
-    "dev": "node -e \"console.log('@querais/dashboard: Vite app lands in M6')\""
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vite": "^6.0.7"
   }
 }

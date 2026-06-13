@@ -1,0 +1,213 @@
+/*
+ * Dark theme carried over from the retired inline dashboard (routes/dashboard.ts) so the
+ * look is continuous. The component kit (src/components/kit.tsx) maps onto these classes.
+ */
+:root {
+  color-scheme: dark;
+  --bg: #0b0f17;
+  --panel: #111726;
+  --line: #1d2738;
+  --line-dash: #1d2738;
+  --text: #d6e1ef;
+  --muted: #7d8aa3;
+  --accent: #2563eb;
+  --ok: #2ec26b;
+  --warn: #e0b341;
+  --bad: #e0556b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font:
+    14px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--muted);
+}
+
+.header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header h1 {
+  font-size: 18px;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.header .spacer {
+  flex: 1;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.dot.degraded {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+
+.dot.down {
+  background: var(--bad);
+  box-shadow: 0 0 8px var(--bad);
+}
+
+.banner {
+  padding: 8px 24px;
+  background: #1a1206;
+  border-bottom: 1px solid #3a2a0a;
+  color: #e7c989;
+  font-size: 12px;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.card h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--line-dash);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+input,
+button {
+  font: inherit;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  padding: 8px 16px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.badge.flag {
+  border-color: #5a2a33;
+  color: var(--bad);
+}
+
+.error {
+  color: var(--bad);
+  font-size: 12px;
+}
+
+footer {
+  padding: 12px 24px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.bars {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 18px;
+}
+
+.bars span {
+  width: 6px;
+  background: var(--accent);
+  border-radius: 1px 1px 0 0;
+  opacity: 0.85;
+}
