@@ -47,6 +47,55 @@ export interface DisputeView {
 
 const DISPUTE_STATUS = ['none', 'open', 'countered', 'resolved'] as const;
 
+/** How long to wait before re-sending a write the RPC rejected with a stale nonce,
+ *  giving a lagging public-RPC backend a moment to catch up. */
+const NONCE_RETRY_DELAY_MS = 400;
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Flatten an error and its `cause` chain (including viem BaseError extras) into one
+ *  searchable string — RPC nonce errors often surface in `details`/`cause`, not `message`. */
+function collectErrorText(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur instanceof Error) {
+      const e = cur as Error & {
+        details?: string;
+        shortMessage?: string;
+        metaMessages?: string[];
+        cause?: unknown;
+      };
+      parts.push(e.message);
+      if (e.shortMessage) parts.push(e.shortMessage);
+      if (e.details) parts.push(e.details);
+      if (e.metaMessages) parts.push(...e.metaMessages);
+      cur = e.cause;
+    } else {
+      parts.push(String(cur));
+      break;
+    }
+  }
+  return parts.join(' | ');
+}
+
+/** True when an error reports a stale/reused nonce — the one failure that is safe to
+ *  retry, because the node rejected the tx at submission (it never entered the mempool),
+ *  so re-sending with a fresh nonce cannot double-spend. Phrasings vary across RPCs. */
+export function isNonceError(err: unknown): boolean {
+  const text = collectErrorText(err).toLowerCase();
+  return (
+    text.includes('nonce too low') ||
+    text.includes('nonce has already been used') ||
+    text.includes('nonce provided') ||
+    text.includes('invalid nonce') ||
+    text.includes("doesn't have the correct nonce") ||
+    text.includes('tx doesn’t have the correct nonce')
+  );
+}
+
 /**
  * The gateway's on-chain interface. The gateway wallet holds MATCHING_ENGINE_ROLE
  * (createJob/assignJob) and ORACLE_ROLE (completeJob/verifyAndRelease/failJob and
@@ -70,6 +119,30 @@ export class ChainClient {
       throw new Error(`${what} reverted on-chain (tx ${hash})`);
     }
     return hash;
+  }
+
+  /**
+   * Submit a single chain write, retrying ONCE if the RPC rejects it for a stale nonce.
+   *
+   * The wallet's account carries viem's nonceManager (see `makeWalletClient`), which
+   * serializes nonces locally and — critically — resets its cache whenever a send
+   * fails. So if a "nonce too low" still slips through (e.g. the first send after a
+   * gateway restart hits a public-RPC backend whose `pending` count lags), the cache
+   * is already cleared; a brief pause + one re-send picks up a freshly-read nonce.
+   *
+   * Only nonce errors are retried: they are thrown at submission before the tx enters
+   * the mempool, so re-sending cannot double-spend. Any other error (e.g. a revert)
+   * propagates immediately. `send` must perform exactly the submission (writeContract);
+   * receipt-waiting happens in `waitForSuccess`, outside the retry.
+   */
+  private async submitWrite(send: () => Promise<Hex>): Promise<Hex> {
+    try {
+      return await send();
+    } catch (err) {
+      if (!isNonceError(err)) throw err;
+      await delay(NONCE_RETRY_DELAY_MS);
+      return await send();
+    }
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -128,73 +201,87 @@ export class ChainClient {
     maxTokens: bigint,
     deadline: bigint,
   ): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.jobEscrow,
-      abi: jobEscrowAbi,
-      functionName: 'createJob',
-      args: [jobId, requester, maxPricePerTokenWei, maxTokens, deadline],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.jobEscrow,
+        abi: jobEscrowAbi,
+        functionName: 'createJob',
+        args: [jobId, requester, maxPricePerTokenWei, maxTokens, deadline],
+      }),
+    );
     return this.waitForSuccess(hash, 'createJob');
   }
 
   async assignJob(jobId: Hex, provider: Address, agreedPricePerTokenWei: bigint): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.jobEscrow,
-      abi: jobEscrowAbi,
-      functionName: 'assignJob',
-      args: [jobId, provider, agreedPricePerTokenWei],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.jobEscrow,
+        abi: jobEscrowAbi,
+        functionName: 'assignJob',
+        args: [jobId, provider, agreedPricePerTokenWei],
+      }),
+    );
     return this.waitForSuccess(hash, 'assignJob');
   }
 
   // ── Oracle writes (used from M5 settlement) ──────────────────────────────────
   async completeJob(jobId: Hex, actualTokens: bigint, resultHash: Hex): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.jobEscrow,
-      abi: jobEscrowAbi,
-      functionName: 'completeJob',
-      args: [jobId, actualTokens, resultHash],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.jobEscrow,
+        abi: jobEscrowAbi,
+        functionName: 'completeJob',
+        args: [jobId, actualTokens, resultHash],
+      }),
+    );
     return this.waitForSuccess(hash, 'completeJob');
   }
 
   async verifyAndRelease(jobId: Hex): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.jobEscrow,
-      abi: jobEscrowAbi,
-      functionName: 'verifyAndRelease',
-      args: [jobId],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.jobEscrow,
+        abi: jobEscrowAbi,
+        functionName: 'verifyAndRelease',
+        args: [jobId],
+      }),
+    );
     return this.waitForSuccess(hash, 'verifyAndRelease');
   }
 
   async failJob(jobId: Hex, reason: string): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.jobEscrow,
-      abi: jobEscrowAbi,
-      functionName: 'failJob',
-      args: [jobId, reason],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.jobEscrow,
+        abi: jobEscrowAbi,
+        functionName: 'failJob',
+        args: [jobId, reason],
+      }),
+    );
     return this.waitForSuccess(hash, 'failJob');
   }
 
   async slash(wallet: Address, amount: bigint, reason: string): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.nodeRegistry,
-      abi: nodeRegistryAbi,
-      functionName: 'slash',
-      args: [wallet, amount, reason],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.nodeRegistry,
+        abi: nodeRegistryAbi,
+        functionName: 'slash',
+        args: [wallet, amount, reason],
+      }),
+    );
     return this.waitForSuccess(hash, 'slash');
   }
 
   async updateReputation(wallet: Address, newScore: number): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.nodeRegistry,
-      abi: nodeRegistryAbi,
-      functionName: 'updateReputation',
-      args: [wallet, newScore],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.nodeRegistry,
+        abi: nodeRegistryAbi,
+        functionName: 'updateReputation',
+        args: [wallet, newScore],
+      }),
+    );
     return this.waitForSuccess(hash, 'updateReputation');
   }
 
@@ -213,12 +300,14 @@ export class ChainClient {
       provider: d.provider,
       amountWei: d.amountWei,
     }));
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.creditAccount,
-      abi: creditAccountAbi,
-      functionName: 'batchSettle',
-      args: [capArg, cap.signature, debitArg],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.creditAccount,
+        abi: creditAccountAbi,
+        functionName: 'batchSettle',
+        args: [capArg, cap.signature, debitArg],
+      }),
+    );
     return this.waitForSuccess(hash, 'batchSettle');
   }
 
@@ -278,34 +367,40 @@ export class ChainClient {
       }),
     ]);
     if (allowance >= bond) return;
-    const hash = await this.walletClient.writeContract({
-      address: this.deployment.contracts.token,
-      abi: quaisTokenAbi,
-      functionName: 'approve',
-      args: [dispute, maxUint256],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.deployment.contracts.token,
+        abi: quaisTokenAbi,
+        functionName: 'approve',
+        args: [dispute, maxUint256],
+      }),
+    );
     await this.waitForSuccess(hash, 'approve(dispute bond)');
   }
 
   /** Raise a dispute against a provider, posting the challenger bond. */
   async raiseDispute(jobId: Hex, defendant: Address, evidenceHash: Hex): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.requireDispute(),
-      abi: disputeResolutionAbi,
-      functionName: 'raiseDispute',
-      args: [jobId, defendant, evidenceHash],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.requireDispute(),
+        abi: disputeResolutionAbi,
+        functionName: 'raiseDispute',
+        args: [jobId, defendant, evidenceHash],
+      }),
+    );
     return this.waitForSuccess(hash, 'raiseDispute');
   }
 
   /** FAST-track oracle resolution (the oracle's re-run confirmed the outcome). */
   async autoResolveDispute(jobId: Hex, challengerWins: boolean): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.requireDispute(),
-      abi: disputeResolutionAbi,
-      functionName: 'autoResolve',
-      args: [jobId, challengerWins],
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.requireDispute(),
+        abi: disputeResolutionAbi,
+        functionName: 'autoResolve',
+        args: [jobId, challengerWins],
+      }),
+    );
     return this.waitForSuccess(hash, 'autoResolve');
   }
 
@@ -409,11 +504,13 @@ export class ChainClient {
 
   /** Execute the daily 60/20/20 sweep (receipt-checked like every chain write). */
   async distributeTreasury(): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.requireTreasury(),
-      abi: protocolTreasuryAbi,
-      functionName: 'distribute',
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.requireTreasury(),
+        abi: protocolTreasuryAbi,
+        functionName: 'distribute',
+      }),
+    );
     return this.waitForSuccess(hash, 'distribute');
   }
 
@@ -443,11 +540,13 @@ export class ChainClient {
 
   /** Credit pending rewards pro-rata to the active staked nodes (receipt-checked). */
   async distributeRewardsEpoch(): Promise<Hex> {
-    const hash = await this.walletClient.writeContract({
-      address: this.requireRewards(),
-      abi: stakingRewardsAbi,
-      functionName: 'distributeEpoch',
-    });
+    const hash = await this.submitWrite(() =>
+      this.walletClient.writeContract({
+        address: this.requireRewards(),
+        abi: stakingRewardsAbi,
+        functionName: 'distributeEpoch',
+      }),
+    );
     return this.waitForSuccess(hash, 'distributeEpoch');
   }
 

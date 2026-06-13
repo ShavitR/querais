@@ -1,4 +1,11 @@
-import { createPublicClient, createWalletClient, http, type Chain, type Hex } from 'viem';
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  nonceManager,
+  type Chain,
+  type Hex,
+} from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { hardhat, arbitrumSepolia } from 'viem/chains';
 
@@ -27,7 +34,18 @@ export function makePublicClient(rpcUrl: string, chainId?: number) {
 
 export function makeWalletClient(rpcUrl: string, privateKey: Hex, chainId?: number) {
   return createWalletClient({
-    account: privateKeyToAccount(privateKey),
+    // Attach viem's shared nonceManager so nonces are allocated and serialized
+    // *locally* instead of re-reading the RPC's `pending` count on every send.
+    // The gateway issues several sequential writes per job from one wallet
+    // (createJob → assignJob → completeJob → verifyAndRelease), and the public
+    // Arbitrum Sepolia RPC's `pending` nonce lags under that burst — causing the
+    // second/third back-to-back job to reuse a nonce ("nonce too low"). The
+    // manager keeps a per-(address, chainId) high-water mark and returns
+    // previousNonce+1 when the RPC lags, defeating the race. Using the shared
+    // singleton (not a fresh one per client) means two clients built from the
+    // same key — e.g. the gateway's settlement and faucet wallets — share one
+    // counter, so their sends stay serialized too.
+    account: privateKeyToAccount(privateKey, { nonceManager }),
     chain: resolveChain(chainId),
     transport: http(rpcUrl),
   });
