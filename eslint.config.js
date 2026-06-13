@@ -16,6 +16,7 @@ export default tseslint.config(
       'packages/contracts/deployments/**',
       'packages/contracts/src/abis.ts', // auto-generated from artifacts
       'apps/dashboard/**', // dashboard has its own (Vite/React) lint scope
+      'apps/website/**', // Next.js site — own toolchain (next build type-checks)
       'sdk-python/**', // Python toolchain (ruff/pytest) — incl. its local .venv
       'release/**', // generated release artifacts (scripts/bundle-daemon.mjs)
     ],

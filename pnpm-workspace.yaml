@@ -2,10 +2,12 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
-# esbuild ships a platform binary and runs a postinstall to link it; tsx depends
-# on it. Allow its build script so `tsx` works for running/testing TS directly.
+# esbuild ships a platform binary and runs a postinstall to link it (tsx depends on it).
+# sharp is pulled in by Next.js (apps/website); its build just links a prebuilt binary.
 allowBuilds:
   esbuild: true
+  sharp: true
 
 onlyBuiltDependencies:
   - esbuild
+  - sharp

@@ -1,5 +1,7 @@
 **/dist/**
 **/node_modules/**
+**/.next/**
+apps/website/out/**
 **/artifacts/**
 **/cache/**
 **/typechain-types/**
