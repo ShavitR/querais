@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import pino from 'pino';
@@ -1672,6 +1673,23 @@ export async function runServedAppCase(): Promise<void> {
     const asset = await fetch(`${h.baseUrl}${assetMatch![1]}`);
     assert.equal(asset.status, 200, 'hashed JS asset 200s');
     assert.match(asset.headers.get('content-type') ?? '', /javascript/, 'served as JS');
+
+    // 2b. Regression guard: a file added to dist AFTER the gateway booted must still be served.
+    //     The asset routes resolve from disk per request — NOT a glob frozen at boot. Otherwise
+    //     rebuilding the app (new content-hash filenames) under a long-running gateway 404s every
+    //     hashed asset and the page goes blank (the live-gateway bug this guards against).
+    const probe = join(repoRoot(), 'apps', 'dashboard', 'dist', 'assets', '_e2e_postboot.js');
+    writeFileSync(probe, 'export const ok = 1;\n');
+    try {
+      const fresh = await fetch(`${h.baseUrl}/assets/_e2e_postboot.js`);
+      assert.equal(
+        fresh.status,
+        200,
+        'a file added after boot is served (no boot-time route freeze)',
+      );
+    } finally {
+      rmSync(probe, { force: true });
+    }
 
     // 3. A client-side route deep-link falls back to index.html (SPA), not a 404.
     const deep = await fetch(`${h.baseUrl}/operator/some/route`, { headers: html });
