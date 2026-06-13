@@ -5,7 +5,7 @@
  * against it directly (see the e2e parity test). This client adds convenience plus
  * QueraIS-specific helpers (nodes(), stats()).
  */
-export const SDK_VERSION = '0.2.4';
+export const SDK_VERSION = '0.2.5';
 
 export {
   QueraisClient,
