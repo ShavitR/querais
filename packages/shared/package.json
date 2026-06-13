@@ -1,6 +1,6 @@
 {
   "name": "@querais/shared",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "MIT",
   "description": "Shared types, schemas, wire protocol, and EIP-712 helpers for the QueraIS protocol. Published as a dependency of @querais/sdk.",
   "repository": {

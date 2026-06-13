@@ -65,7 +65,7 @@ export interface NodeInfo {
 }
 
 /** The hosted QueraIS gateway — the default target when no base URL is supplied. */
-export const DEFAULT_GATEWAY_URL = 'https://querais-gateway.fly.dev';
+export const DEFAULT_GATEWAY_URL = 'https://gateway.querais.xyz';
 
 /**
  * A tiny OpenAI-shaped client for the QueraIS gateway. The gateway is itself

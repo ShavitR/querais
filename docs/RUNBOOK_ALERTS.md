@@ -8,11 +8,15 @@ ship**. If you add a rule, add its section here in the same PR.
 
 Conventions used below:
 
-- **Gateway app:** `querais-gateway` on Fly.io (`fly logs -a querais-gateway`).
-- **Metrics:** `curl -s https://querais-gateway.fly.dev/metrics | grep <name>`.
-- **Admin calls** need `-H "X-Admin-Token: <token>"` (the token is a Fly secret).
+- **Live gateway:** self-hosted on the operator's box at `https://gateway.querais.xyz`,
+  exposed via a free Cloudflare Tunnel (Fly was retired when its trial ended). Read logs
+  where that box streams stdout. The `fly logs -a querais-gateway` / `fly machine restart`
+  commands below apply only if you run the gateway on Fly (still a supported hosting
+  option — see `docs/DEPLOY.md`); on the self-hosted box, use the host's equivalents.
+- **Metrics:** `curl -s https://gateway.querais.xyz/metrics | grep <name>`.
+- **Admin calls** need `-H "X-Admin-Token: <token>"` (the token is a host env secret).
 - **Cold-key actions** (pause, role changes, ops allocations) run from the maintainer's
-  machine only — see `RUNBOOK_KEYS.md`. Hot keys live in Fly secrets, cold keys never do.
+  machine only — see `RUNBOOK_KEYS.md`. Hot keys live in host env secrets, cold keys never do.
 - Alert cadence: each alert key re-fires at most once per cooldown
   (`GATEWAY_ALERT_COOLDOWN_SECONDS`, default 1h). Silence after one page does NOT mean
   recovery — check the metric.
@@ -31,7 +35,7 @@ without gas, which cascades into `settlement-failures` and `stuck-debits`.
 
 1. Confirm the number:
    ```
-   curl -s https://querais-gateway.fly.dev/metrics | grep querais_gas_balance_wei
+   curl -s https://gateway.querais.xyz/metrics | grep querais_gas_balance_wei
    ```
 2. Top up the HOT gateway wallet (`0xc80A...b9d6` — verify against
    `packages/contracts/deployments/addresses.arbitrumSepolia.json` `gateway` field) with
@@ -54,7 +58,7 @@ ledger is money owed to providers; stuck means **nodes are silently unpaid**.
 
 1. Size the problem:
    ```
-   curl -s https://querais-gateway.fly.dev/metrics | grep -E "querais_(pending_debits|pending_debit_value_qais|oldest_pending_debit_age_seconds)"
+   curl -s https://gateway.querais.xyz/metrics | grep -E "querais_(pending_debits|pending_debit_value_qais|oldest_pending_debit_age_seconds)"
    ```
 2. Find why the flush isn't landing — the usual suspects, in order:
    - **Gas**: `querais_gas_balance_wei` low → fix [gas-low](#gas-low) first.
@@ -102,7 +106,7 @@ fail; almost always shares a cause with [stuck-debits](#stuck-debits).
 **Fired when:** connected nodes fell to ≤ 50% of the highest count seen in the last hour
 (only when that high was ≥ 2). **Warn** — capacity loss or a network event.
 
-1. Current count: `curl -s https://querais-gateway.fly.dev/metrics | grep querais_nodes_connected`.
+1. Current count: `curl -s https://gateway.querais.xyz/metrics | grep querais_nodes_connected`.
 2. `fly logs -a querais-gateway | grep -iE "ws|disconnect|socket"` — mass disconnects at
    one timestamp point at the gateway (deploy? machine restart? WS cap?); scattered ones
    point at the nodes.
@@ -123,7 +127,7 @@ queue can never silently rot. Re-raised at most once per cooldown while > 0.
 
 1. List the queue:
    ```
-   curl -s -H "X-Admin-Token: $TOKEN" "https://querais-gateway.fly.dev/v1/admin/flags?status=open"
+   curl -s -H "X-Admin-Token: $TOKEN" "https://gateway.querais.xyz/v1/admin/flags?status=open"
    ```
 2. Judge each flag by kind — see [layer-a-anomaly](#layer-a-anomaly),
    [pattern-cheater](#pattern-cheater), [rapid-decline](#rapid-decline) below for what
@@ -132,7 +136,7 @@ queue can never silently rot. Re-raised at most once per cooldown while > 0.
    ```
    curl -s -X POST -H "X-Admin-Token: $TOKEN" -H "Content-Type: application/json" \
      -d '{"by":"shavit","note":"<verdict>"}' \
-     https://querais-gateway.fly.dev/v1/admin/flags/<id>/review
+     https://gateway.querais.xyz/v1/admin/flags/<id>/review
    ```
 4. `querais_open_flags` returns to 0; `/v1/nodes` stops showing the flag count to
    requesters.
@@ -149,7 +153,7 @@ runs dry (the balance guard refuses claims cleanly, but new nodes can't join).
 
 1. Confirm:
    ```
-   curl -s https://querais-gateway.fly.dev/metrics | grep -E "querais_faucet_(qais|eth_wei)"
+   curl -s https://gateway.querais.xyz/metrics | grep -E "querais_faucet_(qais|eth_wei)"
    ```
 2. Top up the faucet wallet (address in the Fly secrets / `.env` faucet config) with
    testnet QAIS (transfer from treasury ops via `pnpm ops:allocate`, or mint-era supply
@@ -169,7 +173,7 @@ dying silently is exactly the failure mode this catches. One alert per keeper na
 
 1. Which keeper and how stale is in the alert detail; cross-check:
    ```
-   curl -s https://querais-gateway.fly.dev/metrics | grep querais_keeper_last_success_timestamp
+   curl -s https://gateway.querais.xyz/metrics | grep querais_keeper_last_success_timestamp
    ```
 2. `fly logs -a querais-gateway | grep -i "<keeper name>"` — keepers are error-isolated,
    so the tick fires but its work throws; the log has the actual error.
@@ -193,7 +197,7 @@ cause, one page).
 
 1. Confirm independently from your machine:
    ```
-   curl -s https://querais-gateway.fly.dev/ready          # 503 = gateway agrees
+   curl -s https://gateway.querais.xyz/ready          # 503 = gateway agrees
    curl -s -X POST https://sepolia-rollup.arbitrum.io/rpc \
      -H "Content-Type: application/json" \
      -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
@@ -221,7 +225,7 @@ manual-review flag is open.
 
 1. Pull the flag (id is in the alert detail):
    ```
-   curl -s -H "X-Admin-Token: $TOKEN" "https://querais-gateway.fly.dev/v1/admin/flags?status=open&wallet=<wallet>"
+   curl -s -H "X-Admin-Token: $TOKEN" "https://gateway.querais.xyz/v1/admin/flags?status=open&wallet=<wallet>"
    ```
    Detail carries jobId + similarity. Prompts/outputs are NEVER persisted (privacy
    rule) — the DB has verdicts + hashes only.
@@ -267,7 +271,7 @@ catching a new cheater mid-fall.
 
 1. The alert detail has the wallet + before/after composites. Pull its dimensions:
    ```
-   curl -s https://querais-gateway.fly.dev/v1/nodes | jq '.nodes[] | select(.wallet=="<wallet>")'
+   curl -s https://gateway.querais.xyz/v1/nodes | jq '.nodes[] | select(.wallet=="<wallet>")'
    ```
 2. Read the falling dimension:
    - Accuracy falling → Layer-B failures or Layer-A hits — check the wallet's flags;
@@ -286,7 +290,7 @@ end-to-end channel check, not an incident.
 1. Seeing this in the channel means the webhook works. Done — that was the point.
 2. Fire one yourself (e.g. after rotating the webhook URL):
    ```
-   curl -s -X POST -H "X-Admin-Token: $TOKEN" https://querais-gateway.fly.dev/v1/admin/alerts/test
+   curl -s -X POST -H "X-Admin-Token: $TOKEN" https://gateway.querais.xyz/v1/admin/alerts/test
    ```
    `200 {"delivered":true}` + a message in the channel = healthy.
    `502` = the gateway is fine, the WEBHOOK is not — recreate it (Discord: channel →

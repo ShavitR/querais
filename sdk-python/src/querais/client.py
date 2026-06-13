@@ -59,7 +59,7 @@ class ChatResult:
 class QueraisClient:
     """Synchronous client for a QueraIS gateway.
 
-    >>> client = QueraisClient("https://querais-gateway.fly.dev", api_key="sk-...")
+    >>> client = QueraisClient("https://gateway.querais.xyz", api_key="sk-...")
     >>> result = client.chat([{"role": "user", "content": "hello"}], model="llama3.2")
     >>> print(result.content)
 

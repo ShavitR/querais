@@ -50,3 +50,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 sdk-python/dist/
+
+# local hosted-gateway state (SQLite DB + env backup)
+gateway-data/

@@ -13,7 +13,7 @@ Every job settles on-chain — **95% to the node · 5% protocol fee**.
 [![Network](https://img.shields.io/badge/network-Arbitrum%20Sepolia-28a0f0)](#deployed-contracts-arbitrum-sepolia)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[🌐 Live status](https://querais-gateway.fly.dev/status)** ·
+**[🌐 Live status](https://gateway.querais.xyz/status)** ·
 **[📦 npm](https://www.npmjs.com/org/querais)** ·
 **[🐍 PyPI](https://pypi.org/project/querais/)** ·
 **[📚 Docs](#project-docs)**
@@ -35,7 +35,7 @@ Every job settles on-chain — **95% to the node · 5% protocol fee**.
 | 💸 **Earn `$QAIS`** — run a GPU node | [Run a node](#run-a-node-and-earn-testnet-qais) | ⏱️ ~5 min |
 | 🛠️ **Hack on it** — run the whole stack locally | [60-second demo](#60-second-demo) | ⏱️ 5 min |
 
-It's **live today**: gateway up 24/7 at `querais-gateway.fly.dev`, SDKs on
+It's **live today**: gateway up 24/7 at `gateway.querais.xyz`, SDKs on
 [npm](https://www.npmjs.com/org/querais) + [PyPI](https://pypi.org/project/querais/), contracts on
 Arbitrum Sepolia. The trust model is a single trusted gateway for now —
 [what's built](#project-status) · [what's not](#whats-not-built-yet-limitations).
@@ -58,7 +58,7 @@ Arbitrum Sepolia. The trust model is a single trusted gateway for now —
 | 4 | **5-dimension reputation** (accuracy/uptime/latency/longevity/stake) + daily on-chain snapshots | ✅ |
 | 5 | **Layer-A semantic verification** (~5% sampled) + on-chain disputes with slashing | ✅ |
 | 6 | **Tokenomics live**: ProtocolTreasury 60/20/20 sweep + burn, StakingRewards, incentives | ✅ |
-| 7 | Production deploy — gateway **live 24/7 at `querais-gateway.fly.dev`** | ✅ |
+| 7 | Production deploy — gateway **live 24/7 at `gateway.querais.xyz`** | ✅ |
 | 8 | Observability: alerts + runbooks, review queue, metrics, public `/status` page | ✅ |
 | 9 | DX & release: signed model manifest, npm/PyPI SDKs, prebuilt node releases, disclosures | ✅ |
 
@@ -90,7 +90,7 @@ No clone, no build — just point an OpenAI client at the hosted gateway. **Do t
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="https://querais-gateway.fly.dev/v1", api_key="sk-...your key...")
+client = OpenAI(base_url="https://gateway.querais.xyz/v1", api_key="sk-...your key...")
 stream = client.chat.completions.create(
     model="gemma3:4b",
     messages=[{"role": "user", "content": "Explain Arbitrum in one sentence."}],
@@ -105,7 +105,7 @@ for chunk in stream:
 ```ts
 import OpenAI from 'openai';
 
-const client = new OpenAI({ baseURL: 'https://querais-gateway.fly.dev/v1', apiKey: 'sk-…' });
+const client = new OpenAI({ baseURL: 'https://gateway.querais.xyz/v1', apiKey: 'sk-…' });
 const stream = await client.chat.completions.create({
   model: 'gemma3:4b',
   messages: [{ role: 'user', content: 'Explain Arbitrum in one sentence.' }],
@@ -116,7 +116,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Your prompt is matched to an independent GPU node, served with real local inference, and
 the job settles on-chain — watch it live at
-[`https://querais-gateway.fly.dev/status`](https://querais-gateway.fly.dev/status).
+[`https://gateway.querais.xyz/status`](https://gateway.querais.xyz/status).
 `GET /v1/models` lists what the connected nodes currently serve.
 
 Prefer a typed client over the raw OpenAI SDK? Both QueraIS SDKs are published — they wrap the

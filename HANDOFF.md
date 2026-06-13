@@ -36,7 +36,7 @@ Thesis: **make the protocol complete/credible first, then operate it as a hosted
 Stage A — Foundation        ✅ 0 CI gate  ✅ 1 Persistence  ✅ 2 Batched settlement ⭐ (2A+2B+2C)
                             ✅ 3 Harden surface (3A #25 · 3B-1 ops #26 · 3B-2 Slither #27)
 Stage B — Protocol depth    ✅ 4 Reputation (4A #28 · 4B #29)   ✅ 5 Layer-A (5A #30 · 5B #31)   ✅ 6 Tokenomics (6A #33 · 6B #34 · 6C #35)
-Stage C — Operate           ✅ 7 Deploy (7A #37 code · 7B LIVE: querais-gateway.fly.dev)   ✅ 8 Observability   ✅ 9 DX/growth
+Stage C — Operate           ✅ 7 Deploy (7A #37 code · 7B live → self-hosted gateway.querais.xyz)   ✅ 8 Observability   ✅ 9 DX/growth
 ```
 
 **Working rhythm (established, stick to it):** one **branch + PR per slice** (big slices
@@ -44,16 +44,17 @@ split into tested sub-increments, e.g. 2A/2B/2C, 3A/3B), gated by the **green ba
 squash-merged to `main`. Pause for review at slice boundaries. **The user must approve
 merges to main** (a permission classifier blocks self-merging; ask, or the user clicks).
 
-**STAGES A, B AND C COMPLETE (Slices 0–9) — the gateway is LIVE on Fly.io
-(`querais-gateway.fly.dev`), observable, and the DX/release/growth layer is built.**
-Immediate next actions:
-1. **Slice 8 rollout (OPERATOR, minutes):** arm the alert webhook + fire the test alert —
-   step-by-step in **`docs/OBSERVABILITY.md`**; runbook = `docs/RUNBOOK_ALERTS.md`.
-2. **Slice 9 rollout (OPERATOR):** walk `docs/REPO_PUBLIC_CHECKLIST.md` — enable secret
-   scanning, **flip the repo public** (irreversible, user's call alone), create the npm
-   scope + PyPI project + tokens, tag `v0.2.0`, publish the draft release. Then the beta
-   campaign per `docs/BETA_PLAYBOOK.md`.
-3. Then Stage D (web app, arbitration, scale, mainnet gate).
+**STAGES A, B AND C COMPLETE (Slices 0–9) — the gateway is LIVE, self-hosted at
+`https://gateway.querais.xyz` (free Cloudflare Tunnel; migrated off Fly.io after the trial
+ended), observable, and the DX/release/growth layer is built.**
+Status of the rollout:
+1. **DONE (2026-06):** repo is **public** (secret scanning on); SDKs **published** — npm
+   `@querais/{contracts,shared,sdk}` + PyPI `querais` (latest **0.2.3**); gateway migrated to
+   self-hosted `https://gateway.querais.xyz` (Cloudflare Tunnel, scheduled tasks) with the
+   faucet enabled.
+2. **Operator-side, optional:** arm the alert webhook (`docs/OBSERVABILITY.md` →
+   `GATEWAY_ALERT_WEBHOOK_URL`); run the beta campaign (`docs/BETA_PLAYBOOK.md`).
+3. Then **Stage D** (web app, arbitration, scale, mainnet gate).
 
 `docs/EXECUTION_PLAN.md` is the canonical roadmap — everything needed to continue is in
 this repo (no local-machine files are required; see §12 for what remote agents can't do).
@@ -301,11 +302,14 @@ All gateway-side (`gateway/src/oracle/`), no contract changes; migration 6:
   pipeline so the hot keys never enter a build environment.
 - Runbook **§7d** is the operator deploy + custody procedure (points at `docs/DEPLOY.md`).
 
-**Slice 7B (EXECUTED by the operator, 2026-06)** — the gateway is LIVE at
-`https://querais-gateway.fly.dev` (Fly.io, single machine + volume, CI deploy pipeline
-armed) against a **full Stage-B Sepolia redeploy** (all 7 contracts; manifest in
-`packages/contracts/deployments/addresses.arbitrumSepolia.json`). Hot keys live in Fly
-secrets only; cold admin/pauser keys never touch Fly or CI (runbook §7).
+**Slice 7B (EXECUTED by the operator)** — the gateway is LIVE, now **self-hosted at
+`https://gateway.querais.xyz`** via a free **Cloudflare Tunnel** on the operator's box
+(migrated off Fly.io in 2026-06 when the free trial ended) against a **full Stage-B Sepolia
+redeploy** (all 7 contracts; manifest in
+`packages/contracts/deployments/addresses.arbitrumSepolia.json`). It runs `node
+packages/gateway/dist/main.js` (launcher `start-gateway-sepolia.ps1`) + `cloudflared`, both
+as per-user Scheduled Tasks (`QueraisGateway`/`QueraisTunnel`); the faucet is enabled. Hot
+keys live only in the operator's local `.env`; cold admin/pauser keys stay offline (runbook §7).
 
 **Slice 8 — Observability & SRE.** Full plan + as-built record: **`Slice8.md`** (repo
 root). Closes the loop: signal → alert → human with a runbook attached. All gateway-side:
@@ -626,9 +630,9 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
 
 ## 12. Loose ends / current runtime state
 
-- **Stages A–C complete (Slices 0–9)** — the gateway is LIVE on Fly.io against the
-  Stage-B Sepolia contract set. Next: the **Slice 9 operator rollout** (§2 item 2 —
-  repo-public flip, tokens, `v0.2.0` tag), then **Stage D**.
+- **Stages A–C complete (Slices 0–9)** — the gateway is LIVE, self-hosted at
+  `https://gateway.querais.xyz` (Cloudflare Tunnel) against the Stage-B Sepolia contract
+  set. Repo is public; SDKs published (npm + PyPI, **0.2.3**). Next: **Stage D**.
   **Verify with `gh pr list` + `git log origin/main --oneline -3` before acting** — a
   parallel session may have changed state since this file was written.
 - **Remote agents (no local files): what you can and cannot do.**
@@ -645,14 +649,23 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
   to any PR): pause/rotation need the cold `ADMIN_PRIVATE_KEY` from the maintainer's
   `.env`. Dependabot PR #20 is open with CI red (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`)
   — the supply-chain age policy working as designed; leave it until the package ages in.
-- **The hosted gateway runs 24/7 at `querais-gateway.fly.dev`** (Fly.io, one machine —
-  never scale above 1: single-writer SQLite + single-owner timers). The maintainer's VM
-  node connects to it; the VM restart recipe is in the maintainer's notes. Alerting is
-  armed only once the operator sets `GATEWAY_ALERT_WEBHOOK_URL` (docs/OBSERVABILITY.md).
-- The repo (ShavitR/querais) is **still private**. Everything mechanical for going public
-  is done (LICENSE, SECURITY.md, recorded gitleaks scan, gating CI job); the flip + npm/
-  PyPI tokens + the `v0.2.0` tag are user-only steps in `docs/REPO_PUBLIC_CHECKLIST.md`.
-  Until the flip, GitHub release links and the public install path 404 by design.
+- **The hosted gateway is self-hosted at `https://gateway.querais.xyz`** (operator's box,
+  free Cloudflare Tunnel — one instance only: single-writer SQLite + single-owner timers).
+  It runs `node packages/gateway/dist/main.js` via `start-gateway-sepolia.ps1` + `cloudflared`,
+  both as per-user Scheduled Tasks (`QueraisGateway`/`QueraisTunnel`, start at logon +
+  auto-restart); the **faucet is enabled**. Alerting is armed only once the operator sets
+  `GATEWAY_ALERT_WEBHOOK_URL` (docs/OBSERVABILITY.md). The old Fly host is retired.
+- The repo (ShavitR/querais) is **public** (secret scanning + push protection on), and the
+  SDKs are **published**: npm `@querais/{contracts,shared,sdk}` + PyPI `querais` (latest
+  **0.2.3**; `release.yml` publishes on each `v*` tag — npm via `NPM_TOKEN`, PyPI via OIDC
+  Trusted Publishing; the GitHub Release is created as a draft). **Tag name ≠ published SDK
+  version** (e.g. tag `v0.2.6` ships SDK `0.2.3`). The node bundle + SDK/CLI default to
+  `https://gateway.querais.xyz`.
+- **Post-Slice-9 SDK/daemon hardening (PRs #47/#48/#49):** SDK/CLI default to the hosted
+  gateway, legible connection errors, `chatStream` surfaces in-band gateway error frames (TS
+  + Python), the daemon matches `DAEMON_MODELS=llama3.2` against Ollama's `llama3.2:latest`,
+  a wrong `DAEMON_KEYSTORE_PASSWORD` gives an actionable error, and `setup-node.*` enforce
+  Node ≥ 22.13.
 - Counts that tests assert or reports cite: e2e = **18 scenarios**,
   migrations = **7** (`MIGRATION_COUNT` tracks automatically). Unit-test totals move
   every slice — read them off the latest `pnpm test` run instead of trusting a doc.
@@ -669,6 +682,6 @@ them and don't need them; this file + `docs/EXECUTION_PLAN.md` carry everything 
    `alert-rules.ts` (the Slice 8 paging loop), `model-manifest.ts` (the Slice 9
    integrity seam), `CreditAccount.sol`, `e2e.ts`, and
    `docs/RUNBOOK_KEYS.md` + `docs/RUNBOOK_ALERTS.md`.
-6. Next work: the Slice 9 operator rollout is user-side (§2 item 2); code-side, plan
-   Stage D / Slice 10 (EXECUTION_PLAN), confirm it with the user, then follow the
-   rhythm in §2.
+6. Next work (code-side): plan **Stage D / Slice 10** (EXECUTION_PLAN), confirm with the
+   user, then follow the rhythm in §2. (The Slice 9 operator rollout — public repo,
+   published SDKs, self-hosted gateway — is done.)

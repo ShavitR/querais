@@ -5,7 +5,7 @@ each works without the others, and the gateway runs fine with none configured:
 
 | Layer | What | Needs |
 |---|---|---|
-| Alerts → webhook | pushes critical/warn conditions to a Discord/Slack channel | one Fly secret |
+| Alerts → webhook | pushes critical/warn conditions to a Discord/Slack channel | one env secret |
 | `/metrics` → Prometheus/Grafana | time-series + dashboards | an ops box you run |
 | `/status` | public health page, zero auth, no secrets | nothing — already live |
 
@@ -30,7 +30,7 @@ Runbook for every alert: **`docs/RUNBOOK_ALERTS.md`** (each alert links its own 
    floor + cooldown):
 
    ```
-   curl -s -X POST -H "X-Admin-Token: $TOKEN" https://querais-gateway.fly.dev/v1/admin/alerts/test
+   curl -s -X POST -H "X-Admin-Token: $TOKEN" https://gateway.querais.xyz/v1/admin/alerts/test
    ```
 
    `200 {"delivered":true}` + a message in the channel = armed. `502` = the webhook is
@@ -73,8 +73,8 @@ that can reach the gateway:
 prometheus --config.file=ops/prometheus.yml
 ```
 
-`ops/prometheus.yml` in this repo scrapes `querais-gateway.fly.dev` every 30 s — edit
-the target for a self-hosted gateway. Then point Grafana at that Prometheus and import
+`ops/prometheus.yml` in this repo scrapes `gateway.querais.xyz` every 30 s — edit
+the target for a different gateway. Then point Grafana at that Prometheus and import
 **`ops/grafana-dashboard.json`** (Dashboards → New → Import → upload), which gives you:
 
 - jobs settled/failed rate + per-model breakdown
@@ -122,8 +122,9 @@ those live behind `/metrics` (numbers only) and the admin API.
 
 ## 4. Where logs live
 
-Structured Pino JSON to stdout → `fly logs -a querais-gateway`. Every alert is also a
-`logger.warn` (`ALERT: <title>`) with rule/key/severity fields, so the log stream is the
-fallback channel when no webhook is configured. For retention beyond Fly's buffer, ship
-stdout to your aggregator of choice (`fly logs` → vector/loki is the no-frills path);
-nothing in the gateway needs to change.
+Structured Pino JSON to stdout → read it where the host streams stdout (the self-hosted
+box's process/journal logs; `fly logs -a querais-gateway` if you run it on Fly). Every
+alert is also a `logger.warn` (`ALERT: <title>`) with rule/key/severity fields, so the log
+stream is the fallback channel when no webhook is configured. For retention beyond the
+host's buffer, ship stdout to your aggregator of choice (stdout → vector/loki is the
+no-frills path); nothing in the gateway needs to change.

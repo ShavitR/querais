@@ -1,6 +1,6 @@
 {
   "name": "@querais/contracts",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "MIT",
   "type": "module",
   "description": "QueraIS smart contracts (QUAISToken, NodeRegistry, JobEscrow, CreditAccount, DisputeResolution, ProtocolTreasury, StakingRewards): ABIs, deployment manifests, and Hardhat 3 tooling. Published as a dependency of @querais/sdk.",

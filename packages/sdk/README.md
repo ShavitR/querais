@@ -22,7 +22,7 @@ npm install @querais/sdk
 import { QueraisClient } from '@querais/sdk';
 
 const client = new QueraisClient({
-  baseUrl: 'https://querais-gateway.fly.dev', // optional — this is the default
+  baseUrl: 'https://gateway.querais.xyz', // optional — this is the default
   apiKey: 'sk-querais-…', // issued by the gateway operator
 });
 
@@ -46,7 +46,7 @@ The gateway is OpenAI-compatible — you don't need this SDK at all:
 
 ```ts
 import OpenAI from 'openai';
-const client = new OpenAI({ baseURL: 'https://querais-gateway.fly.dev/v1', apiKey: 'sk-…' });
+const client = new OpenAI({ baseURL: 'https://gateway.querais.xyz/v1', apiKey: 'sk-…' });
 ```
 
 This SDK adds the QueraIS-specific surface on top: marketplace routing options
@@ -69,7 +69,7 @@ settles them in batches. The cap bounds the most it can ever spend.
 
 ```ts
 const client = new QueraisClient({
-  baseUrl: 'https://querais-gateway.fly.dev',
+  baseUrl: 'https://gateway.querais.xyz',
   apiKey: 'sk-…',
   privateKey: '0x…', // requester wallet — used ONCE, off-chain, to sign the cap
 });
@@ -89,7 +89,7 @@ await client.sessionStatus(); // cap, spend, credit balance, headroom
 The package ships a `querais` binary:
 
 ```bash
-export QUERAIS_BASE_URL=https://querais-gateway.fly.dev
+export QUERAIS_BASE_URL=https://gateway.querais.xyz
 export QUERAIS_API_KEY=sk-…
 export QUERAIS_MODEL=gemma3:4b
 

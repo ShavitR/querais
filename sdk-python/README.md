@@ -11,7 +11,7 @@ pip install querais
 ```python
 from querais import QueraisClient
 
-client = QueraisClient("https://querais-gateway.fly.dev", api_key="sk-...")
+client = QueraisClient("https://gateway.querais.xyz", api_key="sk-...")
 result = client.chat([{"role": "user", "content": "hello"}], model="llama3.2")
 print(result.content)
 ```
@@ -24,7 +24,7 @@ package works too — point it at the gateway:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="https://querais-gateway.fly.dev/v1", api_key="sk-...")
+client = OpenAI(base_url="https://gateway.querais.xyz/v1", api_key="sk-...")
 ```
 
 This package is thin sugar over that protocol plus QueraIS-specific helpers.
@@ -65,10 +65,10 @@ pip install 'querais[langchain]'   # or 'querais[llamaindex]'
 
 ```python
 from querais.langchain import chat_model
-llm = chat_model("https://querais-gateway.fly.dev", api_key="sk-...", model="llama3.2")
+llm = chat_model("https://gateway.querais.xyz", api_key="sk-...", model="llama3.2")
 
 from querais.llamaindex import llm as qllm
-llm = qllm("https://querais-gateway.fly.dev", api_key="sk-...", model="llama3.2")
+llm = qllm("https://gateway.querais.xyz", api_key="sk-...", model="llama3.2")
 ```
 
 ## License
