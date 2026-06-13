@@ -56,9 +56,12 @@ export async function registerStaticApp(app: FastifyInstance, deps: GatewayDeps)
   }
 
   deps.logger.info({ dir }, 'serving web app at /');
-  // wildcard:false → static serves real files (index.html at /, hashed assets); misses fall
-  // through to the notFound handler, which does the SPA fallback.
-  await app.register(fastifyStatic, { root: dir, prefix: '/', wildcard: false });
+  // wildcard:true → a single `/*` handler resolves files from disk PER REQUEST (not a glob
+  // frozen at boot). This is load-bearing: with wildcard:false the asset routes are fixed at
+  // startup, so rebuilding the app (new content-hash filenames) under a long-running gateway
+  // 404s every hashed asset → blank page. With wildcard:true a rebuilt app is served live, no
+  // restart needed; misses still call reply.callNotFound() → the SPA fallback below.
+  await app.register(fastifyStatic, { root: dir, prefix: '/', wildcard: true });
 
   app.setNotFoundHandler((request, reply) => {
     const accept = request.headers.accept ?? '';
