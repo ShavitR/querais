@@ -51,8 +51,15 @@ const dashboard = `🎉 Your node is LIVE
   dashboard:     http://localhost:3000
   today:         $4.28   ·   this month: $127.50`;
 
+const installWin = 'iwr -useb https://querais.xyz/install.ps1 | iex';
+const installUnix = 'curl -fsSL https://querais.xyz/install.sh | sh';
+
 export default async function ForNodeOperators() {
-  const bDash = await highlight(dashboard, 'text', 'node dashboard');
+  const [bDash, bWin, bUnix] = await Promise.all([
+    highlight(dashboard, 'text', 'node dashboard'),
+    highlight(installWin, 'powershell', 'windows · powershell'),
+    highlight(installUnix, 'bash', 'macos / linux'),
+  ]);
 
   return (
     <div className="wrap page-head">
@@ -65,15 +72,27 @@ export default async function ForNodeOperators() {
       </p>
 
       <div className="cta-row" style={{ justifyContent: 'flex-start', marginTop: 24 }}>
-        <a className="btn" href={REPO_URL}>
-          Get the node →
-        </a>
         <Link className="btn ghost" href="/tokenomics/">
           Staking &amp; rewards
         </Link>
       </div>
 
-      <section className="block" style={{ borderTop: 'none', paddingTop: 32 }}>
+      <section className="block" style={{ borderTop: 'none', paddingTop: 28 }}>
+        <h2>Install in one line</h2>
+        <p className="muted">
+          One command installs Node and Ollama if you need them, downloads and checksum-verifies the
+          latest node, sets up a working config, and starts serving — nothing to edit, no second
+          step. Testnet; your wallet stays on your machine.
+        </p>
+        <CodeBlock block={bWin} />
+        <CodeBlock block={bUnix} />
+        <p className="muted" style={{ fontSize: 14 }}>
+          Prefer to do it by hand? Grab the archive from{' '}
+          <a href={`${REPO_URL}/releases`}>GitHub Releases</a> and run the launcher — same result.
+        </p>
+      </section>
+
+      <section className="block">
         <h2>Hardware tiers</h2>
         <p className="muted">
           From a gaming card to a datacenter GPU — your hardware decides which models you can serve
@@ -118,8 +137,8 @@ export default async function ForNodeOperators() {
         <h2>Live in about ten minutes</h2>
         <ol className="steps" style={{ marginTop: 20 }}>
           <li>
-            <b>Install &amp; detect.</b> Grab the node from <a href={REPO_URL}>GitHub</a>; it
-            auto-detects your GPU, RAM, and upload speed and recommends a tier.
+            <b>Install.</b> Run the one-liner above. It installs Node + Ollama if missing, downloads
+            the node, generates an encrypted wallet, and writes a working config — no editing.
           </li>
           <li>
             <b>Connect a wallet.</b> Create a fresh wallet or import one — it receives your $QAIS
