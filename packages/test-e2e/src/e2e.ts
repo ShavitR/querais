@@ -1647,3 +1647,73 @@ export async function runModelManifestCase(): Promise<void> {
     await h.stop();
   }
 }
+
+/**
+ * Slice 10A served-app + auth smoke. The gateway serves the built web app
+ * (apps/dashboard/dist) at /, the SPA deep-links, the API coexists, and the API-key →
+ * session-cookie sign-in resolves the same wallet bearer auth would.
+ */
+export async function runServedAppCase(): Promise<void> {
+  const h = await startHarness({ noDaemon: true });
+  try {
+    const html = { accept: 'text/html' };
+
+    // 1. GET / serves the built app shell (not the old inline dashboard).
+    const root = await fetch(`${h.baseUrl}/`, { headers: html });
+    assert.equal(root.status, 200, 'GET / serves the app');
+    const shell = await root.text();
+    assert.match(shell, /<div id="root"><\/div>/, 'app mount point present');
+    const assetMatch = shell.match(/src="(\/assets\/[^"]+\.js)"/);
+    assert.ok(assetMatch, 'index.html references a hashed module bundle');
+
+    // 2. The hashed asset is actually served.
+    const asset = await fetch(`${h.baseUrl}${assetMatch![1]}`);
+    assert.equal(asset.status, 200, 'hashed JS asset 200s');
+    assert.match(asset.headers.get('content-type') ?? '', /javascript/, 'served as JS');
+
+    // 3. A client-side route deep-link falls back to index.html (SPA), not a 404.
+    const deep = await fetch(`${h.baseUrl}/operator/some/route`, { headers: html });
+    assert.equal(deep.status, 200, 'SPA deep link falls back to index.html');
+    assert.match(await deep.text(), /<div id="root"><\/div>/, 'fallback is the app shell');
+
+    // 4. The API coexists; an unknown /v1 path keeps the JSON 404 (not the SPA shell).
+    const stats = await fetch(`${h.baseUrl}/v1/stats`);
+    assert.equal(stats.status, 200, '/v1/stats still serves JSON');
+    const apiMiss = await fetch(`${h.baseUrl}/v1/nope`, { headers: html });
+    assert.equal(apiMiss.status, 404, 'unknown API path is a JSON 404, not the SPA');
+    const apiMissBody = (await apiMiss.json()) as { error?: { type?: string } };
+    assert.match(apiMissBody.error?.type ?? '', /not_found/);
+
+    // 5. Sign-in: API key → session cookie → /v1/auth/me resolves the wallet; the cookie
+    //    authenticates /v1/usage exactly like the Bearer key would.
+    const signin = await fetch(`${h.baseUrl}/v1/auth/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ apiKey: API_KEY }),
+    });
+    assert.equal(signin.status, 200, 'sign-in accepts the API key');
+    const setCookie = signin.headers.get('set-cookie');
+    assert.ok(setCookie?.includes('qais_session='), 'a session cookie is minted');
+    assert.match(setCookie!, /HttpOnly/i, 'cookie is httpOnly');
+    const { wallet } = (await signin.json()) as { wallet: string };
+    assert.equal(
+      wallet.toLowerCase(),
+      h.deployment.accounts.requester.toLowerCase(),
+      'cookie wallet == the key wallet',
+    );
+
+    const cookie = setCookie!.split(';')[0]!; // qais_session=<token>
+    const me = await fetch(`${h.baseUrl}/v1/auth/me`, { headers: { cookie } });
+    assert.equal(me.status, 200, '/v1/auth/me resolves the cookie');
+    const usage = await fetch(`${h.baseUrl}/v1/usage`, { headers: { cookie } });
+    assert.equal(usage.status, 200, 'cookie authenticates /v1/usage');
+
+    // 6. Signed-out (no/garbage cookie) → 401, i.e. the app's read-only public mode.
+    const anon = await fetch(`${h.baseUrl}/v1/auth/me`, {
+      headers: { cookie: 'qais_session=bad' },
+    });
+    assert.equal(anon.status, 401, 'tampered cookie is rejected');
+  } finally {
+    await h.stop();
+  }
+}

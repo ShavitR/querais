@@ -7,7 +7,8 @@ import {
   type Address,
 } from '@querais/shared';
 import type { GatewayDeps } from '../deps.js';
-import { resolveRequester } from '../auth.js';
+import { resolveRequester, resolveRequesterOrSession } from '../auth.js';
+import { SESSION_COOKIE } from '../session.js';
 import { openAiError, sendError } from '../http.js';
 import { buildSessionStatus } from '../session-status.js';
 
@@ -30,7 +31,12 @@ export function registerSessions(app: FastifyInstance, deps: GatewayDeps): void 
   app.get('/v1/sessions', async (request, reply) => {
     let requester: Address;
     try {
-      requester = resolveRequester(deps.keyStore, request.headers.authorization);
+      requester = resolveRequesterOrSession(
+        deps.keyStore,
+        deps.session,
+        request.headers.authorization,
+        request.cookies[SESSION_COOKIE],
+      );
     } catch (err) {
       return sendError(reply, err);
     }

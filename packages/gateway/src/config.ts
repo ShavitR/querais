@@ -158,6 +158,14 @@ export interface GatewayConfig {
   /** Slice 9: path to the operator's signed-model-manifest JSON file. Unset = no
    *  digest enforcement (Slice 8 behavior). Invalid file = fail fast at boot. */
   modelManifestPath?: string;
+  /** Slice 10A: directory of the built web app (apps/dashboard/dist) served at /. Unset =
+   *  resolved by walking up from the gateway package; an absent dir = boot-safe fallback. */
+  dashboardDir?: string;
+  /** Slice 10A: HMAC secret for stateless session cookies. Unset = derived from privateKey
+   *  (so dev/e2e need no extra env; production sets it explicitly to survive key rotation). */
+  sessionSecret?: string;
+  /** Slice 10A: session-cookie lifetime in seconds (default 86400). */
+  sessionTtlSeconds?: number;
   /** Slice 2: flush a requester's accrued debits to CreditAccount.batchSettle once this many
    *  jobs have settled off-chain (also flushed on graceful shutdown). */
   batchFlushThreshold: number;
@@ -333,6 +341,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     treasuryDistributeIntervalSeconds: Number(
       env.GATEWAY_TREASURY_DISTRIBUTE_INTERVAL_SECONDS ?? '86400',
     ),
+    sessionTtlSeconds: Number(env.GATEWAY_SESSION_TTL_SECONDS ?? '86400'),
+    ...(env.GATEWAY_DASHBOARD_DIR ? { dashboardDir: env.GATEWAY_DASHBOARD_DIR } : {}),
+    ...(env.GATEWAY_SESSION_SECRET ? { sessionSecret: env.GATEWAY_SESSION_SECRET } : {}),
     ...(env.GATEWAY_DB_PATH ? { dbPath: env.GATEWAY_DB_PATH } : {}),
     ...(env.GATEWAY_ADMIN_TOKEN ? { adminToken: env.GATEWAY_ADMIN_TOKEN } : {}),
     faucetAmountWei: env.GATEWAY_FAUCET_AMOUNT_WEI

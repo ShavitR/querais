@@ -9,10 +9,10 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "pnpm -r --filter \"./packages/**\" build",
-    "lint": "eslint . && prettier --check .",
+    "build": "pnpm -r --filter \"./packages/**\" build && pnpm --filter @querais/dashboard build",
+    "lint": "eslint . && prettier --check . && pnpm --filter @querais/dashboard lint",
     "format": "prettier --write .",
-    "typecheck": "pnpm -r --filter \"./packages/**\" typecheck",
+    "typecheck": "pnpm -r --filter \"./packages/**\" typecheck && pnpm --filter @querais/dashboard typecheck",
     "test": "pnpm -r --filter \"./packages/**\" test",
     "test:coverage": "node --import tsx --test --experimental-test-coverage \"packages/shared/src/**/*.test.ts\" \"packages/matching/src/**/*.test.ts\" \"packages/gateway/src/**/*.test.ts\" \"packages/node-daemon/src/**/*.test.ts\" \"packages/sdk/src/**/*.test.ts\"",
     "clean": "pnpm -r exec rimraf dist tsconfig.tsbuildinfo",

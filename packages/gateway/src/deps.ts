@@ -19,6 +19,7 @@ import type { IncentiveService } from './incentives.js';
 import type { LayerACheckStore } from './db/layer-a-checks.js';
 import type { AlertService } from './alerts.js';
 import type { KeeperHealth } from './keeper-health.js';
+import type { SessionAuth } from './session.js';
 
 /** Everything the route handlers need, assembled once at startup. */
 export interface GatewayDeps {
@@ -50,6 +51,8 @@ export interface GatewayDeps {
   alerts: AlertService;
   /** Slice 8: background-timer liveness (the `keeper-stale` rule + /v1/status). */
   keepers: KeeperHealth;
+  /** Slice 10A: stateless session-cookie mint/verify for the web app's sign-in. */
+  session: SessionAuth;
   /** Slice 9: the signed model manifest (loaded + signed once at boot); unset = no enforcement. */
   modelManifest?: SignedModelManifest;
   logger: Logger;

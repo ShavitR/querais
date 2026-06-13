@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
+import cookie from '@fastify/cookie';
 import type { WebSocket } from 'ws';
 import type { Address, Hex } from 'viem';
 import pino, { type Logger } from 'pino';
@@ -27,7 +28,8 @@ import { registerModels } from './routes/models.js';
 import { registerNodes } from './routes/nodes.js';
 import { registerJobs } from './routes/jobs.js';
 import { registerStats } from './routes/stats.js';
-import { registerDashboard } from './routes/dashboard.js';
+import { registerAuth } from './routes/auth.js';
+import { registerStaticApp } from './routes/static-app.js';
 import { registerKeys } from './routes/keys.js';
 import { registerFlags } from './routes/flags.js';
 import { registerStatus } from './routes/status.js';
@@ -55,6 +57,7 @@ import { KeeperHealth } from './keeper-health.js';
 import { AlertSweeper, type SweepReads } from './alert-rules.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
+import { SessionAuth } from './session.js';
 
 export interface BuildOptions {
   config: GatewayConfig;
@@ -287,6 +290,14 @@ export async function buildGateway(
   // `keeper-stale` sweep rule pages when one stops succeeding.
   const keepers = new KeeperHealth();
 
+  // Slice 10A web-app sign-in: stateless HMAC session cookies. The secret defaults to a
+  // domain-separated digest of the gateway key (dev/e2e need no extra env); production sets
+  // GATEWAY_SESSION_SECRET so sessions survive a key rotation.
+  const session = new SessionAuth(
+    opts.config.sessionSecret ?? opts.config.privateKey,
+    opts.config.sessionTtlSeconds ?? 86_400,
+  );
+
   const deps: GatewayDeps = {
     config: opts.config,
     chain,
@@ -308,6 +319,7 @@ export async function buildGateway(
     quota,
     alerts,
     keepers,
+    session,
     modelManifest,
     logger,
   };
@@ -427,6 +439,10 @@ export async function buildGateway(
   });
   // Cap WS frame size so a misbehaving node can't send oversized messages.
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
+  // Slice 10A: parse/serialize cookies for the web-app session (request.cookies +
+  // reply.setCookie). The cookie value is our own HMAC token (SessionAuth), so the
+  // plugin's own signing is unused.
+  await app.register(cookie);
 
   // Per-API-key rate limiting on the /v1 API (infra routes opt out below).
   await app.register(rateLimit, {
@@ -485,12 +501,17 @@ export async function buildGateway(
   registerSessions(app, deps);
   registerStats(app, deps);
   registerStatus(app, deps);
-  registerDashboard(app, deps);
+  registerAuth(app, deps);
   registerKeys(app, deps);
   registerFlags(app, deps);
   registerAlertsAdmin(app, deps);
   registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);
+
+  // Slice 10A: serve the built web app at / (replaces the inline dashboard). Registered
+  // LAST so its SPA notFound fallback sees every API route as already-defined; a missing
+  // build degrades to a fallback page (the gateway never depends on the app).
+  await registerStaticApp(app, deps);
 
   return { app, deps };
 }
