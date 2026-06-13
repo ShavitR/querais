@@ -92,29 +92,43 @@ const FALLBACK: Headline = {
   live: false,
 };
 
-const fmt = (n: number): string => n.toLocaleString();
-const qais = (wei: string): string =>
-  (Number(wei) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : '—');
+const qais = (wei: string | undefined): string => {
+  const n = Number(wei) / 1e18;
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+};
+
+/** GET + parse JSON at build time, throwing on any non-2xx so callers fall back cleanly. */
+async function getJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return (await r.json()) as T;
+}
 
 /**
  * Fetch headline numbers at BUILD time (static export). Gated on `NEXT_PUBLIC_GATEWAY_URL`
  * so CI builds stay hermetic (fallback dashes); the operator sets it for the real deploy.
- * Any failure falls back gracefully — the build never depends on the live gateway.
+ * Resilient per-endpoint: /v1/stats drives the live flag, while /v1/network/economics (a newer
+ * route an older deployed gateway may 404) only fills in `burned` — so the working stats still
+ * render even when economics is unavailable. Any total failure falls back gracefully.
  */
 export async function getHeadline(): Promise<Headline> {
   const base = process.env.NEXT_PUBLIC_GATEWAY_URL;
   if (!base) return FALLBACK;
   try {
-    const opts = { signal: AbortSignal.timeout(5000) };
-    const [stats, eco] = await Promise.all([
-      fetch(`${base}/v1/stats`, opts).then((r) => r.json() as Promise<Stats>),
-      fetch(`${base}/v1/network/economics`, opts).then((r) => r.json() as Promise<Economics>),
-    ]);
+    const stats = await getJson<Stats>(`${base}/v1/stats`);
+    let burned = '—';
+    try {
+      const eco = await getJson<Economics>(`${base}/v1/network/economics`);
+      burned = qais(eco.burnedWei);
+    } catch {
+      /* economics route optional — older gateways 404 it */
+    }
     return {
       nodes: fmt(stats.nodes),
       jobsSettled: fmt(stats.jobs.settled),
       tokensServed: fmt(stats.jobs.tokensServed),
-      burned: qais(eco.burnedWei),
+      burned,
       live: true,
     };
   } catch {
@@ -158,9 +172,8 @@ export async function getEconomics(): Promise<NetworkEconomics> {
   const base = process.env.NEXT_PUBLIC_GATEWAY_URL;
   if (!base) return ECONOMICS_FALLBACK;
   try {
-    const eco = (await fetch(`${base}/v1/network/economics`, {
-      signal: AbortSignal.timeout(5000),
-    }).then((r) => r.json())) as Economics;
+    const eco = await getJson<Economics>(`${base}/v1/network/economics`);
+    if (!eco?.totalSupplyWei) return ECONOMICS_FALLBACK;
     return {
       totalSupply: qais(eco.totalSupplyWei),
       burned: qais(eco.burnedWei),
