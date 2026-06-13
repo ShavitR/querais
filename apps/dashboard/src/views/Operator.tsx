@@ -4,8 +4,8 @@
  * wallet). Read-only: earnings, the 5-dimension reputation + its published history, the
  * time-to-first-token trend, and the flags raised against the node (incl. reviewed).
  */
-import { getOperatorOverview } from '../api/client';
-import type { NodeFlag } from '../api/types';
+import { getOperatorDisputes, getOperatorOverview } from '../api/client';
+import type { DisputeView, NodeFlag } from '../api/types';
 import { usePoll } from '../hooks/usePoll';
 import { useSession } from '../auth/session';
 import { Badge, Bars, Card, StatRow, Table } from '../components/kit';
@@ -18,6 +18,29 @@ function median(xs: number[]): number {
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? (s[m] ?? 0) : Math.round(((s[m - 1] ?? 0) + (s[m] ?? 0)) / 2);
 }
+
+/** Time left in the contract's 24h counter-evidence window (or a closed/done note). */
+function counterWindow(d: DisputeView): string {
+  if (d.status === 'resolved') return 'resolved';
+  const left = d.counterEvidenceDeadline - Math.floor(Date.now() / 1000);
+  if (left <= 0) return 'window closed';
+  return `${Math.floor(left / 3600)}h ${Math.floor((left % 3600) / 60)}m to respond`;
+}
+
+const disputeColumns: Column<DisputeView>[] = [
+  { header: 'job', cell: (d) => <span title={d.jobId}>{d.jobId.slice(0, 10)}…</span> },
+  {
+    header: 'status',
+    cell: (d) =>
+      d.status === 'resolved' ? (
+        <Badge kind="flag">slashed</Badge>
+      ) : (
+        <Badge kind="flag">{d.status}</Badge>
+      ),
+  },
+  { header: 'raised', cell: (d) => <span className="muted">{fmtTime(d.raisedAt * 1000)}</span> },
+  { header: 'counter-evidence', cell: (d) => counterWindow(d) },
+];
 
 const flagColumns: Column<NodeFlag>[] = [
   { header: 'when', cell: (f) => <span className="muted">{fmtTime(f.createdAt)}</span> },
@@ -37,6 +60,8 @@ const flagColumns: Column<NodeFlag>[] = [
 export function Operator() {
   const { me } = useSession();
   const ov = usePoll(getOperatorOverview, 5000, [me?.wallet ?? null]);
+  // Disputes use a chain-log scan — poll it on a slower cadence than the overview.
+  const disputes = usePoll(getOperatorDisputes, 15000, [me?.wallet ?? null]);
 
   if (!me) {
     return (
@@ -125,6 +150,14 @@ export function Operator() {
 
       <Card title="Flags against your node" full>
         <Table columns={flagColumns} rows={d?.flags ?? []} empty="no flags — clean record" />
+      </Card>
+
+      <Card title="Disputes against your node" full>
+        <Table
+          columns={disputeColumns}
+          rows={disputes.data?.disputes ?? []}
+          empty="no disputes — nothing to defend"
+        />
       </Card>
     </main>
   );

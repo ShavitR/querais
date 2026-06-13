@@ -5,7 +5,7 @@
  * never prompt text) and a one-click mark-reviewed. Raising a dispute is 10C-2.
  */
 import { useState } from 'react';
-import { getAdminFlags, reviewFlag } from '../api/client';
+import { getAdminFlags, raiseDispute, reviewFlag } from '../api/client';
 import type { AdminFlag } from '../api/types';
 import { Badge, Card, Table } from '../components/kit';
 import type { Column } from '../components/kit';
@@ -41,6 +41,23 @@ export function Admin() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed to review');
+    }
+  };
+
+  // MONEY-MOVING: raises an on-chain FAST-track dispute that slashes 20% of the node's stake.
+  // Double-confirm before it fires; the gateway also revert-checks (DisputeExists / NotANode).
+  const raise = async (jobId: string, defendant: string) => {
+    const ok = window.confirm(
+      `Raise an on-chain dispute against ${defendant.slice(0, 8)}… for job ${jobId.slice(0, 10)}…?\n\n` +
+        `This SLASHES 20% of the node's stake (50% burned · 30% challenger · 20% treasury) and CANNOT be undone.`,
+    );
+    if (!ok) return;
+    setError(null);
+    try {
+      await raiseDispute(token, jobId, defendant);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'failed to raise dispute');
     }
   };
 
@@ -86,16 +103,28 @@ export function Admin() {
     { header: 'kind', cell: (f) => <Badge kind="flag">{f.kind}</Badge> },
     { header: 'detail', cell: (f) => f.detail },
     {
-      header: 'evidence',
+      header: 'evidence · dispute',
       cell: (f) =>
         f.relatedVerdicts.length === 0 ? (
           <span className="muted">–</span>
         ) : (
-          <span title={f.relatedVerdicts.map((v) => v.jobId).join('\n')}>
-            {f.relatedVerdicts
-              .map((v) => `${(v.similarityBps / 10000).toFixed(2)} ${v.verdict}`)
-              .join(', ')}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {f.relatedVerdicts.map((v) => (
+              <span key={v.jobId} className="row" style={{ gap: 6 }}>
+                <span title={v.jobId}>
+                  {(v.similarityBps / 10000).toFixed(2)} {v.verdict}
+                </span>
+                <button
+                  className="ghost"
+                  style={{ padding: '1px 6px', fontSize: 11 }}
+                  title="raise an on-chain dispute (slashes stake)"
+                  onClick={() => void raise(v.jobId, f.wallet)}
+                >
+                  ⚔ dispute
+                </button>
+              </span>
+            ))}
+          </div>
         ),
     },
     {

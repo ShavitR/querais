@@ -1950,3 +1950,77 @@ export async function runOperatorConsoleCase(): Promise<void> {
     await h.stop();
   }
 }
+
+/**
+ * Slice 10C-2 admin raise-dispute (MONEY-MOVING). The admin endpoint raises + auto-resolves a
+ * FAST-track dispute against a node, slashing exactly 20% of its stake; the public read and the
+ * operator's defendant list reflect it, and a job can only be disputed once.
+ */
+export async function runAdminDisputeCase(): Promise<void> {
+  const h = await startHarness(); // node connected + staked; DisputeResolution is deployed
+  try {
+    const pub = makePublicClient(h.deployment.rpcUrl);
+    const node = h.deployment.accounts.node;
+    const stakeOf = (): Promise<bigint> =>
+      pub
+        .readContract({
+          address: h.deployment.contracts.nodeRegistry,
+          abi: nodeRegistryAbi,
+          functionName: 'getNode',
+          args: [node],
+        })
+        .then((n) => n.stakeAmount);
+    const s0 = await stakeOf();
+
+    // A real job → a real jobId; the node is a registered node (disputes require that).
+    const chatRes = await chat(h.baseUrl, {
+      model: 'mock-model',
+      messages: [{ role: 'user', content: 'dispute target' }],
+      max_tokens: 20,
+    });
+    assert.equal(chatRes.status, 200);
+    const jobId = chatRes.headers.get('x-querais-job-id')!;
+
+    // The raise is admin-only.
+    const noAuth = await fetch(`${h.baseUrl}/v1/admin/disputes`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jobId, defendant: node }),
+    });
+    assert.equal(noAuth.status, 401, 'raise needs the admin token');
+
+    // Admin raises + auto-resolves → the node is slashed.
+    const res = await fetch(`${h.baseUrl}/v1/admin/disputes`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
+      body: JSON.stringify({ jobId, defendant: node }),
+    });
+    assert.equal(res.status, 200, 'admin raises + resolves');
+    const body = (await res.json()) as {
+      dispute: { status: string; challengerWon: boolean } | null;
+    };
+    assert.equal(body.dispute?.status, 'resolved', 'dispute resolved');
+    assert.equal(body.dispute?.challengerWon, true, 'challenger (protocol) won');
+
+    // Slashed exactly 20% of stake (the 50/30/20 split itself is pinned by runDisputeCase).
+    const s1 = await stakeOf();
+    assert.equal(s0 - s1, (s0 * 2000n) / 10000n, 'defendant slashed exactly 20%');
+
+    // Public read returns it, scoped to the defendant.
+    const single = (await (await fetch(`${h.baseUrl}/v1/disputes/${jobId}`)).json()) as {
+      defendant: string;
+      status: string;
+    };
+    assert.equal(single.defendant.toLowerCase(), node.toLowerCase(), 'public dispute read');
+
+    // A job can only be disputed once (DisputeExists revert surfaces; no second slash).
+    const again = await fetch(`${h.baseUrl}/v1/admin/disputes`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
+      body: JSON.stringify({ jobId, defendant: node }),
+    });
+    assert.notEqual(again.status, 200, 'a job can only be disputed once');
+  } finally {
+    await h.stop();
+  }
+}

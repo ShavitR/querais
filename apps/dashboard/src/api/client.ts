@@ -6,6 +6,7 @@
 import type {
   AdminFlagsResponse,
   CreditInfo,
+  DisputeView,
   JobsResponse,
   Me,
   ModelsResponse,
@@ -78,6 +79,21 @@ export const reviewFlag = (
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-admin-token': adminToken },
     body: JSON.stringify({ by, note }),
+  });
+
+// --- Slice 10C-2: disputes (read public; the admin raise is MONEY-MOVING) ---
+export const getOperatorDisputes = (): Promise<{ disputes: DisputeView[] }> =>
+  request<{ disputes: DisputeView[] }>('/v1/operator/disputes');
+
+export const raiseDispute = (
+  adminToken: string,
+  jobId: string,
+  defendant: string,
+): Promise<{ jobId: string; dispute: DisputeView | null }> =>
+  request<{ jobId: string; dispute: DisputeView | null }>('/v1/admin/disputes', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-admin-token': adminToken },
+    body: JSON.stringify({ jobId, defendant }),
   });
 
 /** Register a browser-signed EIP-712 spending cap (10B-2). */

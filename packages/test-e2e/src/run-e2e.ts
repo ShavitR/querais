@@ -31,6 +31,7 @@ import {
   runRequesterConsoleCase,
   runWalletSessionCase,
   runOperatorConsoleCase,
+  runAdminDisputeCase,
 } from './e2e.js';
 import { runOpenAiParityCase } from './parity.js';
 
@@ -130,6 +131,10 @@ async function main(): Promise<void> {
     console.log('▶  operator-console case: SIWE → own-node overview + admin review queue…');
     await runOperatorConsoleCase();
     console.log('✅ operator-console case passed');
+
+    console.log('▶  admin-dispute case: admin raises a dispute → 20% stake slash on-chain…');
+    await runAdminDisputeCase();
+    console.log('✅ admin-dispute case passed');
 
     ok = true;
     console.log('\n🎉 E2E PASSED — full slice works: inference returned AND settled on-chain');

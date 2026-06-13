@@ -29,6 +29,24 @@ export interface SignedCap {
   signature: Hex;
 }
 
+/** A read-only view of a job's on-chain dispute (Slice 10C). */
+export interface DisputeView {
+  jobId: Hex;
+  /** none | open | countered | resolved (the contract's DisputeStatus). */
+  status: string;
+  challenger: Address;
+  defendant: Address;
+  bondWei: string;
+  evidenceHash: Hex;
+  counterEvidenceHash: Hex;
+  raisedAt: number;
+  /** raisedAt + the contract's 24h COUNTER_EVIDENCE_WINDOW (unix seconds). */
+  counterEvidenceDeadline: number;
+  challengerWon: boolean;
+}
+
+const DISPUTE_STATUS = ['none', 'open', 'countered', 'resolved'] as const;
+
 /**
  * The gateway's on-chain interface. The gateway wallet holds MATCHING_ENGINE_ROLE
  * (createJob/assignJob) and ORACLE_ROLE (completeJob/verifyAndRelease/failJob and
@@ -280,6 +298,80 @@ export class ChainClient {
       args: [jobId, challengerWins],
     });
     return this.waitForSuccess(hash, 'autoResolve');
+  }
+
+  /** Read a job's dispute (Slice 10C); null when none exists (status NONE). The public
+   *  mapping getter flattens the struct — decode positionally OR by name (viem differs). */
+  async getDispute(jobId: Hex): Promise<DisputeView | null> {
+    const raw = (await this.publicClient.readContract({
+      address: this.requireDispute(),
+      abi: disputeResolutionAbi,
+      functionName: 'disputes',
+      args: [jobId],
+    })) as unknown;
+    // The flattened mapping getter comes back as a positional tuple OR a named object
+    // depending on viem's decoding — normalize both into one shape.
+    type Obj = {
+      challenger: Address;
+      defendant: Address;
+      bond: bigint;
+      evidenceHash: Hex;
+      counterEvidenceHash: Hex;
+      raisedAt: bigint;
+      status: number;
+      challengerWon: boolean;
+    };
+    const f: Obj = Array.isArray(raw)
+      ? {
+          challenger: raw[0] as Address,
+          defendant: raw[1] as Address,
+          bond: raw[2] as bigint,
+          evidenceHash: raw[3] as Hex,
+          counterEvidenceHash: raw[4] as Hex,
+          raisedAt: raw[5] as bigint,
+          status: raw[6] as number,
+          challengerWon: raw[7] as boolean,
+        }
+      : (raw as Obj);
+    const status = Number(f.status);
+    if (status === 0) return null; // NONE — no dispute for this job
+    const raisedAt = Number(f.raisedAt);
+    return {
+      jobId,
+      status: DISPUTE_STATUS[status] ?? 'unknown',
+      challenger: f.challenger,
+      defendant: f.defendant,
+      bondWei: f.bond.toString(),
+      evidenceHash: f.evidenceHash,
+      counterEvidenceHash: f.counterEvidenceHash,
+      raisedAt,
+      counterEvidenceDeadline: raisedAt + 24 * 3600,
+      challengerWon: f.challengerWon,
+    };
+  }
+
+  /** Disputes raised against `defendant` (Slice 10C operator panel), via DisputeRaised logs.
+   *  Scans from genesis — bounded by how rare disputes are; fine for testnet volumes. */
+  async disputesAgainst(defendant: Address): Promise<DisputeView[]> {
+    if (!this.deployment.contracts.disputeResolution) return [];
+    const logs = await this.publicClient.getContractEvents({
+      address: this.requireDispute(),
+      abi: disputeResolutionAbi,
+      eventName: 'DisputeRaised',
+      args: { defendant },
+      fromBlock: 'earliest',
+    });
+    const jobIds = [
+      ...new Set(
+        logs.map((l) => (l.args as { jobId?: Hex }).jobId).filter((j): j is Hex => Boolean(j)),
+      ),
+    ];
+    const out: DisputeView[] = [];
+    for (const jobId of jobIds) {
+      const d = await this.getDispute(jobId);
+      if (d) out.push(d);
+    }
+    return out;
   }
 
   private requireDispute(): Address {
