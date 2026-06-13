@@ -210,6 +210,27 @@ export class JobStore {
     return rows.map(decode);
   }
 
+  /** Recent jobs network-wide for the public explorer (Slice 10D) — job hashes + models
+   *  only, NO requester or prompt (privacy: the ticker is for strangers). */
+  recent(limit = 20): Array<{ jobId: Hex; model: string; status: JobStatus; createdAt: number }> {
+    const rows = this.db.conn
+      .prepare(
+        `SELECT job_id, model, status, created_at FROM jobs ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(Math.max(1, Math.min(100, limit))) as Array<{
+      job_id: string;
+      model: string;
+      status: string;
+      created_at: number;
+    }>;
+    return rows.map((r) => ({
+      jobId: r.job_id as Hex,
+      model: r.model,
+      status: r.status as JobStatus,
+      createdAt: r.created_at,
+    }));
+  }
+
   /** Aggregate a requester's settled jobs. wei is summed in JS (it overflows SQLite INTEGER). */
   usageFor(requester: Address): UsageSummary {
     const rows = this.db.conn

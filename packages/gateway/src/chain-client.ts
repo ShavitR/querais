@@ -111,6 +111,15 @@ export class ChainClient {
     });
   }
 
+  /** Current $QAIS supply (shrinks as the treasury burns; Slice 10D economics panel). */
+  totalSupply(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.deployment.contracts.token,
+      abi: quaisTokenAbi,
+      functionName: 'totalSupply',
+    });
+  }
+
   // ── Matching-engine writes ───────────────────────────────────────────────────
   async createJob(
     jobId: Hex,

@@ -59,6 +59,7 @@ import { registerUsage } from './routes/usage.js';
 import { registerSessions } from './routes/sessions.js';
 import { registerOperator } from './routes/operator.js';
 import { registerDisputes } from './routes/disputes.js';
+import { registerNetwork } from './routes/network.js';
 import { SessionAuth } from './session.js';
 
 export interface BuildOptions {
@@ -517,6 +518,7 @@ export async function buildGateway(
   registerFlags(app, deps);
   registerOperator(app, deps);
   registerDisputes(app, deps);
+  registerNetwork(app, deps);
   registerAlertsAdmin(app, deps);
   registerIncentives(app, deps);
   if (faucet) registerFaucet(app, deps);
